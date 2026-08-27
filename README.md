@@ -25,8 +25,15 @@ incrementally across phases:
 - **Phase 7** — Team Collaboration: workspace member lifecycle, email
   invitations, roles and permissions, notifications, mentions, activity/audit
   history, collaboration UI, and permission-aware AI collaboration.
+- **Phase 8** — Plugins & Extensions **(in progress)**: plugin manifest,
+  registry, capability model, and event system, plus a Stellar/Soroban
+  developer-tooling foundation (read-only network service, heuristic project
+  detection, and a Stellar-aware AI analysis).
 
-> **Status:** Phases 1–7 implemented.
+> **Status:** Phases 1–7 implemented. Phase 8 foundation implemented; the
+> plugin/Stellar surface area is intentionally small and the remaining work is
+> tracked as contributor issues under the **Phase 8 - Plugins & Extensions**
+> milestone.
 
 ## Table of contents
 
@@ -48,6 +55,12 @@ incrementally across phases:
   roles matrix, invitation flow, FAQ, and developer guide.
 - [Collaboration API reference](docs/api-collaboration.md) — every Phase 7
   endpoint with method, path, role requirement, params, and examples.
+- [Plugin system](docs/plugins.md) — manifest spec, registry, capabilities,
+  events, and how to write a plugin.
+- [Stellar / Soroban tooling](docs/stellar.md) — what is implemented, network
+  configuration, detection, and the Stellar-aware AI analysis.
+- [Security model](docs/security.md) — threat review and controls for the
+  plugin and Stellar architecture.
 
 ## Features
 
@@ -215,6 +228,52 @@ incrementally across phases:
 - **Permission-aware AI** — prompts carry an escaped, bounded team roster, and
   project content access fails closed before any context is assembled.
 
+### Phase 8 — Plugins & extensions (in progress)
+
+**Implemented foundation**
+
+- **Plugin manifests** — validated `manifest.json` support (id, name, version,
+  description, author, entry point, compatibility, capabilities, permissions,
+  dependencies, configuration) with a JSON Schema in `plugins/plugin.schema.json`.
+  Invalid ids, versions, entry points, unknown capabilities, and empty
+  capability lists are rejected; duplicate plugin ids cannot be registered.
+- **Plugin registry** — registration, directory discovery, lookup, enable and
+  disable, with predictable behavior and unit tests.
+- **Capability model** — `Capability` enum plus per-workspace `CapabilityGrant`
+  rows; capabilities are explicit and never granted automatically; workspace
+  roles map to the capabilities they may exercise.
+- **Event system** — `EventDispatcher` with a supported event registry
+  (`project.created`, `review.completed`, `workspace.member_added`,
+  `github.connected`, `ai.analysis.completed`, `stellar.analysis.completed`,
+  …). Handler failures are isolated; routes emit events safely via `emit_event`.
+- **Stellar network foundation** — network presets (mainnet/testnet/futurenet/
+  local), environment-driven configuration (testnet by default), and a
+  read-only `StellarService` (network info, address validation, bounded account
+  and transaction lookup) with SSRF-bounded, size-capped requests.
+- **Stellar/Soroban project detection** — heuristic, evidence-based detection
+  (Soroban crates, `#[contractimpl]`/`#[contract]` attributes, SDK
+  dependencies, `stellar.toml`/`.soroban` configs, `contracts/` layout). A
+  plain Rust crate is never misclassified as Soroban.
+- **Stellar-aware AI analysis** — a `stellar` project analysis kind that reuses
+  the Phase 7 content-access gate (owner-only, fails closed), never fabricates
+  Stellar claims for non-Stellar projects, and grounds its analysis in the
+  indexed contract files, manifests, and Stellar configuration.
+- **Event wiring** — the app already emits events for project import/delete,
+  member add/remove, AI analysis completion, Stellar analysis completion, and
+  GitHub connection.
+
+**Planned contributor work (not yet implemented)**
+
+- Plugin management API/UI, dependency resolution, version compatibility, and a
+  plugin marketplace.
+- Soroban RPC integration, XDR inspection, account tooling, a network
+  switcher UI, and Stellar project templates.
+- Deeper Stellar-specific AI prompts and security analysis.
+- CLI commands for plugin and Stellar workflows.
+
+All of the above is tracked as open issues under the **Phase 8 - Plugins &
+Extensions** milestone.
+
 ## Tech stack
 
 | Layer        | Technology                                        |
@@ -225,6 +284,7 @@ incrementally across phases:
 | Migrations   | Flask-Migrate (Alembic)                           |
 | AI providers | Provider-agnostic service layer (mock + OpenAI)   |
 | GitHub       | GitHub REST API, OAuth web flow, Fernet (cryptography) |
+| Stellar      | Horizon REST read-only service, Soroban/Rust project detection (Phase 8) |
 | Frontend     | HTML, vanilla CSS, vanilla JavaScript (SSE)       |
 | Infrastructure | Docker, Docker Compose, GitHub Actions          |
 | Quality      | pytest, ruff, black                               |
@@ -243,7 +303,7 @@ incrementally across phases:
 │   ├── models/            # SQLAlchemy models (User, GithubAccount, ...)
 │   ├── prompts/           # Prompt library blueprint (CRUD, search, favorites)
 │   ├── reviews/           # AI code review blueprint (Phase 6)
-│   ├── services/          # Service layer (LLM providers, GitHub API, crypto, import/search/analysis/metrics)
+│   ├── services/          # Service layer (LLM providers, GitHub API, crypto, import/search/analysis/metrics, plugins/events/capabilities/stellar (Phase 8))
 │   ├── static/            # CSS and JavaScript assets
 │   ├── templates/         # Jinja2 templates (pages + error pages)
 │   ├── tools/             # AI tools blueprint (generate, analyze, actions)
@@ -252,6 +312,7 @@ incrementally across phases:
 │   ├── extensions.py      # Shared Flask extension instances
 │   └── __init__.py        # Application factory
 ├── migrations/            # Alembic migration scripts (generated)
+├── plugins/               # Plugin manifest JSON Schema
 ├── scripts/               # Operational helper scripts
 ├── tests/                 # pytest suite
 ├── Dockerfile             # Multi-stage production image
@@ -382,6 +443,11 @@ All configuration is environment-driven (see `.env.example`):
 | `MAIL_USE_TLS`        | `true`      | Use TLS for SMTP (Phase 7) |
 | `MAIL_DEFAULT_SENDER` | unset       | From-address for outgoing email (Phase 7) |
 | `PROJECT_MAX_MEMBER_CONTEXT` | `20`  | Max workspace members included in the AI team roster (Phase 7) |
+| `STELLAR_NETWORK`   | `testnet`   | Stellar network: `mainnet`/`testnet`/`futurenet`/`custom` (Phase 8) |
+| `STELLAR_HORIZON_URL`| unset      | Override Horizon endpoint (Phase 8)        |
+| `STELLAR_RPC_URL`   | unset       | Override Soroban RPC endpoint (Phase 8)    |
+| `STELLAR_REQUEST_TIMEOUT` | `15` | Outbound Stellar request timeout in seconds (Phase 8) |
+| `STELLAR_MAX_RESPONSE_BYTES` | `2097152` | Cap on Stellar response body size (Phase 8) |
 
 The production configuration fails fast at startup if `SECRET_KEY` or a
 PostgreSQL `DATABASE_URL` is missing — it will never silently run with
@@ -427,9 +493,20 @@ Phases are built incrementally and tracked as GitHub issues and milestones.
   roles and permissions, notifications, mentions, activity/audit history,
   collaboration UI, and permission-aware AI collaboration. ✔
 
+### In progress
+
+- **Phase 8** — Plugins & Extensions: plugin manifests, registry, capability
+  model, and event system, plus a Stellar/Soroban developer-tooling foundation
+  (read-only network service, heuristic project detection, Stellar-aware AI
+  analysis). Foundation implemented and tested; the remaining surface (plugin
+  management UI, Soroban RPC, XDR inspection, network switcher, CLI, deeper
+  Stellar AI, example plugins) is tracked as open contributor issues under the
+  Phase 8 milestone and is **not yet implemented**.
+
 ### Planned
 
-- **Phase 8** — To be defined.
+- **Phase 9** — To be defined.
+- **Phase 10** — To be defined.
 
 ## License
 
