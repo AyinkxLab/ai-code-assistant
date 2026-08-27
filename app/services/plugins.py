@@ -11,11 +11,12 @@ import importlib
 import json
 import logging
 import re
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from types import ModuleType
-from typing import Any, Callable
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -95,14 +96,18 @@ class PluginManifest:
 
         # Validate id format
         if not re.match(r"^[a-z][a-z0-9_-]*$", data.get("id", "")):
-            errors.append("Invalid id format: must start with lowercase letter, contain only lowercase letters, numbers, hyphens, underscores")
+            errors.append(
+                "Invalid id format: must start with lowercase letter, "
+                "contain only lowercase letters, numbers, hyphens, underscores"
+            )
 
         # Validate version format (semantic versioning)
         if not _is_valid_semver(data.get("version", "")):
             errors.append("Invalid version format: must be semantic version (e.g., 0.1.0)")
 
         # Validate entry_point format
-        if not re.match(r"^[a-zA-Z0-9_][a-zA-Z0-9_.:]*:[a-zA-Z_][a-zA-Z0-9_]*$", data.get("entry_point", "")):
+        entry_point = data.get("entry_point", "")
+        if not re.match(r"^[a-zA-Z0-9_][a-zA-Z0-9_.:]*:[a-zA-Z_][a-zA-Z0-9_]*$", entry_point):
             errors.append("Invalid entry_point format: must be 'module.path:ClassName'")
 
         # Validate capabilities
@@ -163,13 +168,13 @@ class PluginManifest:
             PluginError: If file cannot be read
         """
         try:
-            with open(manifest_path, "r") as f:
+            with open(manifest_path) as f:
                 data = json.load(f)
         except json.JSONDecodeError as e:
             raise PluginError(f"Invalid JSON in manifest: {e}") from e
         except FileNotFoundError as e:
             raise PluginError(f"Manifest file not found: {manifest_path}") from e
-        except IOError as e:
+        except OSError as e:
             raise PluginError(f"Cannot read manifest file: {e}") from e
 
         return cls.from_dict(data)
@@ -260,7 +265,9 @@ class Plugin:
 
         _, class_name = self.manifest.entry_point.split(":")
         plugin_class = getattr(self.module, class_name)
-        return plugin_class(app=app, manifest=self.manifest) if app else plugin_class(manifest=self.manifest)
+        if app:
+            return plugin_class(app=app, manifest=self.manifest)
+        return plugin_class(manifest=self.manifest)
 
     def __repr__(self) -> str:
         """String representation."""
@@ -427,7 +434,10 @@ class PluginRegistry:
             try:
                 handler(event_type=event_type, data=data)
             except Exception as e:
-                logger.error(f"Error dispatching event {event_type} for plugin {plugin_id}: {e}", exc_info=True)
+                logger.error(
+                    f"Error dispatching event {event_type} for plugin {plugin_id}: {e}",
+                    exc_info=True,
+                )
 
     def __len__(self) -> int:
         """Number of registered plugins."""
@@ -447,5 +457,10 @@ def _is_valid_semver(version: str) -> bool:
     Returns:
         True if valid semver
     """
-    pattern = r"^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d?)(?:-((?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\.(?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*))*))?(?:\+([0-9a-zA-Z-]+(?:\.[0-9a-zA-Z-]+)*))?$"
+    pattern = (
+        r"^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d?)"
+        r"(?:-((?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*)"
+        r"(?:\.(?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*))*))?"
+        r"(?:\+([0-9a-zA-Z-]+(?:\.[0-9a-zA-Z-]+)*))?$"
+    )
     return bool(re.match(pattern, version))

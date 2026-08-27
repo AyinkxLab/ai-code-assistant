@@ -3,21 +3,21 @@
 import pytest
 
 from app.services.stellar import (
-    StellarNetwork,
-    StellarNetworkMode,
-    NetworkConfig,
-    StellarAssetType,
-    StellarAsset,
-    StellarAccount,
-    StellarError,
-    NetworkError,
+    SOROBAN_CONTRACT_TYPES,
+    STELLAR_PROPERTIES,
+    STELLAR_SDKS,
+    STELLAR_TOOLS,
     AccountError,
     AssetError,
     ContractError,
-    STELLAR_PROPERTIES,
-    SOROBAN_CONTRACT_TYPES,
-    STELLAR_SDKS,
-    STELLAR_TOOLS,
+    NetworkConfig,
+    NetworkError,
+    StellarAccount,
+    StellarAsset,
+    StellarAssetType,
+    StellarError,
+    StellarNetwork,
+    StellarNetworkMode,
 )
 
 
@@ -277,7 +277,7 @@ class TestStellarSDKs:
 
     def test_sdk_descriptions(self):
         """Test SDK descriptions."""
-        for sdk, description in STELLAR_SDKS.items():
+        for _sdk, description in STELLAR_SDKS.items():
             assert len(description) > 0
             assert "SDK" in description or "SDK" in description.lower()
 
@@ -293,7 +293,7 @@ class TestStellarTools:
 
     def test_tool_descriptions(self):
         """Test tool descriptions."""
-        for tool, description in STELLAR_TOOLS.items():
+        for _tool, description in STELLAR_TOOLS.items():
             assert len(description) > 0
 
 

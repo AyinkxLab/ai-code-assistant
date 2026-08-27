@@ -3,10 +3,9 @@
 import pytest
 
 from app.services.capabilities import (
-    Capability,
-    CapabilityGrant,
-    CapabilityStore,
     ROLE_CAPABILITY_MAPPING,
+    Capability,
+    CapabilityStore,
     validate_plugin_capability,
 )
 
@@ -287,13 +286,13 @@ class TestValidatePluginCapability:
             CapabilityStore.grant("test-plugin", 1, "project:write")
 
             # One should pass
-            is_valid, error = validate_plugin_capability("test-plugin", 1, "project:read")
+            is_valid, _error = validate_plugin_capability("test-plugin", 1, "project:read")
             assert is_valid is True
 
             # Other should pass
-            is_valid, error = validate_plugin_capability("test-plugin", 1, "project:write")
+            is_valid, _error = validate_plugin_capability("test-plugin", 1, "project:write")
             assert is_valid is True
 
             # Third should fail
-            is_valid, error = validate_plugin_capability("test-plugin", 1, "project:delete")
+            is_valid, _error = validate_plugin_capability("test-plugin", 1, "project:delete")
             assert is_valid is False

@@ -1,7 +1,8 @@
 """Tests for the event system and event dispatcher."""
 
-import pytest
 from datetime import datetime
+
+import pytest
 
 from app.services.events import (
     Event,
@@ -9,7 +10,6 @@ from app.services.events import (
     EventError,
     create_event,
     get_dispatcher,
-    SUPPORTED_EVENTS,
 )
 
 
@@ -348,16 +348,20 @@ class TestEventIntegration:
         results = []
 
         def project_handler(event):
-            results.append({
-                "type": "project",
-                "data": event.data,
-            })
+            results.append(
+                {
+                    "type": "project",
+                    "data": event.data,
+                }
+            )
 
         def review_handler(event):
-            results.append({
-                "type": "review",
-                "data": event.data,
-            })
+            results.append(
+                {
+                    "type": "review",
+                    "data": event.data,
+                }
+            )
 
         dispatcher.subscribe("project.created", project_handler, plugin_id="core")
         dispatcher.subscribe("review.completed", review_handler, plugin_id="review-plugin")
@@ -392,6 +396,7 @@ class TestEventIntegration:
         def make_handler(plugin_name):
             def handler(event):
                 plugin_actions[plugin_name] += 1
+
             return handler
 
         dispatcher.subscribe("project.created", make_handler("plugin1"), plugin_id="plugin1")

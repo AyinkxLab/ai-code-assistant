@@ -1,18 +1,18 @@
 """Tests for plugin manifest and registry."""
 
 import json
-import pytest
 import tempfile
 from pathlib import Path
 
+import pytest
+
 from app.services.plugins import (
-    PluginManifest,
-    Plugin,
-    PluginRegistry,
-    PluginError,
     ManifestValidationError,
+    Plugin,
+    PluginError,
+    PluginManifest,
     PluginRegistrationError,
-    PluginLoadError,
+    PluginRegistry,
 )
 
 
