@@ -29,7 +29,7 @@ kept in sync as the plugin system grows.
 | SSRF                           | `validate_endpoint_url`: https-only for public networks, loopback-only for custom networks; requests are restricted to the configured Horizon base URL and bounded by timeout + response-size cap. | Implemented |
 | Path traversal                  | Project file access already rejects traversal at import and in file/tree APIs; Stellar detection only reads `path`/`content` of already-indexed files. | Existing + verified |
 | Malicious plugin metadata       | Manifest validation rejects bad ids, versions, entry points, unknown capabilities, and empty capability lists. | Implemented |
-| Event authorization             | Events carry `workspace_id`/`user_id` context; subscribing to unsupported events raises; dispatcher isolates failures. Per-event capability gating is planned contributor work. | Partially implemented |
+| Event authorization             | Before a plugin handler runs, the dispatcher verifies the event type is supported, the plugin exists and is enabled, and for workspace-scoped events the plugin is installed and enabled in the event's workspace, the emitting user is authorized for the workspace, and the plugin holds the capability required by `EVENT_CAPABILITY_MAP` via an explicit `CapabilityGrant` for that workspace. Unknown/missing/disabled/unauthorized cases are denied (fail closed); denials are recorded, never delivered. | Implemented |
 
 ## Testing
 
@@ -44,15 +44,24 @@ Security-relevant coverage includes:
   validated, and revoked correctly.
 - `tests/test_events.py` / `tests/test_event_wiring.py` — handler failures are
   isolated and never break the request lifecycle.
+- `tests/test_event_authorization.py` — dispatch-time capability enforcement:
+  authorized delivery, denial for unknown/disabled/mis-granted plugins,
+  cross-workspace and cross-plugin isolation, missing-context fail-closed,
+  project/workspace consistency (confused-deputy defense), no auto-grant, and
+  the Stellar/AI event capability requirements.
 - `tests/test_project_import.py` — archive traversal/symlink/size guards.
 
 ## Known limitations / planned hardening
 
-- Per-event capability enforcement (a plugin subscribed to `stellar.*` must
-  hold `STELLAR_READ` before receiving payloads) is not yet enforced at the
-  dispatcher level.
 - Custom-network endpoints are restricted to loopback; a production operator
   using a remote custom node needs to extend the allow-list policy.
 - Plugin code loading is available (`Plugin.load`) but not yet wired to any
   user-controlled install flow; a plugin install API must enforce capabilities
   and review before execution.
+- Global events (`github.connected`, `github.disconnected`) carry no workspace
+  context and are delivered to any enabled plugin that subscribes; capability
+  grants are workspace-scoped, so a per-workspace grant check does not apply to
+  them.
+- Subscribers registered without a `plugin_id` are treated as trusted internal
+  handlers and bypass plugin capability checks; plugin installs must always
+  subscribe with their own plugin id.

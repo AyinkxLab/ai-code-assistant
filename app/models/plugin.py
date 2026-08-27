@@ -3,7 +3,7 @@
 Stores plugin metadata, installations, and configuration per workspace.
 """
 
-from datetime import datetime
+from datetime import UTC, datetime
 
 from app.extensions import db
 
@@ -25,11 +25,11 @@ class Plugin(db.Model):
     configuration = db.Column(db.JSON, default={})
 
     enabled = db.Column(db.Boolean, default=True)
-    installed_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    installed_at = db.Column(db.DateTime, default=lambda: datetime.now(UTC), nullable=False)
     updated_at = db.Column(
         db.DateTime,
-        default=datetime.utcnow,
-        onupdate=datetime.utcnow,
+        default=lambda: datetime.now(UTC),
+        onupdate=lambda: datetime.now(UTC),
         nullable=False,
     )
 
@@ -81,11 +81,11 @@ class PluginInstallation(db.Model):
     granted_capabilities = db.Column(db.JSON, default=[])  # List of capability strings
     config = db.Column(db.JSON, default={})  # Workspace-specific plugin configuration
 
-    installed_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    installed_at = db.Column(db.DateTime, default=lambda: datetime.now(UTC), nullable=False)
     updated_at = db.Column(
         db.DateTime,
-        default=datetime.utcnow,
-        onupdate=datetime.utcnow,
+        default=lambda: datetime.now(UTC),
+        onupdate=lambda: datetime.now(UTC),
         nullable=False,
     )
     installed_by_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=True)

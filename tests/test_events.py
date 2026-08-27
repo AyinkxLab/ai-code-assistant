@@ -163,8 +163,8 @@ class TestEventDispatcher:
         def handler2(event):
             received2.append(event)
 
-        dispatcher.subscribe("project.created", handler1, plugin_id="plugin1")
-        dispatcher.subscribe("project.created", handler2, plugin_id="plugin2")
+        dispatcher.subscribe("project.created", handler1)
+        dispatcher.subscribe("project.created", handler2)
         event = Event(event_type="project.created")
         result = dispatcher.dispatch(event)
 
@@ -184,8 +184,8 @@ class TestEventDispatcher:
         def good_handler(event):
             received.append(event)
 
-        dispatcher.subscribe("project.created", failing_handler, plugin_id="bad-plugin")
-        dispatcher.subscribe("project.created", good_handler, plugin_id="good-plugin")
+        dispatcher.subscribe("project.created", failing_handler)
+        dispatcher.subscribe("project.created", good_handler)
         event = Event(event_type="project.created")
         result = dispatcher.dispatch(event)
 
@@ -194,7 +194,7 @@ class TestEventDispatcher:
         assert result["successful"] == 1
         assert result["failed"] == 1
         assert len(result["errors"]) == 1
-        assert result["errors"][0][0] == "bad-plugin"
+        assert result["errors"][0][0] == "unknown"
         assert isinstance(result["errors"][0][1], ValueError)
 
     def test_dispatch_raises_on_error_flag(self):
@@ -363,8 +363,8 @@ class TestEventIntegration:
                 }
             )
 
-        dispatcher.subscribe("project.created", project_handler, plugin_id="core")
-        dispatcher.subscribe("review.completed", review_handler, plugin_id="review-plugin")
+        dispatcher.subscribe("project.created", project_handler)
+        dispatcher.subscribe("review.completed", review_handler)
 
         # Dispatch project event
         project_event = create_event(
@@ -389,26 +389,26 @@ class TestEventIntegration:
         assert results[1]["data"]["review_id"] == 5
 
     def test_event_with_multiple_plugins(self):
-        """Test multiple plugins handling same event."""
+        """Test multiple handlers handling same event."""
         dispatcher = EventDispatcher()
-        plugin_actions = {"plugin1": 0, "plugin2": 0, "plugin3": 0}
+        plugin_actions = {"handler1": 0, "handler2": 0, "handler3": 0}
 
-        def make_handler(plugin_name):
+        def make_handler(handler_name):
             def handler(event):
-                plugin_actions[plugin_name] += 1
+                plugin_actions[handler_name] += 1
 
             return handler
 
-        dispatcher.subscribe("project.created", make_handler("plugin1"), plugin_id="plugin1")
-        dispatcher.subscribe("project.created", make_handler("plugin2"), plugin_id="plugin2")
-        dispatcher.subscribe("project.created", make_handler("plugin3"), plugin_id="plugin3")
+        dispatcher.subscribe("project.created", make_handler("handler1"))
+        dispatcher.subscribe("project.created", make_handler("handler2"))
+        dispatcher.subscribe("project.created", make_handler("handler3"))
 
         event = Event(event_type="project.created", data={"project_id": 1})
         dispatcher.dispatch(event)
 
-        assert plugin_actions["plugin1"] == 1
-        assert plugin_actions["plugin2"] == 1
-        assert plugin_actions["plugin3"] == 1
+        assert plugin_actions["handler1"] == 1
+        assert plugin_actions["handler2"] == 1
+        assert plugin_actions["handler3"] == 1
 
     def test_stellar_events(self):
         """Test Stellar-specific events."""

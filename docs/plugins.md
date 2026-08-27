@@ -105,6 +105,35 @@ dispatched, one failing handler never prevents other handlers from running, and
 the request itself is never crashed (routes use `emit_event`, which swallows
 and logs failures).
 
+### Event capability enforcement (fail closed)
+
+Before a **plugin** handler is invoked, the dispatcher verifies (in
+`app/services/events.py`):
+
+1. the event type is supported and has a required capability mapped;
+2. the plugin exists (`Plugin` row) and is enabled;
+3. for workspace-scoped events, the event carries a valid `workspace_id`, the
+   plugin is installed (`PluginInstallation`) and enabled in that workspace,
+   and the emitting user is authorized for the workspace;
+4. the plugin holds the capability required by `EVENT_CAPABILITY_MAP` through
+   an explicit `CapabilityGrant` for the event's workspace.
+
+If any condition cannot be proven, the handler is **denied** (recorded in the
+dispatch result as a denial) and never invoked. `EVENT_CAPABILITY_MAP`
+associates each event with the capability required to receive it, for example:
+
+- `project.created` / `project.updated` / `project.deleted` → `PROJECT_READ`
+- `workspace.member_added` / `workspace.member_removed` → `WORKSPACE_READ`
+- `ai.analysis.completed` → `AI_ACCESS`
+- `stellar.analysis.completed` / `stellar.network.detected` → `STELLAR_READ`
+- `github.connected` / `github.disconnected` → `GITHUB_READ` (global events,
+  delivered to enabled plugins without a per-workspace grant, since grants are
+  workspace-scoped)
+
+Subscribers registered *without* a `plugin_id` are internal handlers (trusted
+application code) and are exempt from plugin capability enforcement. See
+`docs/security.md` for the full security model.
+
 The application already emits events from real flows: project import/delete,
 workspace member add/remove, AI analysis completion, Stellar analysis
 completion, and GitHub connection.

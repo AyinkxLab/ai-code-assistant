@@ -6,6 +6,20 @@ from app import create_app
 from app.extensions import db as _db
 
 
+@pytest.fixture(autouse=True)
+def _reset_event_dispatcher():
+    """Clear the shared event dispatcher after each test.
+
+    The global dispatcher is a module-level singleton; without a reset,
+    subscriptions from one test would leak into the next (and fail
+    authorization against a fresh database).
+    """
+    yield
+    from app.services.events import get_dispatcher
+
+    get_dispatcher().clear()
+
+
 @pytest.fixture()
 def app():
     """Create a fresh application instance for each test."""
