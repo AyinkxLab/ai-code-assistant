@@ -23,6 +23,7 @@ from app.models.workspace_member import (
 )
 from app.services.llm import LLMProviderError, get_provider
 from app.services.permissions import assert_content_access
+from app.services.stellar_detection import detect_stellar_project
 
 try:  # Python 3.11+
     import tomllib
@@ -40,6 +41,7 @@ ANALYSIS_KINDS = (
     "quality",
     "security",
     "code_review",
+    "stellar",
 )
 
 _PROJECT_SYSTEM = (
@@ -682,6 +684,8 @@ Base everything on the files shown and mark [CONFIRMED] vs [SUGGESTION].
         return analyze_security(project)
     elif kind == "code_review":
         return analyze_code_review(project)
+    elif kind == "stellar":
+        return analyze_stellar_project(project)
     else:  # dependencies
         inventory = dependency_inventory(project)
         if inventory:
@@ -783,6 +787,114 @@ line where relevant, and a suggested fix for each. Mark [CONFIRMED] for issues
 proven by the files and [SUGGESTION] for possible issues.
 """
     return {"kind": kind, "analysis": _run(prompt)}
+
+
+# --------------------------------------------------------------------------
+# Stellar / Soroban analysis (Phase 8)
+# --------------------------------------------------------------------------
+
+_STELLAR_RELEVANT_PREFIXES = (
+    "contracts/",
+    "contract/",
+    "src/contracts/",
+    "src/lib.rs",
+    "src/",
+    ".soroban/",
+)
+
+
+def _stellar_relevant(files, structure) -> tuple[list[ProjectFile], str]:
+    """Return the Stellar-relevant files plus a compact signal summary.
+
+    Selection is bounded and evidence-driven: contract sources, Cargo/other
+    manifests, Stellar config files, and any file whose content mentions
+    Soroban/Stellar keywords. Returns ``(relevant_files, summary)``.
+    """
+    selected: list[ProjectFile] = []
+    seen = set()
+    for file in files:
+        if file.content is None:
+            continue
+        path = file.path.lower()
+        name = path.rsplit("/", 1)[-1]
+        is_contract = path.startswith(_STELLAR_RELEVANT_PREFIXES)
+        is_manifest = name in ("cargo.toml", "package.json", "pyproject.toml", "go.mod")
+        is_config = name in (
+            "stellar.toml",
+            "soroban.toml",
+            "stellar-config.toml",
+            "stellar.json",
+            "soroban.json",
+        )
+        mentions = any(k in (file.content or "").lower() for k in ("soroban", "stellar"))
+        if (is_contract or is_manifest or is_config or mentions) and file.path not in seen:
+            selected.append(file)
+            seen.add(file.path)
+
+    selected.sort(key=lambda f: f.size, reverse=True)
+    selected = selected[: MAX_CONTEXT_FILES * 2]
+    return selected, ""  # summary filled in by caller via signals
+
+
+def analyze_stellar_project(project) -> dict:
+    """Analyze a project from a Stellar/Soroban developer perspective.
+
+    Fails closed on content access (same gate as every other analysis) and
+    refuses to fabricate: if detection finds no Stellar/Soroban signals the
+    response says so explicitly rather than inventing claims.
+    """
+    _assert_accessible(project)
+    kind = "stellar"
+
+    files = list(project.files.all())
+    signals = detect_stellar_project(files)
+    if not signals.is_stellar:
+        return {
+            "kind": kind,
+            "detected": False,
+            "confidence": signals.confidence,
+            "analysis": (
+                "No Stellar/Soroban signals were detected in this project "
+                "(no Soroban crates, SDK dependencies, contract attributes, or "
+                "Stellar configuration files), so a Stellar analysis is not "
+                "applicable. This is not a Stellar/Soroban project."
+            ),
+        }
+
+    relevant, _ = _stellar_relevant(files, project_structure(project))
+    blocks = _bounded_blocks(relevant, _budget())
+    signal_lines = "\n".join(f"- {e}" for e in signals.evidence[:20]) or "(none)"
+    structure = project_structure(project)
+    prompt = f"""{_context_header(project)}
+
+Detected Stellar/Soroban signals:
+{signal_lines}
+
+Structure (sample):
+{_clip(structure, 6000)}
+
+Stellar-relevant files:
+{blocks or "(no file contents retrieved)"}
+
+Analyze this project as a Stellar/Soroban developer tool:
+1. What kind of Stellar/Soroban project is it (contract, SDK app, tooling)?
+2. Which contracts / entry points exist and what are their responsibilities?
+3. Which Stellar networks or endpoints are configured, and are any credentials
+   or secrets present in the files (flag hard-coded keys as [CONFIRMED])?
+4. Dependencies: Soroban crates / Stellar SDKs and their purpose.
+5. Concrete risks or improvements for contract developers (bounded context:
+   panic! usage, unwraps, authorization checks, test coverage).
+Base every statement on the files shown and mark [CONFIRMED] vs [SUGGESTION].
+Do not claim any Stellar integration, deployment, or partnership that the files
+do not demonstrate.
+"""
+    return {
+        "kind": kind,
+        "detected": True,
+        "confidence": signals.confidence,
+        "is_soroban": signals.is_soroban,
+        "analysis": _run(prompt),
+    }
 
 
 def _budget() -> int:
