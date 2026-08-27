@@ -1,0 +1,107 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "AI Code Assistant Plugin Manifest",
+  "description": "Schema for plugin manifest.json files",
+  "type": "object",
+  "required": [
+    "id",
+    "name",
+    "version",
+    "description",
+    "author",
+    "entry_point",
+    "capabilities"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_-]*$",
+      "minLength": 1,
+      "maxLength": 64,
+      "description": "Unique plugin identifier (kebab-case or snake_case)"
+    },
+    "name": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256,
+      "description": "Human-readable plugin name"
+    },
+    "version": {
+      "type": "string",
+      "pattern": "^(0|[1-9]\\d*)\\.(0|[1-9]\\d*)\\.(0|[1-9]\\d?)(?:-((?:0|[1-9]\\d*|\\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\\.(?:0|[1-9]\\d*|\\d*[a-zA-Z-][0-9a-zA-Z-]*))*))?(?:\\+([0-9a-zA-Z-]+(?:\\.[0-9a-zA-Z-]+)*))?$",
+      "description": "Semantic version (e.g., 0.1.0, 1.0.0-alpha, 1.0.0+build)"
+    },
+    "description": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 2048,
+      "description": "Plugin purpose and capabilities"
+    },
+    "author": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256,
+      "description": "Plugin author or maintainer"
+    },
+    "entry_point": {
+      "type": "string",
+      "pattern": "^[a-zA-Z0-9_][a-zA-Z0-9_.:]*:[a-zA-Z_][a-zA-Z0-9_]*$",
+      "description": "Python module path and class name, e.g., 'plugins.stellar_tools.plugin:StellarPlugin'"
+    },
+    "compatibility": {
+      "type": "string",
+      "default": ">=0.8.0",
+      "description": "Compatible AI Code Assistant versions (PEP 440 syntax)"
+    },
+    "capabilities": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "enum": [
+          "PROJECT_READ",
+          "PROJECT_WRITE",
+          "PROJECT_DELETE",
+          "WORKSPACE_READ",
+          "WORKSPACE_WRITE",
+          "GITHUB_READ",
+          "GITHUB_WRITE",
+          "AI_ACCESS",
+          "AI_ANALYSIS",
+          "NOTIFICATION_CREATE",
+          "STELLAR_READ",
+          "STELLAR_WRITE",
+          "STELLAR_ANALYSIS",
+          "REVIEW_READ",
+          "REVIEW_CREATE"
+        ]
+      },
+      "minItems": 1,
+      "uniqueItems": true,
+      "description": "List of required capabilities"
+    },
+    "permissions": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "default": [],
+      "uniqueItems": true,
+      "description": "Requested workspace/project permissions (informational)"
+    },
+    "dependencies": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "default": [],
+      "uniqueItems": true,
+      "description": "Required Python dependencies (PEP 508 format)"
+    },
+    "configuration": {
+      "type": "object",
+      "default": {},
+      "description": "Plugin configuration schema and defaults"
+    }
+  }
+}
