@@ -11,8 +11,7 @@ from app.models.invitation import WorkspaceInvitation
 from app.models.message import Message
 from app.models.notification import Notification
 from app.models.notification_preference import NotificationPreference
-from app.models.plugin import Plugin
-from app.models.plugin import PluginInstallation
+from app.models.plugin import CapabilityGrant, Plugin, PluginInstallation
 from app.models.project import Project
 from app.models.project_comment import ProjectComment
 from app.models.project_file import ProjectFile
@@ -28,6 +27,7 @@ from app.models.workspace_settings import WorkspaceSettings
 
 __all__ = [
     "ActivityEvent",
+    "CapabilityGrant",
     "Conversation",
     "GithubAccount",
     "Message",

@@ -5,9 +5,9 @@ the application. They integrate with workspace roles and permissions.
 """
 
 from enum import Enum
-from typing import Any
 
 from app.extensions import db
+from app.models.plugin import CapabilityGrant
 
 
 class Capability(Enum):
@@ -128,54 +128,6 @@ ROLE_CAPABILITY_MAPPING = {
         Capability.REVIEW_CREATE,
     ],
 }
-
-
-class CapabilityGrant(db.Model):
-    """Track capabilities granted to a plugin within a workspace.
-
-    A capability grant represents the intersection of:
-    - Plugin ID
-    - Workspace ID
-    - Granted capabilities
-    - User who granted the capability (for audit)
-    """
-
-    __tablename__ = "plugin_capability_grants"
-
-    id = db.Column(db.Integer, primary_key=True)
-    plugin_id = db.Column(db.String(64), db.ForeignKey("plugins.id"), nullable=False, index=True)
-    workspace_id = db.Column(db.Integer, db.ForeignKey("workspaces.id"), nullable=False, index=True)
-    capability = db.Column(db.String(64), nullable=False)
-
-    granted_at = db.Column(db.DateTime, default=db.func.now(), nullable=False)
-    granted_by_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=True)
-
-    # Relationships
-    granted_by = db.relationship("User", foreign_keys=[granted_by_id])
-
-    __table_args__ = (
-        db.UniqueConstraint(
-            "plugin_id",
-            "workspace_id",
-            "capability",
-            name="uq_plugin_capability_grant",
-        ),
-    )
-
-    def to_dict(self) -> dict[str, Any]:
-        """Convert to dictionary representation."""
-        return {
-            "id": self.id,
-            "plugin_id": self.plugin_id,
-            "workspace_id": self.workspace_id,
-            "capability": self.capability,
-            "granted_at": self.granted_at.isoformat() if self.granted_at else None,
-            "granted_by_id": self.granted_by_id,
-        }
-
-    def __repr__(self) -> str:
-        """String representation."""
-        return f"<CapabilityGrant plugin_id={self.plugin_id} workspace_id={self.workspace_id} capability={self.capability}>"
 
 
 class CapabilityStore:
@@ -314,7 +266,7 @@ class CapabilityStore:
         if capability:
             query = query.filter_by(capability=capability)
         grants = query.all()
-        return list(set(grant.plugin_id for grant in grants))
+        return list({grant.plugin_id for grant in grants})
 
     @staticmethod
     def revoke_all(plugin_id: str, workspace_id: int) -> int:
@@ -372,6 +324,10 @@ def validate_plugin_capability(
 
     # Check if grant exists
     if not CapabilityStore.has_capability(plugin_id, workspace_id, capability):
-        return (False, f"Plugin {plugin_id} does not have capability {capability} in workspace {workspace_id}")
+        return (
+            False,
+            f"Plugin {plugin_id} does not have capability {capability} "
+            f"in workspace {workspace_id}",
+        )
 
     return (True, "")
