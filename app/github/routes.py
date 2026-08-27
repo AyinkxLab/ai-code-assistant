@@ -137,6 +137,14 @@ def callback():
     account.set_access_token(token)
     db.session.commit()
 
+    from app.services.events import emit_event
+
+    emit_event(
+        "github.connected",
+        data={"github_username": account.github_username},
+        user_id=current_user.id,
+    )
+
     flash(f"Connected to GitHub as @{account.github_username}.", "success")
     return redirect(url_for("github.index"))
 

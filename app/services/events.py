@@ -5,9 +5,10 @@ Failures in event handlers are isolated - one failure doesn't affect others.
 """
 
 import logging
+from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import datetime, timezone
-from typing import Any, Callable
+from datetime import UTC, datetime
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -56,7 +57,7 @@ class Event:
         if self.data is None:
             self.data = {}
         if self.timestamp is None:
-            self.timestamp = datetime.now(timezone.utc)
+            self.timestamp = datetime.now(UTC)
 
     def to_dict(self) -> dict[str, Any]:
         """Convert event to dictionary for serialization."""
@@ -239,7 +240,10 @@ class EventDispatcher:
 
     def __repr__(self) -> str:
         """String representation."""
-        return f"<EventDispatcher with {len(self._subscribers)} event types, {self.get_subscription_count()} subscriptions>"
+        return (
+            f"<EventDispatcher with {len(self._subscribers)} event types, "
+            f"{self.get_subscription_count()} subscriptions>"
+        )
 
 
 # Global dispatcher instance (singleton pattern)
@@ -284,3 +288,29 @@ def create_event(
         workspace_id=workspace_id,
         user_id=user_id,
     )
+
+
+def emit_event(
+    event_type: str,
+    data: dict[str, Any] | None = None,
+    workspace_id: int | None = None,
+    user_id: int | None = None,
+) -> dict[str, Any]:
+    """Dispatch a supported event without ever raising.
+
+    ``emit_event`` is the route-facing wrapper: it validates the event type,
+    dispatches to the global dispatcher, and swallows+logs any failure so that
+    plugin handler errors can never crash a request. Returns the dispatch
+    result dict (empty on failure).
+    """
+    try:
+        event = create_event(
+            event_type,
+            data=data or {},
+            workspace_id=workspace_id,
+            user_id=user_id,
+        )
+        return get_dispatcher().dispatch(event)
+    except Exception as exc:
+        logger.error("Failed to emit event %s: %s", event_type, exc, exc_info=True)
+        return {}

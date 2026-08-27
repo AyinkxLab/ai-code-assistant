@@ -63,6 +63,7 @@ from app.models.workspace_member import (
 )
 from app.services import project_analysis
 from app.services.activity import record_activity
+from app.services.events import emit_event
 from app.services.github import (
     GitHubError,
     GitHubInvalidError,
@@ -278,6 +279,12 @@ def api_add_member(workspace_id: int):
         link=url_for("collaboration.members_page", workspace_id=workspace_id),
     )
     db.session.commit()
+    emit_event(
+        "workspace.member_added",
+        data={"user_id": user.id, "workspace_id": workspace_id, "role": role},
+        workspace_id=workspace_id,
+        user_id=current_user.id,
+    )
     return jsonify(membership.to_dict()), 201
 
 
@@ -339,6 +346,12 @@ def api_remove_member(workspace_id: int, user_id: int):
         payload={"title": "You were removed from a workspace", "role": membership.role},
     )
     db.session.commit()
+    emit_event(
+        "workspace.member_removed",
+        data={"user_id": user_id, "workspace_id": workspace_id},
+        workspace_id=workspace_id,
+        user_id=current_user.id,
+    )
     return jsonify({"ok": True})
 
 
@@ -405,6 +418,12 @@ def _import_archive(workspace: Workspace):
         metadata={"source": SOURCE_ARCHIVE, "file_count": project.file_count},
     )
     db.session.commit()
+    emit_event(
+        "project.created",
+        data={"project_id": project.id, "name": project.name, "source": SOURCE_ARCHIVE},
+        workspace_id=workspace.id,
+        user_id=current_user.id,
+    )
     return jsonify(project.to_dict()), 201
 
 
@@ -444,6 +463,12 @@ def _import_github(workspace: Workspace):
         metadata={"source": SOURCE_GITHUB, "file_count": project.file_count},
     )
     db.session.commit()
+    emit_event(
+        "project.created",
+        data={"project_id": project.id, "name": project.name, "source": SOURCE_GITHUB},
+        workspace_id=workspace.id,
+        user_id=current_user.id,
+    )
     return jsonify(project.to_dict()), 201
 
 
@@ -451,8 +476,15 @@ def _import_github(workspace: Workspace):
 @login_required
 def api_delete_project(project_id: int):
     project = _get_project(project_id)
+    workspace_id = project.workspace_id
     db.session.delete(project)
     db.session.commit()
+    emit_event(
+        "project.deleted",
+        data={"project_id": project_id},
+        workspace_id=workspace_id,
+        user_id=current_user.id,
+    )
     return jsonify({"ok": True})
 
 
@@ -707,4 +739,21 @@ def api_project_analyze(project_id: int):
         ),
     )
     db.session.commit()
+    emit_event(
+        "ai.analysis.completed",
+        data={"project_id": project.id, "kind": result["kind"]},
+        workspace_id=project.workspace_id,
+        user_id=current_user.id,
+    )
+    if result["kind"] == "stellar":
+        emit_event(
+            "stellar.analysis.completed",
+            data={
+                "project_id": project.id,
+                "detected": bool(result.get("detected")),
+                "confidence": result.get("confidence"),
+            },
+            workspace_id=project.workspace_id,
+            user_id=current_user.id,
+        )
     return jsonify(result)
