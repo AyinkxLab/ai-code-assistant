@@ -2,14 +2,32 @@
 
 Supports Stellar public networks (mainnet, testnet, futurenet) and custom
 networks. Provides network detection, configuration, and metadata.
+
+The :class:`StellarService` is the read-only integration layer used by the
+application. All endpoints come from configuration (never from user or project
+input) and outbound requests are SSRF-bounded: only http(s) is allowed, custom
+networks may only target loopback hosts, and every request enforces a timeout
+and a response-body cap.
 """
 
+import json
 from dataclasses import dataclass
-from enum import Enum
-from typing import Optional
+from enum import StrEnum
+
+import requests
+from flask import current_app, has_app_context
+
+DEFAULT_TIMEOUT = 15
+MAX_RESPONSE_BYTES = 2 * 1024 * 1024
+
+# strkey base-32 alphabet used by Stellar addresses (no 0, 1, 8, 9).
+_STRKEY_ALPHABET = set("ABCDEFGHJKLMNPQRSTUVWXYZ234567")
+# Loopback hosts allowed for custom/development networks.
+_LOOPBACK_HOSTS = {"localhost", "127.0.0.1", "::1", "0.0.0.0"}
+_LOOPBACK_HOSTS |= {f"127.0.0.{i}" for i in range(1, 256)}
 
 
-class StellarNetwork(str, Enum):
+class StellarNetwork(StrEnum):
     """Supported Stellar networks."""
 
     MAINNET = "mainnet"
@@ -18,7 +36,7 @@ class StellarNetwork(str, Enum):
     CUSTOM = "custom"
 
 
-class StellarNetworkMode(str, Enum):
+class StellarNetworkMode(StrEnum):
     """Stellar development mode."""
 
     DEVELOPMENT = "development"  # Local/private development
@@ -33,10 +51,10 @@ class NetworkConfig:
     network: StellarNetwork
     network_passphrase: str
     horizon_url: str
-    rpc_url: Optional[str] = None  # For Soroban smart contracts
+    rpc_url: str | None = None  # For Soroban smart contracts
     mode: StellarNetworkMode = StellarNetworkMode.DEVELOPMENT
     is_public: bool = False
-    chain_id: Optional[str] = None
+    chain_id: str | None = None
 
     @staticmethod
     def mainnet() -> "NetworkConfig":
@@ -99,7 +117,7 @@ class NetworkConfig:
         }
 
 
-class StellarAssetType(str, Enum):
+class StellarAssetType(StrEnum):
     """Stellar asset types."""
 
     NATIVE = "native"  # XLM (Lumens)
@@ -112,10 +130,10 @@ class StellarAsset:
     """Represents a Stellar asset on-chain."""
 
     code: str
-    issuer: Optional[str] = None  # None for native XLM
+    issuer: str | None = None  # None for native XLM
     type: StellarAssetType = StellarAssetType.STANDARD
-    balance: Optional[str] = None
-    is_authorized: Optional[bool] = None
+    balance: str | None = None
+    is_authorized: bool | None = None
 
     def is_native(self) -> bool:
         """Check if asset is native XLM."""
@@ -151,10 +169,7 @@ class StellarAccount:
     def has_trustline(self, asset: StellarAsset) -> bool:
         """Check if account has trustline for asset."""
         for balance in self.balances:
-            if (
-                balance.code == asset.code
-                and balance.issuer == asset.issuer
-            ):
+            if balance.code == asset.code and balance.issuer == asset.issuer:
                 return True
         return False
 
@@ -227,3 +242,278 @@ STELLAR_TOOLS = {
     "stellar-laboratory": "Web-based Stellar IDE",
     "friendbot": "Test network faucet API",
 }
+
+
+# ---------------------------------------------------------------------------
+# Address validation
+# ---------------------------------------------------------------------------
+
+
+def validate_stellar_address(address: str) -> bool:
+    """Return ``True`` if ``address`` looks like a Stellar account id (G...).
+
+    Performs a strict structural check (exactly 56 chars, 'G' prefix, valid
+    strkey alphabet). It is intentionally *structural*: full CRC/checksum
+    validation requires the ``stellar-sdk`` package which is not a dependency
+    today, so callers must not treat a ``True`` as proof the account exists.
+    """
+    if not isinstance(address, str) or len(address) != 56:
+        return False
+    if not address.startswith("G"):
+        return False
+    return all(char in _STRKEY_ALPHABET for char in address[1:])
+
+
+# ---------------------------------------------------------------------------
+# Endpoint safety
+# ---------------------------------------------------------------------------
+
+
+def _parse_host(url: str) -> tuple[str, str, str] | None:
+    """Return ``(scheme, host, port)`` for ``url`` or ``None`` if malformed."""
+    try:
+        from urllib.parse import urlparse
+
+        parsed = urlparse(url)
+    except ValueError:
+        return None
+    if parsed.scheme not in ("http", "https") or not parsed.hostname:
+        return None
+    return parsed.scheme, (parsed.hostname or "").lower(), str(parsed.port or "")
+
+
+def validate_endpoint_url(url: str, *, is_public: bool) -> bool:
+    """Return ``True`` if ``url`` is safe to call for the given network type.
+
+    Fail closed: http(s) only; public networks require https; custom networks
+    may only target loopback hosts (local stellar-core / soroban-rpc).
+    """
+    parsed = _parse_host(url)
+    if parsed is None:
+        return False
+    scheme, host, _port = parsed
+    if is_public:
+        return scheme == "https"
+    return host in _LOOPBACK_HOSTS
+
+
+# ---------------------------------------------------------------------------
+# Configuration resolution
+# ---------------------------------------------------------------------------
+
+#: Preset configurations keyed by network name (used when no explicit URL set).
+_NETWORK_PRESETS = {
+    StellarNetwork.MAINNET.value: NetworkConfig.mainnet,
+    StellarNetwork.TESTNET.value: NetworkConfig.testnet,
+    StellarNetwork.FUTURENET.value: NetworkConfig.futurenet,
+}
+
+
+def resolve_network_config(
+    network: str | None = None,
+    horizon_url: str | None = None,
+    rpc_url: str | None = None,
+) -> NetworkConfig:
+    """Resolve a :class:`NetworkConfig` from explicit values or presets.
+
+    ``None`` values fall back to ``current_app.config`` and then to the
+    built-in presets. Explicit URLs override the preset for the chosen network
+    so operators can point at a local node without changing the network id.
+
+    Raises:
+        StellarError: If the network name is unknown or an explicit endpoint
+            fails endpoint validation.
+    """
+    cfg = current_app.config if has_app_context() else {}
+
+    network = network or cfg.get("STELLAR_NETWORK", StellarNetwork.TESTNET.value)
+    network = network.lower().strip()
+
+    preset = _NETWORK_PRESETS.get(network)
+    if preset is None and network != StellarNetwork.CUSTOM.value:
+        raise StellarError(f"Unknown Stellar network: {network}")
+
+    config = preset() if preset is not None else NetworkConfig.local()
+
+    explicit_horizon = horizon_url or (cfg.get("STELLAR_HORIZON_URL") or "").strip()
+    explicit_rpc = rpc_url or (cfg.get("STELLAR_RPC_URL") or "").strip()
+
+    if explicit_horizon:
+        if not validate_endpoint_url(explicit_horizon, is_public=config.is_public):
+            raise StellarError(f"Unsafe Horizon endpoint for network {network}: {explicit_horizon}")
+        config.horizon_url = explicit_horizon
+    if explicit_rpc:
+        if not validate_endpoint_url(explicit_rpc, is_public=config.is_public):
+            raise StellarError(f"Unsafe Soroban RPC endpoint for network {network}: {explicit_rpc}")
+        config.rpc_url = explicit_rpc
+
+    return config
+
+
+# ---------------------------------------------------------------------------
+# Read-only Stellar service
+# ---------------------------------------------------------------------------
+
+
+class StellarService:
+    """Read-only integration with Stellar Horizon / Soroban RPC.
+
+    The service never signs, sends, or funds transactions; it only reads
+    public network data for accounts, transactions, and network info. All
+    endpoint URLs come from configuration and are validated before any
+    request is made (fail closed, SSRF-bounded).
+    """
+
+    def __init__(
+        self,
+        *,
+        network: str | None = None,
+        horizon_url: str | None = None,
+        rpc_url: str | None = None,
+        timeout: int | None = None,
+        max_response_bytes: int | None = None,
+        session: requests.Session | None = None,
+    ) -> None:
+        """Initialize the service with optional explicit endpoint overrides."""
+        if has_app_context():
+            cfg = current_app.config
+            network = network or cfg.get("STELLAR_NETWORK")
+            horizon_url = horizon_url or cfg.get("STELLAR_HORIZON_URL")
+            rpc_url = rpc_url or cfg.get("STELLAR_RPC_URL")
+            timeout = timeout or cfg.get("STELLAR_REQUEST_TIMEOUT")
+            max_response_bytes = max_response_bytes or cfg.get("STELLAR_MAX_RESPONSE_BYTES")
+        self._config = resolve_network_config(network, horizon_url, rpc_url)
+        self._timeout = timeout or DEFAULT_TIMEOUT
+        self._max_bytes = max_response_bytes or MAX_RESPONSE_BYTES
+        self._session = session or requests.Session()
+
+    @property
+    def config(self) -> NetworkConfig:
+        """Resolved network configuration."""
+        return self._config
+
+    def get_network_info(self) -> dict:
+        """Return metadata about the configured network (never contacts the node)."""
+        return {
+            **self._config.to_dict(),
+            "timeout_seconds": self._timeout,
+            "max_response_bytes": self._max_bytes,
+        }
+
+    def validate_address(self, address: str) -> bool:
+        """Return ``True`` if ``address`` is structurally a Stellar account id."""
+        return validate_stellar_address(address)
+
+    def get_account(self, address: str) -> dict:
+        """Fetch account details from Horizon.
+
+        Args:
+            address: Stellar account id (G...)
+
+        Returns:
+            Bounded account data (id, sequence, balances, subentry count).
+
+        Raises:
+            AccountError: If the address is invalid or the account does not exist.
+            NetworkError: If the network call fails.
+        """
+        if not validate_stellar_address(address):
+            raise AccountError(f"Invalid Stellar address: {address}")
+
+        path = f"{self._config.horizon_url}/accounts/{address}"
+        data = self._get_json(path)
+        return {
+            "account_id": data.get("account_id", address),
+            "sequence": data.get("sequence"),
+            "subentry_count": data.get("subentry_count"),
+            "balances": [
+                {
+                    "asset_type": b.get("asset_type"),
+                    "asset_code": b.get("asset_code"),
+                    "asset_issuer": b.get("asset_issuer"),
+                    "balance": b.get("balance"),
+                }
+                for b in (data.get("balances") or [])
+            ][:50],
+        }
+
+    def get_transaction(self, transaction_hash: str) -> dict:
+        """Fetch basic transaction details from Horizon.
+
+        Args:
+            transaction_hash: Stellar transaction hash (hex).
+
+        Returns:
+            Bounded transaction data (hash, ledger, account, created_at, memo).
+
+        Raises:
+            StellarError: If the hash is malformed.
+            NetworkError: If the network call fails.
+        """
+        if not isinstance(transaction_hash, str) or not transaction_hash.strip():
+            raise StellarError("A transaction hash is required.")
+        transaction_hash = transaction_hash.strip().lower()
+        valid_chars = all(c in "0123456789abcdef" for c in transaction_hash)
+        if not valid_chars or not (32 <= len(transaction_hash) <= 64):
+            raise StellarError(f"Malformed transaction hash: {transaction_hash}")
+
+        path = f"{self._config.horizon_url}/transactions/{transaction_hash}"
+        data = self._get_json(path)
+        return {
+            "hash": data.get("hash"),
+            "ledger": data.get("ledger"),
+            "created_at": data.get("created_at"),
+            "successful": data.get("successful"),
+            "source_account": data.get("source_account"),
+            "memo": data.get("memo"),
+        }
+
+    # -- internal helpers -------------------------------------------------
+
+    def _get_json(self, url: str) -> dict:
+        """GET ``url`` and return the JSON body, bounded and SSRF-checked."""
+        self._check_url(url)
+        try:
+            response = self._session.get(
+                url,
+                timeout=self._timeout,
+                stream=True,
+                headers={"Accept": "application/json", "User-Agent": "ai-code-assistant"},
+            )
+        except requests.RequestException as exc:
+            raise NetworkError(f"Stellar network request failed: {exc}") from exc
+
+        with response:
+            if response.status_code == 404:
+                raise AccountError(f"Stellar resource not found: {url}")
+            if response.status_code >= 400:
+                raise NetworkError(f"Stellar network returned {response.status_code}")
+
+            chunks = []
+            size = 0
+            for chunk in response.iter_content(4096):
+                size += len(chunk)
+                if size > self._max_bytes:
+                    raise NetworkError("Stellar response exceeded size limit")
+                chunks.append(chunk)
+                if size >= self._max_bytes:
+                    break
+            body = b"".join(chunks)
+
+        try:
+            return json.loads(body.decode("utf-8"))
+        except (ValueError, UnicodeDecodeError) as exc:
+            raise NetworkError("Stellar network returned invalid JSON") from exc
+
+    def _check_url(self, url: str) -> None:
+        """Fail closed unless ``url`` is allowed for the configured network."""
+        allowed_base = self._config.horizon_url.rstrip("/")
+        if not url.startswith(allowed_base + "/"):
+            raise NetworkError(f"Refusing out-of-base Stellar request: {url}")
+        if not validate_endpoint_url(url, is_public=self._config.is_public):
+            raise NetworkError(f"Refusing unsafe Stellar endpoint: {url}")
+
+
+def get_stellar_service() -> StellarService:
+    """Return a :class:`StellarService` bound to the current app configuration."""
+    return StellarService()

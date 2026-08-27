@@ -124,6 +124,22 @@ class Config:
     MAIL_DEFAULT_SENDER = os.getenv("MAIL_DEFAULT_SENDER", "")
     MAIL_USE_TLS = os.getenv("MAIL_USE_TLS", "1") == "1"
 
+    # Stellar / Soroban integration (Phase 8).
+    # Default network the Stellar service points at. One of: mainnet, testnet,
+    # futurenet, custom. Everything defaults to testnet so the foundation is
+    # safe by default (no real XLM involved).
+    STELLAR_NETWORK = os.getenv("STELLAR_NETWORK", "testnet")
+    # Explicit Horizon / Soroban RPC endpoints. When unset the built-in presets
+    # for STELLAR_NETWORK are used (see app/services/stellar.py). These can be
+    # pointed at a local `stellar-core`/`soroban-rpc` during development.
+    STELLAR_HORIZON_URL = os.getenv("STELLAR_HORIZON_URL", "")
+    STELLAR_RPC_URL = os.getenv("STELLAR_RPC_URL", "")
+    # Request timeout in seconds for outbound Stellar network calls. A short,
+    # fixed timeout keeps SSRF-style probing and slow endpoints bounded.
+    STELLAR_REQUEST_TIMEOUT = int(os.getenv("STELLAR_REQUEST_TIMEOUT", "15"))
+    # Cap on bytes read from a Stellar network response body.
+    STELLAR_MAX_RESPONSE_BYTES = int(os.getenv("STELLAR_MAX_RESPONSE_BYTES", str(2 * 1024 * 1024)))
+
 
 class DevelopmentConfig(Config):
     """Local development configuration."""
