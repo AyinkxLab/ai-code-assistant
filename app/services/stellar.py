@@ -10,7 +10,9 @@ networks may only target loopback hosts, and every request enforces a timeout
 and a response-body cap.
 """
 
+import ipaddress
 import json
+import socket
 from dataclasses import dataclass
 from enum import StrEnum
 
@@ -20,11 +22,49 @@ from flask import current_app, has_app_context
 DEFAULT_TIMEOUT = 15
 MAX_RESPONSE_BYTES = 2 * 1024 * 1024
 
-# strkey base-32 alphabet used by Stellar addresses (no 0, 1, 8, 9).
-_STRKEY_ALPHABET = set("ABCDEFGHJKLMNPQRSTUVWXYZ234567")
+# strkey base-32 alphabet used by Stellar addresses (RFC 4648 base32, which
+# excludes 0, 1, 8, 9 but includes I and O — real addresses contain them).
+_STRKEY_ALPHABET = set("ABCDEFGHIJKLMNOPQRSTUVWXYZ234567")
 # Loopback hosts allowed for custom/development networks.
 _LOOPBACK_HOSTS = {"localhost", "127.0.0.1", "::1", "0.0.0.0"}
 _LOOPBACK_HOSTS |= {f"127.0.0.{i}" for i in range(1, 256)}
+
+# Hostname suffixes that are unambiguous evidence of a private/intranet host
+# (rejected for public networks without needing a DNS lookup).
+_OBVIOUS_PRIVATE_HOST_SUFFIXES = (
+    ".local",
+    ".internal",
+    ".lan",
+    ".home",
+    ".intranet",
+    ".corp",
+    ".localhost",
+)
+_OBVIOUS_PRIVATE_HOSTS = {"localhost", "localhost.localdomain", "ip6-localhost", "ip6-loopback"}
+
+
+def _host_is_private_literal(host: str) -> bool:
+    """Return ``True`` when ``host`` is an IP literal that is not globally routable."""
+    try:
+        address = ipaddress.ip_address(host)
+    except ValueError:
+        return False
+    return (
+        address.is_private
+        or address.is_loopback
+        or address.is_link_local
+        or address.is_reserved
+        or address.is_multicast
+        or address.is_unspecified
+    )
+
+
+def _hostname_is_obviously_private(host: str) -> bool:
+    """Return ``True`` when ``host`` is obviously a private/intranet hostname."""
+    host = host.strip().lower()
+    if host in _OBVIOUS_PRIVATE_HOSTS:
+        return True
+    return any(host.endswith(suffix) for suffix in _OBVIOUS_PRIVATE_HOST_SUFFIXES)
 
 
 class StellarNetwork(StrEnum):
@@ -285,15 +325,20 @@ def _parse_host(url: str) -> tuple[str, str, str] | None:
 def validate_endpoint_url(url: str, *, is_public: bool) -> bool:
     """Return ``True`` if ``url`` is safe to call for the given network type.
 
-    Fail closed: http(s) only; public networks require https; custom networks
-    may only target loopback hosts (local stellar-core / soroban-rpc).
+    Fail closed: http(s) only; public networks require https and must not point
+    at a private/link-local/loopback IP literal or an obviously-private
+    hostname; custom networks may only target loopback hosts (local
+    stellar-core / soroban-rpc). DNS-based verification of public hostnames
+    happens at request time (see ``StellarService``).
     """
     parsed = _parse_host(url)
     if parsed is None:
         return False
     scheme, host, _port = parsed
     if is_public:
-        return scheme == "https"
+        if scheme != "https":
+            return False
+        return not (_host_is_private_literal(host) or _hostname_is_obviously_private(host))
     return host in _LOOPBACK_HOSTS
 
 
@@ -359,9 +404,12 @@ class StellarService:
     """Read-only integration with Stellar Horizon / Soroban RPC.
 
     The service never signs, sends, or funds transactions; it only reads
-    public network data for accounts, transactions, and network info. All
-    endpoint URLs come from configuration and are validated before any
-    request is made (fail closed, SSRF-bounded).
+    public network data for accounts, transactions, ledgers, assets, and
+    network info. All endpoint URLs come from configuration and are validated
+    before any request is made (fail closed, SSRF-bounded): https-only for
+    public networks, loopback-only for custom networks, requests restricted to
+    the configured base URL, redirects refused, response bodies size-capped,
+    and public hosts verified to resolve to globally routable addresses.
     """
 
     def __init__(
@@ -373,8 +421,16 @@ class StellarService:
         timeout: int | None = None,
         max_response_bytes: int | None = None,
         session: requests.Session | None = None,
+        host_resolver=None,
     ) -> None:
-        """Initialize the service with optional explicit endpoint overrides."""
+        """Initialize the service with optional explicit endpoint overrides.
+
+        ``host_resolver`` is an injectable ``getaddrinfo``-compatible callable
+        (``host -> list[(family, type, proto, canonname, sockaddr)]``) used to
+        verify that a public-network host resolves to a globally routable
+        address before a request is made. It defaults to ``socket.getaddrinfo``
+        and is only exercised for public networks; tests may inject a fake.
+        """
         if has_app_context():
             cfg = current_app.config
             network = network or cfg.get("STELLAR_NETWORK")
@@ -386,6 +442,12 @@ class StellarService:
         self._timeout = timeout or DEFAULT_TIMEOUT
         self._max_bytes = max_response_bytes or MAX_RESPONSE_BYTES
         self._session = session or requests.Session()
+        self._strict_host_validation = True
+        if has_app_context():
+            self._strict_host_validation = (
+                current_app.config.get("STELLAR_STRICT_HOST_VALIDATION", True) is not False
+            )
+        self._resolver = host_resolver or (lambda host: socket.getaddrinfo(host, None))
 
     @property
     def config(self) -> NetworkConfig:
@@ -468,22 +530,156 @@ class StellarService:
             "memo": data.get("memo"),
         }
 
+    def get_ledger(self, sequence: int) -> dict:
+        """Fetch a single ledger by sequence number from Horizon (read-only).
+
+        Args:
+            sequence: Ledger sequence number (>= 1).
+
+        Returns:
+            Bounded ledger metadata (sequence, hash, header, timestamps, tx/op
+            counts). The raw ``header`` field is omitted to keep responses
+            small.
+
+        Raises:
+            StellarError: If ``sequence`` is not a positive integer.
+            NetworkError: If the network call fails or the ledger is missing.
+        """
+        try:
+            sequence = int(sequence)
+        except (TypeError, ValueError) as exc:
+            raise StellarError(f"Invalid ledger sequence: {sequence}") from exc
+        if sequence <= 0:
+            raise StellarError(f"Invalid ledger sequence: {sequence}")
+
+        data = self._get_json(f"{self._config.horizon_url}/ledgers/{sequence}")
+        return {
+            "sequence": data.get("sequence"),
+            "hash": data.get("hash"),
+            "ledger_hash": data.get("ledger_hash"),
+            "prev_hash": data.get("prev_hash"),
+            "closed_at": data.get("closed_at"),
+            "protocol_version": data.get("protocol_version"),
+            "base_fee_in_stroops": data.get("base_fee_in_stroops"),
+            "base_reserve_in_stroops": data.get("base_reserve_in_stroops"),
+            "max_tx_set_size": data.get("max_tx_set_size"),
+            "successful_transaction_count": data.get("successful_transaction_count"),
+            "failed_transaction_count": data.get("failed_transaction_count"),
+            "operation_count": data.get("operation_count"),
+            "total_coins": data.get("total_coins"),
+            "fee_pool": data.get("fee_pool"),
+        }
+
+    def get_assets(self, *, cursor: str | None = None, limit: int | None = None) -> dict:
+        """Return a bounded list of issued assets from Horizon (read-only).
+
+        Args:
+            cursor: Horizon pagination cursor (opaque string).
+            limit: Maximum records to return (capped at 100).
+
+        Returns:
+            ``{"records": [...], "next": cursor|None, "prev": cursor|None}``.
+        """
+        if limit is not None:
+            try:
+                limit = max(1, min(int(limit), 100))
+            except (TypeError, ValueError) as exc:
+                raise StellarError(f"Invalid asset limit: {limit}") from exc
+
+        params = {}
+        if cursor:
+            params["cursor"] = str(cursor)
+        if limit:
+            params["limit"] = limit
+        query = "?" + "&".join(f"{k}={v}" for k, v in params.items()) if params else ""
+        data = self._get_json(f"{self._config.horizon_url}/assets{query}")
+        records = (data.get("_embedded") or {}).get("records") or []
+        bounded = [
+            {
+                "asset_type": record.get("asset_type"),
+                "asset_code": record.get("asset_code"),
+                "asset_issuer": record.get("asset_issuer"),
+                "amount": record.get("amount"),
+                "num_accounts": record.get("num_accounts"),
+                "flags": record.get("flags"),
+            }
+            for record in records[:100]
+        ]
+        return {
+            "records": bounded,
+            "next": (data.get("_links") or {}).get("next", {}).get("href"),
+            "prev": (data.get("_links") or {}).get("prev", {}).get("href"),
+        }
+
+    def get_account_transactions(self, address: str, limit: int = 20) -> dict:
+        """Return a bounded list of an account's recent transactions from Horizon.
+
+        Args:
+            address: Stellar account id (G...).
+            limit: Maximum transactions to return (capped at 100).
+
+        Returns:
+            ``{"records": [...], "next": cursor|None}`` where each record is a
+            bounded transaction summary.
+
+        Raises:
+            AccountError: If the address is invalid or the account does not exist.
+            NetworkError: If the network call fails.
+        """
+        if not validate_stellar_address(address):
+            raise AccountError(f"Invalid Stellar address: {address}")
+        try:
+            limit = max(1, min(int(limit), 100))
+        except (TypeError, ValueError) as exc:
+            raise StellarError(f"Invalid transaction limit: {limit}") from exc
+
+        data = self._get_json(
+            f"{self._config.horizon_url}/accounts/{address}/transactions?limit={limit}"
+        )
+        records = (data.get("_embedded") or {}).get("records") or []
+        bounded = [
+            {
+                "hash": record.get("hash"),
+                "ledger": record.get("ledger"),
+                "created_at": record.get("created_at"),
+                "successful": record.get("successful"),
+                "source_account": record.get("source_account"),
+                "memo": record.get("memo"),
+                "fee_charged": record.get("fee_charged"),
+                "max_fee": record.get("max_fee"),
+                "operation_count": record.get("operation_count"),
+            }
+            for record in records[:100]
+        ]
+        return {
+            "records": bounded,
+            "next": (data.get("_links") or {}).get("next", {}).get("href"),
+        }
+
     # -- internal helpers -------------------------------------------------
 
     def _get_json(self, url: str) -> dict:
-        """GET ``url`` and return the JSON body, bounded and SSRF-checked."""
+        """GET ``url`` and return the JSON body, bounded and SSRF-checked.
+
+        Redirects are never followed (fail closed): a 3xx response is treated
+        as an error so the service can never be redirected to a host that was
+        not validated.
+        """
         self._check_url(url)
         try:
             response = self._session.get(
                 url,
                 timeout=self._timeout,
                 stream=True,
+                allow_redirects=False,
                 headers={"Accept": "application/json", "User-Agent": "ai-code-assistant"},
             )
         except requests.RequestException as exc:
             raise NetworkError(f"Stellar network request failed: {exc}") from exc
 
         with response:
+            if response.status_code in (300, 301, 302, 303, 307, 308):
+                raise NetworkError("Stellar network refused a redirect response (fail closed)")
             if response.status_code == 404:
                 raise AccountError(f"Stellar resource not found: {url}")
             if response.status_code >= 400:
@@ -512,6 +708,31 @@ class StellarService:
             raise NetworkError(f"Refusing out-of-base Stellar request: {url}")
         if not validate_endpoint_url(url, is_public=self._config.is_public):
             raise NetworkError(f"Refusing unsafe Stellar endpoint: {url}")
+        self._assert_public_host_resolution(url)
+
+    def _assert_public_host_resolution(self, url: str) -> None:
+        """Reject a public-network host that resolves to a private address.
+
+        Best-effort DNS-level defense-in-depth against config pointing at a
+        hostname that resolves inside the deployment (SSRF). Only runs for
+        public networks; DNS failures are tolerated (the scheme, literal-IP and
+        base-URL guards still apply) because operator-supplied public endpoints
+        are already restricted.
+        """
+        if not self._config.is_public or not self._strict_host_validation:
+            return
+        host = _parse_host(url)[1] if _parse_host(url) else ""
+        if not host or _host_is_private_literal(host) or _hostname_is_obviously_private(host):
+            return
+        try:
+            resolved = self._resolver(host)
+        except Exception:  # DNS unavailable — the structural guards still apply
+            return
+        for info in resolved:
+            sockaddr = info[4] if isinstance(info, tuple) and len(info) > 4 else info
+            ip = sockaddr[0] if isinstance(sockaddr, (tuple, list)) else None
+            if ip and _host_is_private_literal(ip):
+                raise NetworkError(f"Refusing private address for public network: {ip}")
 
 
 def get_stellar_service() -> StellarService:

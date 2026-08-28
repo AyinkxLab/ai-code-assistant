@@ -139,6 +139,13 @@ class Config:
     STELLAR_REQUEST_TIMEOUT = int(os.getenv("STELLAR_REQUEST_TIMEOUT", "15"))
     # Cap on bytes read from a Stellar network response body.
     STELLAR_MAX_RESPONSE_BYTES = int(os.getenv("STELLAR_MAX_RESPONSE_BYTES", str(2 * 1024 * 1024)))
+    # Maximum ledger keys accepted per Soroban RPC getLedgerEntries call
+    # (the RPC service hard-caps at 200; this keeps the app's own bound lower).
+    STELLAR_RPC_MAX_KEYS = int(os.getenv("STELLAR_RPC_MAX_KEYS", "100"))
+    # When enabled, public-network endpoints are additionally verified (via DNS)
+    # to resolve to a globally routable address before any request is made
+    # (defense-in-depth against SSRF through a misconfigured endpoint).
+    STELLAR_STRICT_HOST_VALIDATION = os.getenv("STELLAR_STRICT_HOST_VALIDATION", "1") == "1"
 
 
 class DevelopmentConfig(Config):

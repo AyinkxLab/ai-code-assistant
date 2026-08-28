@@ -43,7 +43,7 @@ class _FakeSession:
         self.response = response
         self.requested_url = None
 
-    def get(self, url, timeout=None, stream=None, headers=None):
+    def get(self, url, timeout=None, stream=None, headers=None, allow_redirects=False):
         self.requested_url = url
         return self.response
 
@@ -62,9 +62,18 @@ class TestAddressValidation:
         assert validate_stellar_address("M" + "A" * 55) is False
 
     def test_invalid_alphabet(self):
-        # 'O', '0', 'I', '1', '8', '9' are excluded from the strkey alphabet.
-        for bad in "O01I89":
+        # '0', '1', '8', '9' are excluded from the strkey alphabet. (I and O
+        # ARE valid: real addresses such as GALAXYVOIDAOPZTDLHILAJQKCVVFMD4IKL
+        # XLSZV5YHO7VY74IWZILUTO contain them.)
+        for bad in "0189":
             assert validate_stellar_address("G" + bad + "A" * 54) is False
+
+    def test_valid_address_with_io(self):
+        # A real Stellar address that contains 'I' and 'O'.
+        assert (
+            validate_stellar_address("GALAXYVOIDAOPZTDLHILAJQKCVVFMD4IKLXLSZV5YHO7VY74IWZILUTO")
+            is True
+        )
 
     def test_not_a_string(self):
         assert validate_stellar_address(12345) is False
