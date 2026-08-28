@@ -250,6 +250,28 @@ def _client() -> GitHubClient:
     return get_github_client()
 
 
+def _stellar_repo_context(client: GitHubClient, full_name: str) -> list[dict]:
+    """Return a bounded, detection-relevant repo context for Stellar analysis.
+
+    Best-effort and read-only: if any GitHub call fails the helper returns an
+    empty list so analysis falls back to the generic path. Only fetches a small
+    set of detection-relevant files (manifests, Stellar configs, contract
+    layouts, CLI-tooling files) that the current user can already access via
+    their own token — never the whole repository.
+    """
+    from app.services.stellar_detection import detection_relevant_paths
+
+    try:
+        repo = client.get_repository(full_name)
+        default_branch = repo.get("default_branch") or "HEAD"
+        tree = client.get_tree(full_name, default_branch, recursive=True)
+    except GitHubError:
+        return []
+    paths = [entry.get("path", "") for entry in tree.get("tree", []) if entry.get("type") == "blob"]
+    relevant = detection_relevant_paths(paths)
+    return client.get_file_text_batch(full_name, relevant, ref=default_branch)
+
+
 @bp.route("/api/repos")
 @login_required
 def api_repos():
@@ -491,7 +513,9 @@ def api_issue_detail(owner: str, repo: str, number: int):
 
     payload = issue_payload(data)
     if analyze:
-        payload["analysis"] = analysis.analyze_issue(payload, owner, repo)
+        payload["analysis"] = analysis.analyze_issue(
+            payload, owner, repo, repo_files=_stellar_repo_context(client, full_name)
+        )
     return jsonify(payload)
 
 
@@ -541,7 +565,9 @@ def api_pull_detail(owner: str, repo: str, number: int):
         for f in files
     ]
     if analyze:
-        payload["analysis"] = analysis.analyze_pull_request(payload, files)
+        payload["analysis"] = analysis.analyze_pull_request(
+            payload, files, repo_files=_stellar_repo_context(client, full_name)
+        )
     return jsonify(payload)
 
 

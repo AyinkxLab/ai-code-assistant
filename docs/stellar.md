@@ -162,6 +162,41 @@ flask stellar health
 flask stellar contract C…
 ```
 
+## Stellar-aware GitHub analysis (PR and issue)
+
+The existing GitHub PR and issue AI analyses are **detection-driven** and
+Stellar-aware:
+
+- When analyzing a pull request, `analyze_pull_request` runs the existing
+  detection (`detect_stellar_project`) over the PR's changed files
+  (`filename`/`patch`) plus a small, bounded slice of detection-relevant
+  repository files (manifests, Stellar configs, contract layouts, CLI-tooling
+  files). The repo slice is fetched through the user's own GitHub token and is
+  capped, so nothing private or unbounded is pulled in.
+- When analyzing an issue, `analyze_issue` runs the same detection over the
+  same bounded repo slice.
+- If the evidence yields a Stellar/Soroban confidence of `possible` or
+  `likely`, a **bounded, clearly-labelled Stellar context block** (confidence,
+  signals/evidence, network hints, relevant files, changed files) and
+  Stellar-aware review guidance are appended to the prompt. The guidance covers
+  authorization/access control, contract/admin authority, cross-contract
+  calls, storage/TTL handling, `panic!`/`unwrap!`, network/config mistakes,
+  secret/key exposure, and unsafe contract-state assumptions — restricted to
+  what the diff/context actually supports.
+- If detection is `none` (including **plain Rust** without Soroban evidence, or
+  a repo that merely mentions "Stellar"), the existing generic PR/issue
+  analysis runs unchanged with **no** Stellar instructions.
+- A failed detection never breaks the analysis: it falls back to the generic
+  path. No manual `stellar=true` flag exists — behaviour is always derived from
+  detection.
+
+No-fabrication policy: the Stellar guidance explicitly forbids claiming formal
+verification, deployed contracts, succeeded transactions, or live ledger/RPC
+state. PR/issue text and repository content are framed as untrusted data so
+they cannot redefine the system instructions. Authorization is unchanged:
+GitHub calls stay user-token-scoped and analysis never grants additional
+access.
+
 ## Local development
 
 - Point `STELLAR_NETWORK=custom` and `STELLAR_HORIZON_URL` /

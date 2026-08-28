@@ -110,6 +110,12 @@ Operators may override the RPC endpoint with `STELLAR_RPC_URL`, subject to the
 same endpoint validation (https for public networks, loopback-only for custom).
 There is **no** way for a user or an imported project to supply an RPC URL.
 
+> Related: the GitHub PR/issue analyses are **detection-driven** and
+> Stellar-aware without calling the RPC. They reuse `stellar_detection` over
+> the changed files / a bounded repo slice and add bounded Stellar review
+> guidance; they never claim live ledger/RPC state (see
+> [docs/stellar.md](stellar.md)).
+
 ## Security model
 
 - **Read-only.** The client implements no signing or submission path.

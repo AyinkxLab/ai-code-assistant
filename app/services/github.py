@@ -284,6 +284,38 @@ class GitHubClient:
                 return raw.decode("utf-8", errors="replace")
         raise GitHubError("This file is not a text file or is too large to display.")
 
+    def get_file_text_batch(
+        self,
+        full_name: str,
+        paths: list[str],
+        ref: str | None = None,
+        *,
+        max_files: int = 25,
+        max_chars: int = 200_000,
+    ) -> list[dict]:
+        """Fetch bounded text contents for a list of repo paths (best-effort).
+
+        Used to assemble a small, detection-relevant slice of a repository for
+        Stellar/Soroban analysis without downloading the whole repo. Files that
+        are binary, oversized, or cannot be read are skipped silently so a
+        failed fetch never breaks the analysis.
+
+        Returns ``[{"path": str, "content": str}, ...]`` with at most
+        ``max_files`` entries, each content capped at ``max_chars`` characters.
+        """
+        rows: list[dict] = []
+        for path in paths:
+            if len(rows) >= max_files:
+                break
+            try:
+                text = self.get_file_text(full_name, path, ref=ref)
+            except GitHubError:
+                continue
+            if text is None:
+                continue
+            rows.append({"path": path, "content": text[:max_chars]})
+        return rows
+
     # -- Commits ------------------------------------------------------------
 
     def list_commits(

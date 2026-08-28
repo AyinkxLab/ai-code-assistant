@@ -468,3 +468,59 @@ def detect_stellar_network(files: Iterable[Any]) -> dict[str, Any]:
     if len(networks) > 1:
         return {"network": None, "evidence": evidence[:20]}
     return {"network": next(iter(networks)), "evidence": evidence[:20]}
+
+
+# ---------------------------------------------------------------------------
+# Detection adapters for repository/diff contexts (PR and issue analysis)
+# ---------------------------------------------------------------------------
+#
+# These are thin adapters over ``detect_stellar_project`` so the same
+# evidence-based detector can run against repository file dicts or PR changed
+# files (``filename``/``patch``). They never re-implement detection logic.
+
+
+def detection_relevant_paths(paths: Iterable[str], *, limit: int = 25) -> list[str]:
+    """Return up to ``limit`` repo paths whose contents matter for detection.
+
+    Only files that can carry Stellar/Soroban evidence are selected (manifests,
+    Stellar config files, ``.soroban`` paths, contract-layout paths, and
+    Stellar/Soroban CLI-tooling files) so a bounded content fetch can focus on
+    what detection actually reads.
+    """
+    selected: list[str] = []
+    for path in paths:
+        lower = path.lower()
+        if (
+            _is_manifest(path)
+            or _is_config_file(path)
+            or _is_contract_layout(path)
+            or _is_cli_tooling(path)
+            or ".soroban" in lower
+        ):
+            selected.append(path)
+        if len(selected) >= limit:
+            break
+    return selected
+
+
+def detect_stellar_from_dicts(rows: Iterable[dict]) -> StellarSignals:
+    """Run Stellar/Soroban detection over dict rows with ``path``+``content``.
+
+    Accepts dicts using either ``path``/``content`` or ``filename``/``patch``
+    keys (e.g. PR changed-file dicts) and adapts them for
+    :func:`detect_stellar_project`.
+    """
+    from types import SimpleNamespace
+
+    adapted: list[SimpleNamespace] = []
+    for row in rows or []:
+        if not isinstance(row, dict):
+            continue
+        path = row.get("path") or row.get("filename") or ""
+        if not path:
+            continue
+        content = row.get("content")
+        if content is None:
+            content = row.get("patch")
+        adapted.append(SimpleNamespace(path=path, content=content))
+    return detect_stellar_project(adapted)

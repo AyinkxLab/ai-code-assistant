@@ -25,6 +25,8 @@ kept in sync as the plugin system grows.
 | Unauthorized plugin capabilities| Capabilities are validated against the `Capability` enum before granting; unknown strings are rejected. | Implemented |
 | Workspace isolation             | Capability grants are scoped `(plugin_id, workspace_id, capability)` with a uniqueness constraint. | Implemented |
 | Project isolation               | The Stellar AI analysis reuses `assert_content_access` (owner-only, fails closed). Project files are only ever read for projects the caller may access. | Implemented |
+| GitHub analysis authorization   | Stellar-aware PR/issue analysis is detection-driven; the bounded repo slice is fetched through the user's own GitHub token (GitHub's permission model decides access). No manual `stellar=true` flag exists and no additional access is granted. | Implemented |
+| Prompt-injection resistance (GitHub analysis) | The Stellar PR/issue guidance frames PR/issue text, commit messages, and repository files as untrusted data, not instructions; detection never follows content from untrusted sources. | Implemented |
 | Stellar data access             | `StellarService` is read-only; it never signs, sends, or funds. | Implemented |
 | Secret exposure                 | `.env`/key files are skipped at project import; the Stellar prompt explicitly flags hard-coded credentials; service config uses env vars only; no secrets are stored or logged. | Implemented |
 | Endpoint manipulation           | Endpoint URLs come from `current_app.config` only. | Implemented |
@@ -60,6 +62,10 @@ Security-relevant coverage includes:
   honest "unavailable" handling.
 - `tests/test_stellar_analysis.py` — non-owner and unauthenticated users fail
   closed; non-Stellar projects are reported honestly.
+- `tests/test_stellar_analysis_github.py` — detection-driven PR/issue analysis:
+  Stellar context only when detected, non-Stellar and plain-Rust repos stay
+  generic, detection failure never crashes, confidence is respected, context is
+  bounded, and the GitHub routes preserve user-token authorization.
 - `tests/test_plugins_manifest.py` — malicious/invalid manifests rejected.
 - `tests/test_capabilities.py` — capability grants are explicit, deduplicated,
   validated, and revoked correctly.
