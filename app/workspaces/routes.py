@@ -76,6 +76,7 @@ from app.services.llm import LLMProviderError, get_provider
 from app.services.notifications import notify
 from app.services.permissions import resolve_workspace
 from app.services.search import search_project
+from app.services.stellar_detection import project_stellar_metadata
 from app.workspaces import bp
 
 MAX_TREE_ENTRIES = 1000
@@ -424,7 +425,22 @@ def _import_archive(workspace: Workspace):
         workspace_id=workspace.id,
         user_id=current_user.id,
     )
-    return jsonify(project.to_dict()), 201
+    stellar_meta = project_stellar_metadata(project)
+    if stellar_meta.get("is_stellar"):
+        emit_event(
+            "stellar.network.detected",
+            data={
+                "project_id": project.id,
+                "confidence": stellar_meta.get("confidence"),
+                "is_soroban": stellar_meta.get("is_soroban"),
+                "network_hints": stellar_meta.get("network_hints") or [],
+            },
+            workspace_id=workspace.id,
+            user_id=current_user.id,
+        )
+    response = project.to_dict()
+    response["stellar"] = stellar_meta
+    return jsonify(response), 201
 
 
 def _import_github(workspace: Workspace):
@@ -469,7 +485,22 @@ def _import_github(workspace: Workspace):
         workspace_id=workspace.id,
         user_id=current_user.id,
     )
-    return jsonify(project.to_dict()), 201
+    stellar_meta = project_stellar_metadata(project)
+    if stellar_meta.get("is_stellar"):
+        emit_event(
+            "stellar.network.detected",
+            data={
+                "project_id": project.id,
+                "confidence": stellar_meta.get("confidence"),
+                "is_soroban": stellar_meta.get("is_soroban"),
+                "network_hints": stellar_meta.get("network_hints") or [],
+            },
+            workspace_id=workspace.id,
+            user_id=current_user.id,
+        )
+    response = project.to_dict()
+    response["stellar"] = stellar_meta
+    return jsonify(response), 201
 
 
 @bp.route("/api/projects/<int:project_id>", methods=["DELETE"])
@@ -605,6 +636,18 @@ def api_project_stats(project_id: int):
             "index_duration_seconds": duration,
         }
     )
+
+
+@bp.route("/api/projects/<int:project_id>/stellar", methods=["GET"])
+@login_required
+def api_project_stellar(project_id: int):
+    """Return the project's Stellar/Soroban detection metadata (read-only)."""
+    project = _get_project(project_id)
+    from app.services.stellar_detection import detect_stellar_network
+
+    metadata = project_stellar_metadata(project)
+    metadata["network"] = detect_stellar_network(project.files.all())
+    return jsonify(metadata)
 
 
 def _is_test_path(path: str) -> bool:
