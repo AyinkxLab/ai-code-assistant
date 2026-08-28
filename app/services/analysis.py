@@ -4,11 +4,18 @@ These helpers build focused prompts from a bounded slice of repository context
 and delegate to the configured LLM provider. The prompts ask the model to
 clearly label uncertainty so the UI can distinguish confirmed defects from
 suggestions.
+
+When Stellar/Soroban signals are detected in the repository or PR diff, a
+Stellar-aware section is appended to the prompt so the model can surface
+contract-specific concerns (authorization, storage keys, ``extend_ttl``,
+``panic!``/``unwrap`` in contract paths, cross-contract calls). When no
+signals are found, the generic prompt is unchanged.
 """
 
 from __future__ import annotations
 
 from app.services.llm import LLMProviderError, get_provider
+from app.services.stellar_detection import StellarSignals, detect_stellar_project
 
 # Hard cap on the amount of repository text fed to the model for any single
 # analysis, so a request never uploads the whole repository.
@@ -21,6 +28,99 @@ _SYSTEM = (
     "'[CONFIRMED]' and anything that is a hypothesis, trade-off, or suggestion "
     "with '[SUGGESTION]'."
 )
+
+# -- Stellar-aware prompt sections -------------------------------------------
+
+_STELLAR_PR_SECTION = """
+Stellar/Soroban review (detected):
+This repository shows Stellar/Soroban signals. In addition to the generic
+review, pay attention to Soroban-specific concerns in the changed files:
+- Contract structure: #[contractimpl]/#[contract] usage, contract types.
+- Authorization: require_auth / address checks before privileged operations.
+- Storage: storage key handling, extend_ttl / persist patterns.
+- Error handling: panic!/unwrap in contract code paths (should be avoided).
+- Cross-contract calls: proper interface usage and error propagation.
+- Stellar dependencies: Soroban crates / SDKs touched by the change.
+- Stellar config files (e.g. stellar.toml) if changed.
+Mark every Stellar finding [CONFIRMED] or [SUGGESTION] as usual.
+"""
+
+_STELLAR_ISSUE_SECTION = """
+Stellar/Soroban context (detected):
+This repository shows Stellar/Soroban signals. Consider Stellar-specific
+aspects in your analysis:
+- Soroban SDK / XDR concerns relevant to the issue.
+- Contract structure and storage patterns.
+- Network behaviour (testnet/mainnet/futurenet) if applicable.
+- Authorization, error handling, and cross-contract call patterns.
+Keep the [CONFIRMED]/[SUGGESTION] labelling and do not fabricate Stellar
+claims beyond what the evidence supports.
+"""
+
+
+class _FileAdapter:
+    """Adapt a plain dict (``path``, ``content``) into a detection-compatible object.
+
+    :func:`detect_stellar_project` expects objects with ``.path`` and
+    ``.content`` attributes. This adapter wraps a dict so the same detection
+    logic can be reused for GitHub PR changed-file dicts and raw repo file
+    listings without re-implementing detection.
+    """
+
+    __slots__ = ("path", "content")
+
+    def __init__(self, path: str, content: str | None) -> None:
+        self.path = path
+        self.content = content
+
+    def __repr__(self) -> str:  # pragma: no cover - debugging aid
+        return f"_FileAdapter(path={self.path!r})"
+
+
+def _adapt_pr_files(files: list[dict]) -> list[_FileAdapter]:
+    """Convert GitHub PR file dicts into detection-compatible objects.
+
+    Each PR file dict has ``filename`` and ``patch`` keys (the latter may be
+    ``None`` for binary files). The patch text is a diff, not full file
+    content, but it still contains Soroban attributes, imports, and crate
+    names in added/removed lines — sufficient for heuristic detection.
+    """
+    adapters: list[_FileAdapter] = []
+    for file in files:
+        filename = file.get("filename") or file.get("path") or ""
+        patch = file.get("patch") or file.get("content")
+        if filename:
+            adapters.append(_FileAdapter(filename, patch))
+    return adapters
+
+
+def _adapt_repo_files(files: list[dict] | list[tuple[str, str | None]]) -> list[_FileAdapter]:
+    """Convert repo file dicts/tuples into detection-compatible objects.
+
+    Accepts either ``[{"path": ..., "content": ...}, ...]`` or
+    ``[("path", "content"), ...]`` for flexibility.
+    """
+    adapters: list[_FileAdapter] = []
+    for item in files:
+        if isinstance(item, dict):
+            path = item.get("path") or item.get("filename") or ""
+            content = item.get("content") or item.get("patch")
+        elif isinstance(item, (list, tuple)) and len(item) >= 1:
+            path = item[0]
+            content = item[1] if len(item) > 1 else None
+        else:
+            continue
+        if path:
+            adapters.append(_FileAdapter(path, content))
+    return adapters
+
+
+def _safe_detect(adapters: list[_FileAdapter]) -> StellarSignals | None:
+    """Run detection, returning ``None`` on any unexpected failure."""
+    try:
+        return detect_stellar_project(adapters)
+    except Exception:  # noqa: BLE001 - detection must never crash analysis
+        return None
 
 
 def _run(prompt: str, *, system: str = _SYSTEM) -> str:
@@ -43,10 +143,30 @@ def _clip(text: str, limit: int = MAX_CONTEXT_CHARS) -> str:
     return text[:limit] + "\n…[context truncated]"
 
 
-def analyze_issue(issue: dict, owner: str, repo: str) -> dict:
-    """Produce a structured AI analysis of a GitHub issue."""
+def analyze_issue(
+    issue: dict,
+    owner: str,
+    repo: str,
+    *,
+    repo_files: list[dict] | list[tuple[str, str | None]] | None = None,
+) -> dict:
+    """Produce a structured AI analysis of a GitHub issue.
+
+    When *repo_files* is provided, Stellar/Soroban detection is run on the
+    file list. If detection is positive, a Stellar-aware section is appended
+    to the prompt covering Soroban SDK/XDR concerns, contract structure, and
+    network behaviour. When detection is negative, uncertain, or no files are
+    provided, the generic issue analysis prompt is used unchanged.
+    """
     body = issue.get("body") or "(no description provided)"
     labels = ", ".join(issue.get("labels") or []) or "none"
+
+    stellar_section = ""
+    if repo_files:
+        signals = _safe_detect(_adapt_repo_files(repo_files))
+        if signals is not None and signals.is_stellar:
+            stellar_section = _STELLAR_ISSUE_SECTION
+
     prompt = f"""Repository: {owner}/{repo}
 Issue #{issue.get('number')}: {issue.get('title')}
 State: {issue.get('state')}
@@ -54,7 +174,7 @@ Labels: {labels}
 
 Description:
 {_clip(body)}
-
+{stellar_section}
 Provide a structured analysis with these sections:
 1. Summary - one short paragraph
 2. Problem identification - what is actually being asked/fixed
@@ -71,7 +191,15 @@ Provide a structured analysis with these sections:
 
 
 def analyze_pull_request(pr: dict, files: list[dict]) -> dict:
-    """Produce a structured AI analysis of a pull request."""
+    """Produce a structured AI analysis of a pull request.
+
+    Stellar/Soroban detection is run on the PR changed-file dicts (adapted
+    via :func:`_adapt_pr_files`). When detection is positive, a Stellar-aware
+    section is appended to the review prompt covering authorization patterns,
+    ``panic!``/``unwrap`` in contract paths, storage keys, ``extend_ttl``, and
+    cross-contract calls. When not detected, the generic review is unchanged.
+    Detection failure is handled safely (falls back to generic review).
+    """
     body = pr.get("body") or "(no description provided)"
     changed = []
     for file in files[:40]:
@@ -83,6 +211,12 @@ def analyze_pull_request(pr: dict, files: list[dict]) -> dict:
         )
     files_text = "\n".join(changed) if changed else "(no file-level diff available)"
 
+    # Run Stellar detection on the adapted PR files.
+    stellar_section = ""
+    signals = _safe_detect(_adapt_pr_files(files))
+    if signals is not None and signals.is_stellar:
+        stellar_section = _STELLAR_PR_SECTION
+
     prompt = f"""Pull request #{pr.get('number')}: {pr.get('title')}
 State: {pr.get('state')} (merged: {pr.get('merged')})
 Author: {pr.get('author')}
@@ -93,7 +227,7 @@ Description:
 
 Changed files:
 {_clip(files_text, MAX_CONTEXT_CHARS // 2)}
-
+{stellar_section}
 Provide a structured review with these sections:
 1. Summary - what this PR does, one short paragraph
 2. Code-change explanation - what each notable change does
@@ -106,6 +240,7 @@ Provide a structured review with these sections:
         "pr_number": pr.get("number"),
         "title": pr.get("title"),
         "analysis": _run(prompt),
+        "stellar_detected": signals is not None and signals.is_stellar,
     }
 
 
