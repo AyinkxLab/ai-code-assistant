@@ -47,6 +47,7 @@ def create_app(config_name: str | None = None) -> Flask:
     from app.plugins import bp as plugins_bp
     from app.prompts import bp as prompts_bp
     from app.reviews import bp as reviews_bp
+    from app.stellar import bp as stellar_bp
     from app.tools import bp as tools_bp
     from app.workspaces import bp as workspaces_bp
 
@@ -60,6 +61,7 @@ def create_app(config_name: str | None = None) -> Flask:
     app.register_blueprint(workspaces_bp)
     app.register_blueprint(collaboration_bp)
     app.register_blueprint(reviews_bp)
+    app.register_blueprint(stellar_bp)
 
     # Make the current time available to every template as ``now``.
     @app.context_processor
@@ -88,5 +90,11 @@ def create_app(config_name: str | None = None) -> Flask:
 
         db.create_all()
         print("Initialized the database.")
+
+    # Read-only Stellar/Soroban CLI (network info, address validation, account
+    # and contract inspection). Commands are bounded and never sign/submit.
+    from app.services.stellar_cli import register_stellar_cli
+
+    register_stellar_cli(app)
 
     return app

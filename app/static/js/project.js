@@ -138,11 +138,12 @@
     document.querySelectorAll("#project-tabs .repo-tab").forEach(function (tab) {
       tab.classList.toggle("active", tab.dataset.tab === name);
     });
-    ["files", "search", "chat", "analysis", "stats", "discussion"].forEach(function (key) {
+    ["files", "search", "chat", "analysis", "stats", "stellar", "discussion"].forEach(function (key) {
       document.getElementById("tab-" + key).hidden = key !== name;
     });
     if (name === "chat" && !chatLoaded) loadChatHistory();
     if (name === "stats") loadStats();
+    if (name === "stellar") loadStellar();
     if (name === "discussion") loadComments();
   }
 
@@ -470,6 +471,59 @@
   function metric(label, value) {
     return '<div class="metric-card"><span class="metric-value">' + escapeHtml(value) +
       '</span><span class="metric-label">' + escapeHtml(label) + "</div>";
+  }
+
+  // -------------------------------------------------------------- stellar
+
+  function loadStellar() {
+    var output = document.getElementById("stellar-output");
+    api("/workspaces/api/projects/" + PROJECT_ID + "/stellar")
+      .then(function (data) {
+        var html = "";
+        var badge = data.is_stellar
+          ? '<span class="tag tag-confirmed">Stellar project</span>'
+          : '<span class="tag">Not a Stellar project</span>';
+        html += '<div class="stellar-panel">';
+        html += "<div><h3>Stellar / Soroban detection</h3>" + badge + "</div>";
+        html += "<ul class=\"metric-list\">";
+        html += "<li><code>Confidence</code> — " + escapeHtml(data.confidence) + "</li>";
+        html += "<li><code>Stellar</code> — " + (data.is_stellar ? "yes" : "no") + "</li>";
+        html += "<li><code>Soroban (smart contracts)</code> — " + (data.is_soroban ? "yes" : "no") + "</li>";
+        if (data.network && data.network.network) {
+          html += "<li><code>Network hint</code> — " + escapeHtml(data.network.network) + "</li>";
+        }
+        html += "</ul>";
+
+        if (data.evidence && data.evidence.length) {
+          html += '<h3 class="metric-title">Evidence</h3><ul class="metric-list">';
+          data.evidence.forEach(function (line) {
+            html += "<li>" + escapeHtml(line) + "</li>";
+          });
+          html += "</ul>";
+        }
+        if (data.relevant_files && data.relevant_files.length) {
+          html += '<h3 class="metric-title">Relevant Stellar files</h3><ul class="metric-list">';
+          data.relevant_files.forEach(function (path) {
+            html += "<li><code>" + escapeHtml(path) + "</code></li>";
+          });
+          html += "</ul>";
+        }
+        if (data.is_stellar) {
+          html +=
+            '<p class="field-hint">Run <b>Stellar</b> or <b>Stellar Security</b> ' +
+            "analysis from the Analysis tab for an AI review grounded in these files.</p>";
+        } else {
+          html +=
+            '<p class="field-hint">This project shows no Stellar/Soroban signals. ' +
+            "Plain Rust, Python, JavaScript, and other projects are never classified " +
+            "as Stellar without concrete evidence.</p>";
+        }
+        html += "</div>";
+        output.innerHTML = html;
+      })
+      .catch(function (error) {
+        output.innerHTML = '<p class="sidebar-empty">' + escapeHtml(error.message) + "</p>";
+      });
   }
 
   // ------------------------------------------------------------ discussion

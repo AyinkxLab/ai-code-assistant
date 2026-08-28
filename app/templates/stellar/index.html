@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+
+{% block title %}Stellar / Soroban - {{ config.APP_NAME }}{% endblock %}
+
+{% block content %}
+<div class="github-header">
+  <div>
+    <h1>Stellar / Soroban developer tools</h1>
+    <p class="repo-meta">
+      Read-only network, account, and contract inspection bound to the configured
+      Stellar network ({{ config.STELLAR_NETWORK }}). Nothing here signs, simulates,
+      or submits transactions, and no secrets are ever handled.
+    </p>
+  </div>
+</div>
+
+<div class="stellar-page">
+  <section id="stellar-network-panel" class="prompt-editor">
+    <h2>Network status</h2>
+    <button id="stellar-network-refresh" class="btn btn-ghost btn-sm" type="button">Refresh</button>
+    <div id="stellar-network-output"><p class="sidebar-empty">Loading network status…</p></div>
+  </section>
+
+  <section id="stellar-account-panel" class="prompt-editor">
+    <h2>Account inspection</h2>
+    <p class="field-hint">Look up a Stellar account (G…) on the configured network. Read-only.</p>
+    <div class="repo-toolbar">
+      <input id="stellar-account-input" class="sidebar-search" type="text" placeholder="G… account address">
+      <button id="stellar-account-btn" class="btn btn-primary btn-sm" type="button">Inspect</button>
+    </div>
+    <div id="stellar-account-output"></div>
+  </section>
+
+  <section id="stellar-contract-panel" class="prompt-editor">
+    <h2>Contract inspection</h2>
+    <p class="field-hint">
+      Inspect a Soroban contract (C…). Ledger entries are retrieved but not
+      decoded — raw XDR is returned bounded.
+    </p>
+    <div class="repo-toolbar">
+      <input id="stellar-contract-input" class="sidebar-search" type="text" placeholder="C… contract id">
+      <input id="stellar-wasm-input" class="sidebar-search" type="text" placeholder="wasm hash (hex, optional)">
+      <button id="stellar-contract-btn" class="btn btn-primary btn-sm" type="button">Inspect</button>
+    </div>
+    <div id="stellar-contract-output"></div>
+  </section>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/stellar.js') }}"></script>
+{% endblock %}
