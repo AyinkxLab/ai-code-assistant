@@ -1,123 +1,187 @@
 # Stellar / Soroban Developer Tooling
 
-This project includes a **foundation** for Stellar/Soroban developer tooling:
-safe network configuration, a read-only Stellar service, heuristic project
-detection, and a Stellar-aware AI analysis. It does **not** yet implement
-transaction signing, funds transfer, XDR inspection, or a full Soroban RPC
-client — those are tracked as contributor work under the Phase 8 milestone.
+The AI Code Assistant includes Stellar/Soroban developer tooling: safe network
+configuration, a read-only Horizon service, a read-only **Stellar RPC**
+(Soroban RPC) client, heuristic project detection, contract/account
+inspection, and Stellar-aware AI analysis.
 
-> Honest status: this is a real, tested foundation. Anything not listed below
-> as implemented should be assumed **not implemented yet**.
+> Honest status: everything below is implemented and tested. Anything not
+> listed below should be assumed **not implemented yet** (see
+> [What is not implemented](#what-is-not-implemented)).
 
 ## Why Stellar support exists
 
-The AI Code Assistant is a developer productivity tool. Stellar/Soroban
-developers spend significant time on contract structure, dependency hygiene,
-network configuration, and code review. The foundation here lets the assistant:
+Stellar/Soroban developers spend significant time on contract structure,
+dependency hygiene, network configuration, and code review. The assistant
+helps by:
 
-1. Recognize a Soroban/Stellar project when it is imported.
-2. Provide a read-only, SSRF-safe view of Stellar network data.
-3. Run an AI analysis grounded in the actual contract files and manifests.
+1. Recognizing a Soroban/Stellar project when it is imported (with explicit
+   confidence, and never misclassifying plain Rust).
+2. Providing a read-only, SSRF-safe view of live Stellar network data (network
+   health, ledgers, accounts, contracts, ledger entries, transactions,
+   events).
+3. Running AI analyses grounded in the actual contract files, manifests, and
+   Stellar configuration.
 
-All Stellar data flows through the existing Phase 7 authorization boundaries:
-a user can only analyze projects they own, and nothing is ever sent to the AI
-that the user is not already authorized to see.
+All Stellar data flows through the existing authorization boundaries: a user
+can only analyze projects they own, and the RPC/Horizon clients only read
+public network data bound to the configured network.
 
 ## What is implemented
 
 ### Network configuration (`app/config.py`, `.env.example`)
 
-| Variable                  | Default                                    | Description                           |
-| ------------------------- | ------------------------------------------ | ------------------------------------- |
-| `STELLAR_NETWORK`         | `testnet`                                  | `mainnet` \| `testnet` \| `futurenet` \| `custom` |
-| `STELLAR_HORIZON_URL`     | (preset for network)                       | Override Horizon endpoint             |
-| `STELLAR_RPC_URL`         | (preset for network)                       | Override Soroban RPC endpoint         |
-| `STELLAR_REQUEST_TIMEOUT` | `15`                                       | Outbound request timeout (seconds)    |
-| `STELLAR_MAX_RESPONSE_BYTES` | `2097152`                               | Cap on response body size             |
+| Variable                  | Default    | Description                                     |
+| ------------------------- | ---------- | ----------------------------------------------- |
+| `STELLAR_NETWORK`         | `testnet`  | `mainnet` \| `testnet` \| `futurenet` \| `custom` |
+| `STELLAR_HORIZON_URL`     | (preset)   | Override Horizon endpoint                       |
+| `STELLAR_RPC_URL`         | (preset)   | Override Stellar RPC endpoint                   |
+| `STELLAR_REQUEST_TIMEOUT` | `15`       | Outbound request timeout (seconds)              |
+| `STELLAR_MAX_RESPONSE_BYTES` | `2097152` | Cap on response body size                    |
+| `STELLAR_RPC_MAX_KEYS`    | `100`      | Max ledger keys per `getLedgerEntries` call    |
+| `STELLAR_STRICT_HOST_VALIDATION` | `1` | DNS-verify public hosts resolve publicly     |
 
-Defaults are testnet, so nothing touches real XLM unless explicitly
+Defaults are **testnet**, so nothing touches real XLM unless explicitly
 configured. Explicit endpoints are validated before use (see
 [Endpoint safety](#endpoint-safety)).
 
 ### Network presets (`app/services/stellar.py`)
 
-- `mainnet`, `testnet`, `futurenet` — official public endpoints.
-- `local` — loopback-only configuration for a local `stellar-core` /
-  `soroban-rpc`.
+- `mainnet`, `testnet`, `futurenet` — official public endpoints (Horizon + RPC).
+- `local` / `custom` — loopback-only configuration for a local
+  `stellar-core` / `stellar-rpc`.
 
-### Read-only Stellar service (`app/services/stellar.py::StellarService`)
+### Read-only Horizon service (`app/services/stellar.py::StellarService`)
 
 - `get_network_info()` — network metadata (never contacts the node).
 - `validate_address(address)` — structural G-address validation.
-- `get_account(address)` — bounded account lookup from Horizon.
-- `get_transaction(hash)` — bounded transaction lookup from Horizon.
+- `get_account(address)` — bounded account lookup.
+- `get_transaction(hash)` — bounded transaction lookup.
+- `get_ledger(sequence)` — bounded ledger lookup.
+- `get_assets(cursor, limit)` — bounded issued-asset list.
+- `get_account_transactions(address, limit)` — bounded account history.
 
-The service never signs, sends, or funds transactions.
+### Read-only Stellar RPC client (`app/services/soroban_rpc.py`)
+
+`SorobanRpcClient` implements the **read-only** subset of the current Stellar
+RPC API (see [docs/soroban.md](soroban.md)): `getHealth`, `getVersionInfo`,
+`getLatestLedger`, `getNetwork`, `getLedgerEntries`, `getLedgers`,
+`getTransaction`, `getTransactions`, `getEvents`, `getFeeStats`. It never
+implements `sendTransaction` or `simulateTransaction`.
+
+### strkey + LedgerKey encoders (`app/services/stellar_xdr.py`)
+
+Minimal, fixture-verified encoders for SEP-23 strkeys (with full CRC16
+checksum validation) and the `LedgerKey` values used by `getLedgerEntries`
+(account, contract-instance, contract-code). Contract/account inspection
+therefore validates addresses properly rather than structurally only.
+
+### Inspection (`app/services/stellar_inspection.py`)
+
+- `network_status()` — configured network + best-effort live RPC health /
+  latest ledger (honest when the RPC is unreachable).
+- `inspect_account(address)` — parsed account data plus ledger freshness.
+- `inspect_contract(contract_id, wasm_hash=None)` — the contract's instance
+  ledger entry and (optionally) its deployed wasm metadata. Raw XDR is
+  returned bounded and marked **not decoded**.
+- `inspect_ledger_entry(key)` — a live ledger entry by base64 `LedgerKey`.
 
 ### Project detection (`app/services/stellar_detection.py`)
 
-`detect_stellar_project(files)` heuristically classifies an indexed project:
+`detect_stellar_project(files)` classifies an indexed project:
 
 - **likely** — Soroban crate in `Cargo.toml`, or `#[contractimpl]` /
   `#[contract]` attributes / `soroban_sdk::` imports in Rust sources.
 - **possible** — Stellar SDK dependency (JS/Python/Go), a `stellar.toml` /
-  `soroban.toml` / `.soroban` config, or a `contracts/` layout.
+  `soroban.toml` / `.soroban` config, a `contracts/` layout, or Stellar/Soroban
+  CLI tooling in build/CI files.
 - **none** — otherwise. A plain Rust crate is never classified as Soroban.
+
+`detect_stellar_network(files)` extracts a network hint (testnet/mainnet/
+futurenet) from config passphrases and file names — never from live data.
+Detection metadata is attached to every import response and exposed via
+`GET /workspaces/api/projects/<id>/stellar`.
 
 ### Stellar-aware AI analysis (`app/services/project_analysis.py`)
 
-A new analysis kind, `stellar`, is available on the project analyzer:
+Two analysis kinds: **`stellar`** (project overview for a Stellar developer)
+and **`stellar_security`** (Soroban-aware security review). Both:
 
-- Runs the same content-access gate as every other analysis (owner-only,
+- Run the same content-access gate as every other analysis (owner-only,
   fails closed).
-- If no Stellar signals are detected, it says so explicitly — it never
-  fabricates Stellar claims.
-- Otherwise it assembles bounded context from the contract sources, manifests,
-  and Stellar configuration and asks the model for: project kind, contract
-  responsibilities, configured networks/endpoints, dependency purpose, and
-  concrete contract-specific risks (panics, unwraps, auth checks, tests).
+- Report honestly when the project is not Stellar.
+- Ground claims in the indexed files, mark `[CONFIRMED]` vs `[SUGGESTION]`,
+  and include an honest live-RPC availability note.
 
-The prompt instructs the model to never claim a Stellar integration,
-deployment, or partnership that the files do not demonstrate.
+### UI
+
+- A **Stellar** section in the main navigation (`/stellar`) with network
+  status, account inspection, and contract inspection (read-only).
+- A **Stellar** tab in the project explorer showing per-project detection,
+  confidence, evidence, and relevant files.
+
+### CLI (`flask stellar …`)
+
+`flask stellar network`, `validate <address>`, `account <address>`, `health`,
+`contract <id>`, `ledger-entry <key>` — all read-only.
 
 ## Endpoint safety
 
 `validate_endpoint_url` enforces:
 
 - `http`/`https` schemes only.
-- `https` required for public networks (mainnet/testnet/futurenet).
-- Loopback hosts only (`localhost`, `127.0.0.1`, `::1`) for custom/development
-  networks.
-- Requests are also restricted to the configured Horizon base URL, and enforce
-  a timeout and a response-body cap.
+- `https` required for public networks (mainnet/testnet/futurenet), and no
+  private/link-local/loopback IP literals or obviously-private hostnames.
+- Loopback hosts only (`localhost`, `127.0.0.1`, `::1`) for custom networks.
+- Requests are restricted to the configured base URL, **redirects are
+  refused**, public hosts are DNS-verified to resolve publicly, and every
+  request enforces a timeout and a response-body cap.
 
 Endpoint URLs come exclusively from configuration — never from user input or
-from project files — so there is no way for an imported project to direct the
+project files — so there is no way for an imported project to direct the
 service at an arbitrary host.
 
 ## How developers use it
 
-1. Import a Soroban project (GitHub or archive upload).
-2. Run **Stellar** analysis on the project explorer. If the project is
-   detected as Stellar/Soroban you get a grounded analysis; otherwise the tool
-   says it is not applicable.
-3. Read network metadata or validate addresses in code:
+1. Import a Soroban/Stellar project (GitHub or archive upload). The import
+   response carries detection metadata, and the project explorer's **Stellar**
+   tab shows confidence, evidence, network hints, and relevant files.
+2. Run **Stellar** or **Stellar Security** analysis on the project. If the
+   project is detected as Stellar/Soroban you get a grounded analysis;
+   otherwise the tool says it is not applicable.
+3. Open **Stellar** in the navigation to inspect the configured network, an
+   account (G…), or a contract (C…). Everything is read-only and bound to the
+   configured network.
+4. From the command line:
 
-```python
-from app.services.stellar import get_stellar_service
-
-service = get_stellar_service()
-print(service.get_network_info())
-print(service.validate_address("G..."))
+```bash
+flask stellar network
+flask stellar validate G…
+flask stellar account G…
+flask stellar health
+flask stellar contract C…
 ```
+
+## Local development
+
+- Point `STELLAR_NETWORK=custom` and `STELLAR_HORIZON_URL` /
+  `STELLAR_RPC_URL` at a local `stellar-core`/`stellar-rpc` (loopback only).
+- The test suite uses deterministic fixtures and mocked transport; no real
+  network access is required.
+
+## What is not implemented
+
+- Transaction signing/submission, wallets, or custodial features (out of scope
+  by design — this is developer tooling).
+- Full XDR/`SCVal` decoding of contract data into a human-readable view
+  (tracked as contributor work).
+- A network switcher UI, an account dashboard, a contract-data browsing UI,
+  and a mock RPC server (open contributor issues).
+- `sendTransaction` / `simulateTransaction`.
 
 ## Contributing
 
-Planned contributor work (Phase 8 milestone, label `stellar`/`soroban`):
-
-- Soroban RPC integration (getContractData, getLedgerEntries, simulate…).
-- Horizon improvements (asset/ledger/operation endpoints).
-- XDR transaction/contract inspection.
-- Stellar account tooling and network switcher UI.
-- Stellar project templates and a "new Soroban contract" workflow.
-- Deeper Stellar-specific AI prompts and security analysis.
+See [CONTRIBUTING.md](../CONTRIBUTING.md) (Stellar/Soroban section) and
+[docs/soroban.md](soroban.md). Stellar work is tracked under the Phase 8
+milestone with the `stellar`/`soroban` labels. Keep the SSRF guards, the
+read-only invariant, and the honest-claims rule in mind on every change.

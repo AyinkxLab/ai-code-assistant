@@ -1,7 +1,8 @@
 # AI Code Assistant
 
-A production-grade AI coding assistant web application. This project is built
-incrementally across phases:
+A developer-focused AI code intelligence platform with GitHub integration,
+workspace-aware analysis, plugin extensibility, and Stellar/Soroban-aware
+developer tooling. This project is built incrementally across phases:
 
 - **Phase 1** — Application Foundation: Flask application factory,
   PostgreSQL-backed models, Dockerized deployment, CI pipelines, and a test
@@ -26,9 +27,10 @@ incrementally across phases:
   invitations, roles and permissions, notifications, mentions, activity/audit
   history, collaboration UI, and permission-aware AI collaboration.
 - **Phase 8** — Plugins & Extensions **(in progress)**: plugin manifest,
-  registry, capability model, and event system, plus a Stellar/Soroban
-  developer-tooling foundation (read-only network service, heuristic project
-  detection, and a Stellar-aware AI analysis).
+  registry, capability model, and event system, plus Stellar/Soroban developer
+  tooling (network configuration, read-only Horizon **and Stellar RPC**
+  services, contract/account inspection, evidence-based project detection, and
+  Stellar-aware AI analysis).
 
 > **Status:** Phases 1–7 implemented. Phase 8 foundation implemented; the
 > plugin/Stellar surface area is intentionally small and the remaining work is
@@ -58,7 +60,11 @@ incrementally across phases:
 - [Plugin system](docs/plugins.md) — manifest spec, registry, capabilities,
   events, and how to write a plugin.
 - [Stellar / Soroban tooling](docs/stellar.md) — what is implemented, network
-  configuration, detection, and the Stellar-aware AI analysis.
+  configuration, detection, inspection, and the Stellar-aware AI analysis.
+- [Soroban / Stellar RPC](docs/soroban.md) — the read-only RPC client, its
+  methods, ledger-key encoding, and security model.
+- [Architecture](docs/architecture.md) — how the application is layered and
+  how the Stellar tooling fits in.
 - [Security model](docs/security.md) — threat review and controls for the
   plugin and Stellar architecture.
 
@@ -245,22 +251,38 @@ incrementally across phases:
 - **Event system** — `EventDispatcher` with a supported event registry
   (`project.created`, `review.completed`, `workspace.member_added`,
   `github.connected`, `ai.analysis.completed`, `stellar.analysis.completed`,
-  …). Handler failures are isolated; routes emit events safely via `emit_event`.
+  `stellar.network.detected`, …). Handler failures are isolated; routes emit
+  events safely via `emit_event`.
 - **Stellar network foundation** — network presets (mainnet/testnet/futurenet/
   local), environment-driven configuration (testnet by default), and a
-  read-only `StellarService` (network info, address validation, bounded account
-  and transaction lookup) with SSRF-bounded, size-capped requests.
+  read-only `StellarService` (network info, address validation, bounded account,
+  transaction, ledger, asset, and account-history lookup) with SSRF-bounded,
+  size-capped, redirect-refusing requests.
+- **Stellar RPC (Soroban) client** — a read-only JSON-RPC client
+  (`app/services/soroban_rpc.py`) implementing the current Stellar RPC method
+  set (`getHealth`, `getLatestLedger`, `getNetwork`, `getLedgerEntries`,
+  `getTransaction(s)`, `getLedgers`, `getEvents`, `getFeeStats`, …). It never
+  signs, simulates, or submits transactions. See [docs/soroban.md](docs/soroban.md).
+- **strkey / LedgerKey encoding** — minimal, fixture-verified SEP-23 strkey
+  checksum validation and `LedgerKey` encoders used for contract/account
+  inspection.
+- **Contract & account inspection** — `inspect_contract`, `inspect_account`,
+  `inspect_ledger_entry`, and `network_status` (read-only, honest about raw
+  XDR), exposed through the `/stellar` page/APIs and the `flask stellar …` CLI.
 - **Stellar/Soroban project detection** — heuristic, evidence-based detection
   (Soroban crates, `#[contractimpl]`/`#[contract]` attributes, SDK
-  dependencies, `stellar.toml`/`.soroban` configs, `contracts/` layout). A
-  plain Rust crate is never misclassified as Soroban.
-- **Stellar-aware AI analysis** — a `stellar` project analysis kind that reuses
-  the Phase 7 content-access gate (owner-only, fails closed), never fabricates
-  Stellar claims for non-Stellar projects, and grounds its analysis in the
-  indexed contract files, manifests, and Stellar configuration.
+  dependencies, `stellar.toml`/`.soroban` configs, `contracts/` layout,
+  Stellar/Soroban CLI tooling) with explicit `none`/`possible`/`likely`
+  confidence and network hints. A plain Rust crate is never misclassified as
+  Soroban. Detection metadata is attached to import responses.
+- **Stellar-aware AI analysis** — `stellar` and `stellar_security` project
+  analysis kinds that reuse the Phase 7 content-access gate (owner-only, fails
+  closed), never fabricate Stellar claims for non-Stellar projects, and ground
+  their analysis in the indexed contract files, manifests, and Stellar
+  configuration — including an honest live-RPC availability note.
 - **Event wiring** — the app already emits events for project import/delete,
-  member add/remove, AI analysis completion, Stellar analysis completion, and
-  GitHub connection.
+  member add/remove, AI analysis completion, Stellar analysis completion,
+  Stellar network detection, and GitHub connection.
 - **Plugin management API + UI** — workspace-scoped plugin management
   (`app/plugins/`): list registered plugins, inspect metadata, install a
   trusted/local validated manifest (identity-bound, no code execution, no
@@ -273,10 +295,11 @@ incrementally across phases:
 
 - Plugin dependency resolution, version compatibility, and a plugin
   marketplace.
-- Soroban RPC integration, XDR inspection, account tooling, a network
-  switcher UI, and Stellar project templates.
-- Deeper Stellar-specific AI prompts and security analysis.
-- CLI commands for plugin and Stellar workflows.
+- Full XDR/`SCVal` decoding of contract data, XDR transaction inspection, a
+  network switcher UI, account/contract browsing UIs, a mock Stellar network
+  for tests, and Stellar project templates.
+- Deeper Stellar-specific AI prompts and security findings storage.
+- CLI commands for plugin workflows.
 
 All of the above is tracked as open issues under the **Phase 8 - Plugins &
 Extensions** milestone.
@@ -291,7 +314,7 @@ Extensions** milestone.
 | Migrations   | Flask-Migrate (Alembic)                           |
 | AI providers | Provider-agnostic service layer (mock + OpenAI)   |
 | GitHub       | GitHub REST API, OAuth web flow, Fernet (cryptography) |
-| Stellar      | Horizon REST read-only service, Soroban/Rust project detection (Phase 8) |
+| Stellar      | Horizon (read-only) + Stellar RPC (read-only) + strkey/LedgerKey encoders + Soroban/Rust project detection (Phase 8) |
 | Frontend     | HTML, vanilla CSS, vanilla JavaScript (SSE)       |
 | Infrastructure | Docker, Docker Compose, GitHub Actions          |
 | Quality      | pytest, ruff, black                               |
@@ -455,6 +478,8 @@ All configuration is environment-driven (see `.env.example`):
 | `STELLAR_RPC_URL`   | unset       | Override Soroban RPC endpoint (Phase 8)    |
 | `STELLAR_REQUEST_TIMEOUT` | `15` | Outbound Stellar request timeout in seconds (Phase 8) |
 | `STELLAR_MAX_RESPONSE_BYTES` | `2097152` | Cap on Stellar response body size (Phase 8) |
+| `STELLAR_RPC_MAX_KEYS` | `100`   | Max ledger keys per RPC `getLedgerEntries` call (Phase 8) |
+| `STELLAR_STRICT_HOST_VALIDATION` | `1` | DNS-verify public Stellar hosts resolve publicly (Phase 8) |
 
 The production configuration fails fast at startup if `SECRET_KEY` or a
 PostgreSQL `DATABASE_URL` is missing — it will never silently run with
@@ -503,12 +528,14 @@ Phases are built incrementally and tracked as GitHub issues and milestones.
 ### In progress
 
 - **Phase 8** — Plugins & Extensions: plugin manifests, registry, capability
-  model, and event system, plus a Stellar/Soroban developer-tooling foundation
-  (read-only network service, heuristic project detection, Stellar-aware AI
-  analysis). Foundation implemented and tested; the remaining surface (plugin
-  management UI, Soroban RPC, XDR inspection, network switcher, CLI, deeper
-  Stellar AI, example plugins) is tracked as open contributor issues under the
-  Phase 8 milestone and is **not yet implemented**.
+  model, and event system, plus Stellar/Soroban developer tooling (read-only
+  Horizon + Stellar RPC services, contract/account inspection, evidence-based
+  project detection, and Stellar-aware AI analysis). Foundation implemented and
+  tested; the remaining surface (full XDR/SCVal decoding, network switcher UI,
+  account/contract browsing UIs, XDR inspection, mock network, deeper Stellar
+  AI, plugin dependency resolution, CLI workflows) is tracked as open
+  contributor issues under the Phase 8 milestone and is **not yet
+  implemented**.
 
 ### Planned
 

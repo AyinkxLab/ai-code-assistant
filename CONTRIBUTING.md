@@ -24,6 +24,7 @@ match the repository's conventions.
 - [Issue expectations](#issue-expectations)
 - [Pull request requirements](#pull-request-requirements)
 - [Testing requirements](#testing-requirements)
+- [Stellar / Soroban contributions](#stellar--soroban-contributions)
 - [Security reporting](#security-reporting)
 - [Code review expectations](#code-review-expectations)
 - [Code of conduct](#code-of-conduct)
@@ -313,6 +314,61 @@ to be sent back for splitting.
 - Do not leave the suite red: run the full test suite before pushing.
 - Do not add new Python or JavaScript dependencies unless truly necessary and
   agreed in the issue — the dependency set is intentionally small and pinned.
+
+## Stellar / Soroban contributions
+
+The project includes Stellar/Soroban developer tooling (see
+[`docs/stellar.md`](docs/stellar.md) and [`docs/soroban.md`](docs/soroban.md)).
+Stellar work is tracked under the **Phase 8** milestone with the
+`stellar`/`soroban` labels and is easy to pick up.
+
+### Where Stellar code lives
+
+| Concern                         | Location                                          |
+| ------------------------------- | ------------------------------------------------- |
+| Horizon read service            | `app/services/stellar.py`                         |
+| Stellar RPC (read-only) client  | `app/services/soroban_rpc.py`                     |
+| strkey / LedgerKey encoders     | `app/services/stellar_xdr.py`                     |
+| Account/contract inspection     | `app/services/stellar_inspection.py`              |
+| Project detection               | `app/services/stellar_detection.py`               |
+| Stellar AI analysis             | `app/services/project_analysis.py`                |
+| Web page + read-only APIs       | `app/stellar/`                                    |
+| CLI                              | `app/services/stellar_cli.py`                     |
+
+### Rules for Stellar contributions
+
+- **Keep it read-only.** The project never signs, simulates, or submits
+  transactions, and it does not handle keys. Features that move toward
+  wallets/custody are out of scope by design.
+- **Keep it SSRF-safe.** Endpoints come from configuration only. New network
+  code must go through the existing bounded transport (`_rpc_call` /
+  `_get_json`) with `allow_redirects=False`, the base-URL check, timeouts, and
+  size caps intact. Never add user-supplied URLs.
+- **Never fabricate.** Detection must be evidence-based with explicit
+  confidence (`none`/`possible`/`likely`); a plain Rust crate is never
+  classified as Soroban. AI analysis must never claim live ledger/contract
+  data when the RPC is unavailable.
+- **Be honest about XDR.** Return raw XDR bounded and marked *not decoded*;
+  do not pretend to decode values you do not decode.
+- **Verify encoders.** Any change to `stellar_xdr.py` must keep the fixture
+  tests green (they pin exact bytes from the official Stellar docs).
+
+### Developing against a Stellar network
+
+- Defaults are **testnet** — safe for development.
+- To point at a local node: set `STELLAR_NETWORK=custom` and
+  `STELLAR_HORIZON_URL`/`STELLAR_RPC_URL` to loopback endpoints.
+- The test suite uses deterministic fixtures and mocked transport; no real
+  network access is required. Add fixtures rather than hitting live nodes.
+
+### Testing Stellar work
+
+```bash
+pytest tests/test_soroban_rpc.py tests/test_stellar_xdr.py \
+       tests/test_stellar_inspection.py tests/test_stellar_security.py \
+       tests/test_stellar_detection.py tests/test_stellar_analysis.py \
+       tests/test_stellar_routes.py tests/test_stellar_cli.py
+```
 
 ## Security reporting
 
