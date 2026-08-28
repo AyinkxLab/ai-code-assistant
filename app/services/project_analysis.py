@@ -23,7 +23,10 @@ from app.models.workspace_member import (
 )
 from app.services.llm import LLMProviderError, get_provider
 from app.services.permissions import assert_content_access
-from app.services.stellar_detection import detect_stellar_project
+from app.services.stellar_detection import (
+    detect_stellar_network,
+    detect_stellar_project,
+)
 
 try:  # Python 3.11+
     import tomllib
@@ -42,6 +45,7 @@ ANALYSIS_KINDS = (
     "security",
     "code_review",
     "stellar",
+    "stellar_security",
 )
 
 _PROJECT_SYSTEM = (
@@ -686,6 +690,8 @@ Base everything on the files shown and mark [CONFIRMED] vs [SUGGESTION].
         return analyze_code_review(project)
     elif kind == "stellar":
         return analyze_stellar_project(project)
+    elif kind == "stellar_security":
+        return analyze_stellar_security(project)
     else:  # dependencies
         inventory = dependency_inventory(project)
         if inventory:
@@ -803,6 +809,46 @@ _STELLAR_RELEVANT_PREFIXES = (
 )
 
 
+def stellar_analysis_context() -> str:
+    """Return a bounded, honest Stellar context block for AI prompts.
+
+    Only explicitly-identified data is included: the configured network and
+    passphrase, plus a live RPC availability note. Live ledger/health data is
+    labeled as live RPC data and is omitted entirely when the RPC is
+    unreachable, so the model can never mistake missing data for authoritative
+    values.
+    """
+    try:
+        from app.services.stellar import get_stellar_service
+
+        service = get_stellar_service()
+        cfg = service.config.to_dict()
+    except Exception as exc:  # pragma: no cover - defensive
+        return f"Stellar context: unavailable ({exc})"
+
+    lines = [
+        f"Configured Stellar network: {cfg.get('network')}",
+        f"Network passphrase: {cfg.get('network_passphrase')}",
+        f"Read-only RPC endpoint: {cfg.get('rpc_url') or '(none configured)'}",
+    ]
+    try:
+        from app.services.soroban_rpc import get_soroban_rpc_client
+
+        rpc = get_soroban_rpc_client()
+        health = rpc.get_health()
+        latest = rpc.get_latest_ledger()
+        lines.append(
+            f"Live RPC data ({cfg.get('network')}): status={health.get('status')}, "
+            f"latest_ledger={latest.get('sequence')}"
+        )
+    except Exception:
+        lines.append(
+            "Live RPC data: unavailable. Do not claim any live ledger, contract, "
+            "account, or transaction data; base all statements only on the files."
+        )
+    return "\n".join(lines)
+
+
 def _stellar_relevant(files, structure) -> tuple[list[ProjectFile], str]:
     """Return the Stellar-relevant files plus a compact signal summary.
 
@@ -836,12 +882,29 @@ def _stellar_relevant(files, structure) -> tuple[list[ProjectFile], str]:
     return selected, ""  # summary filled in by caller via signals
 
 
+def _stellar_analysis_not_applicable(kind: str, confidence: str) -> dict:
+    """Honest "not applicable" result used for non-Stellar projects."""
+    return {
+        "kind": kind,
+        "detected": False,
+        "confidence": confidence,
+        "analysis": (
+            "No Stellar/Soroban signals were detected in this project "
+            "(no Soroban crates, SDK dependencies, contract attributes, or "
+            "Stellar configuration files), so a Stellar analysis is not "
+            "applicable. This is not a Stellar/Soroban project."
+        ),
+    }
+
+
 def analyze_stellar_project(project) -> dict:
     """Analyze a project from a Stellar/Soroban developer perspective.
 
     Fails closed on content access (same gate as every other analysis) and
     refuses to fabricate: if detection finds no Stellar/Soroban signals the
-    response says so explicitly rather than inventing claims.
+    response says so explicitly rather than inventing claims. When present,
+    the project's configured network hint is reported and the analysis prompt
+    includes an honest live-RPC availability note.
     """
     _assert_accessible(project)
     kind = "stellar"
@@ -849,26 +912,22 @@ def analyze_stellar_project(project) -> dict:
     files = list(project.files.all())
     signals = detect_stellar_project(files)
     if not signals.is_stellar:
-        return {
-            "kind": kind,
-            "detected": False,
-            "confidence": signals.confidence,
-            "analysis": (
-                "No Stellar/Soroban signals were detected in this project "
-                "(no Soroban crates, SDK dependencies, contract attributes, or "
-                "Stellar configuration files), so a Stellar analysis is not "
-                "applicable. This is not a Stellar/Soroban project."
-            ),
-        }
+        return _stellar_analysis_not_applicable(kind, signals.confidence)
 
+    network_hint = detect_stellar_network(files)
     relevant, _ = _stellar_relevant(files, project_structure(project))
     blocks = _bounded_blocks(relevant, _budget())
     signal_lines = "\n".join(f"- {e}" for e in signals.evidence[:20]) or "(none)"
     structure = project_structure(project)
+    network_line = f"Configured network hint (from files): {network_hint['network'] or 'unknown'}"
     prompt = f"""{_context_header(project)}
 
 Detected Stellar/Soroban signals:
 {signal_lines}
+
+{network_line}
+
+{stellar_analysis_context()}
 
 Structure (sample):
 {_clip(structure, 6000)}
@@ -885,8 +944,74 @@ Analyze this project as a Stellar/Soroban developer tool:
 5. Concrete risks or improvements for contract developers (bounded context:
    panic! usage, unwraps, authorization checks, test coverage).
 Base every statement on the files shown and mark [CONFIRMED] vs [SUGGESTION].
-Do not claim any Stellar integration, deployment, or partnership that the files
-do not demonstrate.
+Do not claim any Stellar integration, deployment, live contract, ledger,
+transaction, or partnership that the files do not demonstrate. If live RPC
+data is unavailable, say so and reason only from the files.
+"""
+    return {
+        "kind": kind,
+        "detected": True,
+        "confidence": signals.confidence,
+        "is_soroban": signals.is_soroban,
+        "network": network_hint,
+        "analysis": _run(prompt),
+    }
+
+
+def analyze_stellar_security(project) -> dict:
+    """Run a Soroban-aware security analysis for a detected Stellar project.
+
+    Grounded in the indexed contract sources and manifests. Every finding must
+    carry severity, evidence, explanation, and a recommended remediation. The
+    analysis never claims formal verification or guarantees of security, and
+    non-Stellar projects receive the honest "not applicable" response.
+    """
+    _assert_accessible(project)
+    kind = "stellar_security"
+
+    files = list(project.files.all())
+    signals = detect_stellar_project(files)
+    if not signals.is_stellar:
+        return _stellar_analysis_not_applicable(kind, signals.confidence)
+
+    relevant, _ = _stellar_relevant(files, project_structure(project))
+    blocks = _bounded_blocks(relevant, _budget())
+    signal_lines = "\n".join(f"- {e}" for e in signals.evidence[:20]) or "(none)"
+    structure = project_structure(project)
+    prompt = f"""{_context_header(project)}
+
+Detected Stellar/Soroban signals:
+{signal_lines}
+
+{stellar_analysis_context()}
+
+Structure (sample):
+{_clip(structure, 6000)}
+
+Stellar-relevant files:
+{blocks or "(no file contents retrieved)"}
+
+Perform a Soroban-aware security analysis of this Stellar/Soroban project.
+Look only for real, evidence-based risks visible in the files, specifically:
+1. Authorization and access-control patterns (e.g. missing admin/owner checks,
+   unchecked `require_auth`, public functions that should be restricted).
+2. Admin/owner key handling and privileged entry points.
+3. `unwrap()`/`expect()`/`panic!` paths in contract code and whether failure
+   cases are handled.
+4. Cross-contract calls and whether their results are validated.
+5. Hard-coded secrets, secret keys, or credentials in the files.
+6. Storage/state assumptions (extend_ttl usage, unbounded storage writes).
+7. Test coverage gaps relevant to the above.
+8. Dependency and configuration hygiene (mismatched SDK/env versions, wrong
+   network passphrase, mainnet RPC on testnet config, etc.).
+
+For each finding provide: severity (critical/high/medium/low), the evidence
+(file and snippet), an explanation, and a recommended remediation. Do NOT
+invent vulnerabilities, CVEs, or advisory data; if a category shows no
+evidence do not report it. Do NOT claim formal verification, and do NOT claim
+this AI analysis guarantees security. Mark [CONFIRMED] for issues directly
+proven by the files and [SUGGESTION] for inferences. If live RPC data is
+unavailable, do not claim any live contract or ledger state.
 """
     return {
         "kind": kind,
