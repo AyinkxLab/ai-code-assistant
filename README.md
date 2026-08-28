@@ -261,11 +261,18 @@ incrementally across phases:
 - **Event wiring** — the app already emits events for project import/delete,
   member add/remove, AI analysis completion, Stellar analysis completion, and
   GitHub connection.
+- **Plugin management API + UI** — workspace-scoped plugin management
+  (`app/plugins/`): list registered plugins, inspect metadata, install a
+  trusted/local validated manifest (identity-bound, no code execution, no
+  auto-grants), enable/disable a workspace installation, and explicitly
+  grant/revoke capabilities restricted to manifest-declared capabilities.
+  Members may view; the workspace owner manages (Phase 7 `manage_plugins`
+  role). Backend is authoritative; the UI is never trusted for authorization.
 
 **Planned contributor work (not yet implemented)**
 
-- Plugin management API/UI, dependency resolution, version compatibility, and a
-  plugin marketplace.
+- Plugin dependency resolution, version compatibility, and a plugin
+  marketplace.
 - Soroban RPC integration, XDR inspection, account tooling, a network
   switcher UI, and Stellar project templates.
 - Deeper Stellar-specific AI prompts and security analysis.

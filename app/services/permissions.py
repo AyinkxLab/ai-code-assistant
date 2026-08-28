@@ -65,6 +65,7 @@ CAPABILITIES: dict[str, tuple[tuple[str, ...], str]] = {
         (ROLE_OWNER, "contributor", "viewer"),
         "Report presence in the workspace",
     ),
+    "manage_plugins": ((ROLE_OWNER,), "Install, enable, disable, and grant plugin capabilities"),
 }
 
 

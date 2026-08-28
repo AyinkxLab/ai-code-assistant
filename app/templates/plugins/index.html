@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+
+{% block title %}Plugins - {{ config.APP_NAME }}{% endblock %}
+
+{% block content %}
+<div class="github-header">
+  <div>
+    <h1>Plugins</h1>
+    <p class="repo-meta">Manage plugins for your workspaces. Plugin state is workspace-scoped; only the workspace owner can install, enable, disable, or grant capabilities.</p>
+  </div>
+  <div class="repo-toolbar">
+    <label class="field-label" for="plugin-workspace-select" style="margin-right:8px;">Workspace</label>
+    <select id="plugin-workspace-select" class="field-input" style="min-width:220px;">
+      <option value="">Select a workspace…</option>
+      {% for ws in workspaces %}
+        <option value="{{ ws.id }}">{{ ws.name }}</option>
+      {% endfor %}
+    </select>
+  </div>
+</div>
+
+<div id="plugin-workspace-message" class="flash flash-warning" hidden></div>
+
+<div id="plugin-page" hidden>
+  <div id="plugin-role-banner" class="repo-meta" style="margin-bottom:12px;"></div>
+
+  <div id="plugin-install-box" class="prompt-editor" hidden>
+    <h2>Install a plugin</h2>
+    <p class="field-hint">Paste a trusted, local plugin manifest (JSON). Installation validates the manifest and binds the plugin to its declared id; it never loads or executes plugin code and never grants capabilities automatically.</p>
+    <textarea id="plugin-manifest-input" class="field-input" rows="8" spellcheck="false" placeholder='{ "id": "example-plugin", "name": "Example", "version": "0.1.0", "description": "...", "author": "...", "entry_point": "plugins.example:ExamplePlugin", "capabilities": ["PROJECT_READ"] }'></textarea>
+    <div class="prompt-editor-actions">
+      <button id="plugin-install-btn" class="btn btn-primary" type="button">Install</button>
+    </div>
+    <p id="plugin-install-status" class="field-hint" hidden></p>
+  </div>
+
+  <div class="project-list">
+    <h2>Registered plugins</h2>
+    <div id="plugin-list">
+      <p class="empty-note">Loading plugins…</p>
+    </div>
+  </div>
+</div>
+
+<div id="plugin-empty" class="analysis-output">
+  <p class="sidebar-empty">Select a workspace to manage its plugins.</p>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/plugins.js') }}"></script>
+{% endblock %}

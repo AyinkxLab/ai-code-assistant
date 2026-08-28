@@ -4,10 +4,11 @@ The AI Code Assistant ships an extensible plugin architecture so that Stellar,
 Soroban, GitHub, AI-provider, and developer-tooling features can be added
 without modifying the core application.
 
-> **Status:** Phase 8 foundation. Manifest validation, the registry, the
-> capability model, and the event/hook system are implemented and tested. A
-> plugin management UI, dependency resolution, and a marketplace are **not**
-> implemented yet — see [Contributing](#contributing).
+> **Status:** Phase 8. Manifest validation, the registry, the capability model,
+> the event system with fail-closed dispatch-time capability enforcement, and a
+> workspace-scoped plugin management API + UI are implemented and tested.
+> Dependency resolution, compatibility/versioning, signing/trust, and a
+> marketplace are **not** implemented yet — see [Contributing](#contributing).
 
 ## Concepts
 
@@ -138,6 +139,55 @@ The application already emits events from real flows: project import/delete,
 workspace member add/remove, AI analysis completion, Stellar analysis
 completion, and GitHub connection.
 
+## Plugin management (API + UI)
+
+The `plugins` blueprint (`app/plugins/`) provides the user-facing management
+layer. Plugin state is **workspace-scoped**: a plugin exists globally (a
+`Plugin` row) while having a separate `PluginInstallation` per workspace, each
+with its own enabled state and capability grants.
+
+Authorization reuses the Phase 7 workspace role model: any workspace member may
+view; only the workspace **owner** may manage (the `manage_plugins`
+capability). Non-members get `404`; members who are not owners get `403` for
+management operations.
+
+| Method | Path | Purpose | Role |
+| ------ | ---- | ------- | ---- |
+| `GET`  | `/plugins/` | Management page (workspace selector) | any member |
+| `GET`  | `/plugins/api/workspaces` | Workspaces the user can access | any member |
+| `GET`  | `/plugins/api/workspaces/<id>/plugins` | List plugins + installation state | any member |
+| `GET`  | `/plugins/api/workspaces/<id>/plugins/<plugin_id>` | Inspect one plugin | any member |
+| `POST` | `/plugins/api/workspaces/<id>/plugins/install` | Install a trusted/local manifest | owner |
+| `POST` | `/plugins/api/workspaces/<id>/plugins/<plugin_id>/enable` | Enable the workspace installation | owner |
+| `POST` | `/plugins/api/workspaces/<id>/plugins/<plugin_id>/disable` | Disable the workspace installation | owner |
+| `POST` | `/plugins/api/workspaces/<id>/plugins/<plugin_id>/capabilities` | Explicitly grant/revoke capabilities (`{"grant": [...], "revoke": [...]}`) | owner |
+
+### Installation (trusted/local only)
+
+`POST .../plugins/install` accepts a manifest object (`{"manifest": {...}}`).
+The manifest is fully validated (`PluginManifest.from_dict`); malformed
+manifests are rejected with `400`. The plugin id is taken **only** from the
+validated manifest — a client cannot override it (identity binding). Installing:
+
+- creates or reuses the global `Plugin` row (a conflicting entry point for an
+  existing id returns `409`);
+- creates a `PluginInstallation` for the workspace (`409` if already
+  installed there);
+- never loads or executes plugin code;
+- never creates capability grants.
+
+Capabilities granted through the API must be declared in the plugin's manifest
+(declared vs granted are kept distinct). The `manage_plugins` role gate is the
+only way to grant/revoke through the UI; grants are never implicit.
+
+### Enable / disable
+
+`enable`/`disable` operate on the **workspace installation**
+(`PluginInstallation.enabled`), never on the global `Plugin` record, and never
+create or remove capability grants. A disabled installation is denied by the
+dispatch-time enforcement (see above), so disabled plugins cannot execute.
+Re-enabling restores delivery while the grant remains valid.
+
 ## Writing a plugin
 
 ```python
@@ -174,9 +224,7 @@ The foundation is intentionally small. Planned, contributor-friendly work is
 tracked under the **Phase 8 - Plugins & Extensions** milestone (label
 `phase-8`), for example:
 
-- Plugin management API/UI (install, enable/disable, configure per workspace).
 - Dependency resolution and version compatibility checks.
-- Per-event capability enforcement (require `STELLAR_READ` before delivering
-  `stellar.*` data).
 - A plugin development guide and an example plugin.
 - CLI commands for plugin management.
+- A capability audit trail.
