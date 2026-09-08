@@ -89,7 +89,42 @@
     </div>
 
     <div id="tab-stellar" class="project-tab" hidden>
-      <div id="stellar-output" class="analysis-output"><p class="sidebar-empty">Loading Stellar/Soroban detection...</p></div>
+      <div id="stellar-detection-output" class="analysis-output">
+        <p class="sidebar-empty">Loading Stellar/Soroban detection…</p>
+      </div>
+
+      <section id="stellar-live-panel" class="prompt-editor stellar-live-panel">
+        <h3>Live read-only Stellar data</h3>
+        <p class="field-hint">
+          Network status and the account/contract/ledger lookups below use the
+          configured Stellar network (never a URL from this project). Supported
+          contract-data/code XDR is decoded into a structured view; raw XDR is
+          shown bounded. Nothing here signs, simulates, or submits.
+        </p>
+        <div class="repo-toolbar">
+          <button id="stellar-network-refresh" class="btn btn-ghost btn-sm" type="button">Refresh network status</button>
+        </div>
+        <div id="stellar-network-output"><p class="sidebar-empty">Loading network status…</p></div>
+
+        <div class="repo-toolbar">
+          <input id="stellar-account-input" class="sidebar-search" type="text" placeholder="G… account address">
+          <button id="stellar-account-btn" class="btn btn-primary btn-sm" type="button">Inspect account</button>
+        </div>
+        <div id="stellar-account-output"></div>
+
+        <div class="repo-toolbar">
+          <input id="stellar-contract-input" class="sidebar-search" type="text" placeholder="C… contract id">
+          <input id="stellar-wasm-input" class="sidebar-search" type="text" placeholder="wasm hash (hex, optional)">
+          <button id="stellar-contract-btn" class="btn btn-primary btn-sm" type="button">Inspect contract</button>
+        </div>
+        <div id="stellar-contract-output"></div>
+
+        <div class="repo-toolbar">
+          <input id="stellar-ledger-input" class="sidebar-search" type="text" placeholder="base64 LedgerKey">
+          <button id="stellar-ledger-btn" class="btn btn-primary btn-sm" type="button">Look up ledger entry</button>
+        </div>
+        <div id="stellar-ledger-output"></div>
+      </section>
     </div>
 
     <div id="tab-discussion" class="project-tab" hidden>
@@ -109,5 +144,6 @@
 {% endblock %}
 
 {% block scripts %}
+<script src="{{ url_for('static', filename='js/stellar_tools.js') }}"></script>
 <script src="{{ url_for('static', filename='js/project.js') }}"></script>
 {% endblock %}

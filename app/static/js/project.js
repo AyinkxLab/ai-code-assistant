@@ -475,54 +475,93 @@
 
   // -------------------------------------------------------------- stellar
 
-  function loadStellar() {
-    var output = document.getElementById("stellar-output");
-    api("/workspaces/api/projects/" + PROJECT_ID + "/stellar")
-      .then(function (data) {
-        var html = "";
-        var badge = data.is_stellar
-          ? '<span class="tag tag-confirmed">Stellar project</span>'
-          : '<span class="tag">Not a Stellar project</span>';
-        html += '<div class="stellar-panel">';
-        html += "<div><h3>Stellar / Soroban detection</h3>" + badge + "</div>";
-        html += "<ul class=\"metric-list\">";
-        html += "<li><code>Confidence</code> — " + escapeHtml(data.confidence) + "</li>";
-        html += "<li><code>Stellar</code> — " + (data.is_stellar ? "yes" : "no") + "</li>";
-        html += "<li><code>Soroban (smart contracts)</code> — " + (data.is_soroban ? "yes" : "no") + "</li>";
-        if (data.network && data.network.network) {
-          html += "<li><code>Network hint</code> — " + escapeHtml(data.network.network) + "</li>";
-        }
-        html += "</ul>";
+  var stellarLoaded = false;
+  var tools = window.StellarTools;
 
-        if (data.evidence && data.evidence.length) {
-          html += '<h3 class="metric-title">Evidence</h3><ul class="metric-list">';
-          data.evidence.forEach(function (line) {
-            html += "<li>" + escapeHtml(line) + "</li>";
-          });
-          html += "</ul>";
-        }
-        if (data.relevant_files && data.relevant_files.length) {
-          html += '<h3 class="metric-title">Relevant Stellar files</h3><ul class="metric-list">';
-          data.relevant_files.forEach(function (path) {
-            html += "<li><code>" + escapeHtml(path) + "</code></li>";
-          });
-          html += "</ul>";
-        }
-        if (data.is_stellar) {
-          html +=
-            '<p class="field-hint">Run <b>Stellar</b> or <b>Stellar Security</b> ' +
-            "analysis from the Analysis tab for an AI review grounded in these files.</p>";
-        } else {
-          html +=
-            '<p class="field-hint">This project shows no Stellar/Soroban signals. ' +
-            "Plain Rust, Python, JavaScript, and other projects are never classified " +
-            "as Stellar without concrete evidence.</p>";
-        }
-        html += "</div>";
-        output.innerHTML = html;
+  function openStellarFile(path) {
+    loadFile(path);
+  }
+
+  function loadStellarDetection() {
+    var output = document.getElementById("stellar-detection-output");
+    if (!output) return;
+    output.innerHTML = '<p class="sidebar-empty">Loading Stellar/Soroban detection…</p>';
+    tools
+      .apiGet("/workspaces/api/projects/" + PROJECT_ID + "/stellar")
+      .then(function (data) {
+        output.innerHTML = tools.renderDetection(data);
+        tools.bindFileLinks(output);
       })
       .catch(function (error) {
-        output.innerHTML = '<p class="sidebar-empty">' + escapeHtml(error.message) + "</p>";
+        output.innerHTML = tools.errorMessage(error);
+      });
+  }
+
+  function loadStellarNetwork() {
+    var output = document.getElementById("stellar-network-output");
+    if (!output) return;
+    output.innerHTML = '<p class="sidebar-empty">Loading network status…</p>';
+    tools
+      .apiGet("/stellar/api/network")
+      .then(function (data) {
+        output.innerHTML = tools.renderNetworkStatus(data);
+      })
+      .catch(function (error) {
+        output.innerHTML = tools.errorMessage(error);
+      });
+  }
+
+  function loadStellar() {
+    if (stellarLoaded) return;
+    stellarLoaded = true;
+    loadStellarDetection();
+    loadStellarNetwork();
+  }
+
+  function stellarLookup(kind) {
+    var outputId = kind === "ledger-entry" ? "stellar-ledger-output" : "stellar-" + kind + "-output";
+    var output = document.getElementById(outputId);
+    if (!output) return;
+    var url = null;
+    if (kind === "account") {
+      var address = document.getElementById("stellar-account-input").value.trim();
+      if (!address) {
+        output.innerHTML = tools.errorMessage({ message: "Enter a G… account address." });
+        return;
+      }
+      url = "/stellar/api/account?address=" + encodeURIComponent(address);
+    } else if (kind === "contract") {
+      var contractId = document.getElementById("stellar-contract-input").value.trim();
+      var wasmHash = document.getElementById("stellar-wasm-input").value.trim();
+      if (!contractId) {
+        output.innerHTML = tools.errorMessage({ message: "Enter a C… contract id." });
+        return;
+      }
+      url = "/stellar/api/contract?address=" + encodeURIComponent(contractId);
+      if (wasmHash) url += "&wasm_hash=" + encodeURIComponent(wasmHash);
+    } else if (kind === "ledger-entry") {
+      var key = document.getElementById("stellar-ledger-input").value.trim();
+      if (!key) {
+        output.innerHTML = tools.errorMessage({ message: "Enter a base64 ledger key." });
+        return;
+      }
+      url = "/stellar/api/ledger-entry?key=" + encodeURIComponent(key);
+    }
+    if (!url) return;
+    output.innerHTML = tools.loading();
+    tools
+      .apiGet(url)
+      .then(function (data) {
+        if (kind === "account") {
+          output.innerHTML = tools.renderAccount(data);
+        } else if (kind === "contract") {
+          output.innerHTML = tools.renderContract(data);
+        } else {
+          output.innerHTML = tools.renderLedgerEntry(data);
+        }
+      })
+      .catch(function (error) {
+        output.innerHTML = tools.errorMessage(error);
       });
   }
 
@@ -621,6 +660,40 @@
     document.getElementById("search-query").addEventListener("keydown", function (event) {
       if (event.key === "Enter") runSearch();
     });
+
+    if (window.StellarTools) {
+      window.StellarTools.onOpenFile = openStellarFile;
+    }
+    if (document.getElementById("stellar-network-refresh")) {
+      document.getElementById("stellar-network-refresh").addEventListener("click", loadStellarNetwork);
+    }
+    if (document.getElementById("stellar-account-btn")) {
+      document.getElementById("stellar-account-btn").addEventListener("click", function () {
+        stellarLookup("account");
+      });
+      document.getElementById("stellar-account-input").addEventListener("keydown", function (event) {
+        if (event.key === "Enter") stellarLookup("account");
+      });
+    }
+    if (document.getElementById("stellar-contract-btn")) {
+      document.getElementById("stellar-contract-btn").addEventListener("click", function () {
+        stellarLookup("contract");
+      });
+      document.getElementById("stellar-contract-input").addEventListener("keydown", function (event) {
+        if (event.key === "Enter") stellarLookup("contract");
+      });
+      document.getElementById("stellar-wasm-input").addEventListener("keydown", function (event) {
+        if (event.key === "Enter") stellarLookup("contract");
+      });
+    }
+    if (document.getElementById("stellar-ledger-btn")) {
+      document.getElementById("stellar-ledger-btn").addEventListener("click", function () {
+        stellarLookup("ledger-entry");
+      });
+      document.getElementById("stellar-ledger-input").addEventListener("keydown", function (event) {
+        if (event.key === "Enter") stellarLookup("ledger-entry");
+      });
+    }
 
     chatSendBtn.addEventListener("click", startChat);
     chatInputEl.addEventListener("keydown", function (event) {

@@ -215,6 +215,16 @@ class TestProjectStellarApi:
         assert data["is_stellar"] is True
         assert data["confidence"] == "likely"
         assert "network" in data
+        assert data["relevant_files"] == ["Cargo.toml"]
+        assert data["evidence"]
+        assert data["network_hints"] == []
+
+        # The UI links every relevant file to the file viewer: each path must be
+        # a real file of this project that the owner can open through the file API.
+        for path in data["relevant_files"]:
+            file_response = client.get(f"/workspaces/api/projects/{project.id}/file?path={path}")
+            assert file_response.status_code == 200
+            assert file_response.get_json()["searchable"] is True
 
     def test_other_user_cannot_read_stellar_metadata(self, app, client, make_user, login, db):
         from app.models import User

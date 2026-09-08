@@ -176,10 +176,20 @@ Display in the project developer panel is handled by the results-panel UI.
 
 ### UI
 
-- A **Stellar** section in the main navigation (`/stellar`) with network
-  status, account inspection, and contract inspection (read-only).
-- A **Stellar** tab in the project explorer showing per-project detection,
-  confidence, evidence, and relevant files.
+- A **Stellar** section in the main navigation (`/stellar`) — a read-only
+  developer page with live network status (and explicit per-user network
+  selection), account inspection, contract inspection, and ledger-entry
+  lookup. Supported contract-data/code entries are decoded into a structured
+  view with the bounded raw XDR shown alongside; every lookup has loading,
+  empty, error, and timeout states. Shared rendering lives in
+  `app/static/js/stellar_tools.js`.
+- A **Stellar** tab in the project explorer — per-project detection
+  (confidence, evidence, network hints) with the relevant files **linked to
+  the file viewer**, plus the same live read-only network status and
+  account/contract/ledger-entry lookups so a developer can inspect the project
+  and its on-chain data in one place. Detection evidence and relevant files
+  come from the indexed project only; the live lookups are bound to the
+  configured network and never accept a URL from project content.
 
 ### CLI (`flask stellar …`)
 

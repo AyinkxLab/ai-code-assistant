@@ -2020,3 +2020,42 @@ a:hover {
   color: var(--muted, #999);
   padding: 16px 4px;
 }
+
+/* ============================================================
+   Phase 8: Stellar developer panel (read-only)
+   ============================================================ */
+
+.stellar-live-panel {
+  margin-top: 14px;
+}
+
+.stellar-live-panel .repo-toolbar {
+  margin-top: 10px;
+}
+
+.stellar-file-link {
+  cursor: pointer;
+  text-decoration: underline;
+  word-break: break-all;
+}
+
+.stellar-xdr summary {
+  cursor: pointer;
+  color: var(--text-muted);
+  font-size: 0.85rem;
+  margin: 8px 0 4px;
+}
+
+.stellar-raw-xdr {
+  max-height: 240px;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-all;
+  font-size: 0.78rem;
+}
+
+.stellar-json {
+  max-height: 360px;
+  overflow: auto;
+  font-size: 0.8rem;
+}
