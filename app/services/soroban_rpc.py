@@ -43,6 +43,7 @@ from flask import current_app, has_app_context
 from app.services.stellar import (
     DEFAULT_TIMEOUT,
     MAX_RESPONSE_BYTES,
+    NetworkConfig,
     NetworkError,
     StellarError,
     _host_is_private_literal,
@@ -159,7 +160,9 @@ class SorobanRpcClient:
     ) -> None:
         if has_app_context():
             cfg = current_app.config
-            network = network or cfg.get("STELLAR_NETWORK")
+            # ``network`` is intentionally left to ``resolve_network_config``,
+            # which honors an authenticated user's stored network selection
+            # before falling back to the operator-configured STELLAR_NETWORK.
             rpc_url = rpc_url or cfg.get("STELLAR_RPC_URL")
             timeout = timeout or cfg.get("STELLAR_REQUEST_TIMEOUT")
             max_response_bytes = max_response_bytes or cfg.get("STELLAR_MAX_RESPONSE_BYTES")
@@ -175,6 +178,11 @@ class SorobanRpcClient:
                 current_app.config.get("STELLAR_STRICT_HOST_VALIDATION", True) is not False
             )
         self._resolver = host_resolver or (lambda host: socket.getaddrinfo(host, None))
+
+    @property
+    def config(self) -> NetworkConfig:
+        """Resolved network configuration (mirrors :class:`StellarService`)."""
+        return self._config
 
     # ------------------------------------------------------------------
     # Public read-only methods

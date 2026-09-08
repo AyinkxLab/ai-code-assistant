@@ -17,7 +17,7 @@ from dataclasses import dataclass
 from enum import StrEnum
 
 import requests
-from flask import current_app, has_app_context
+from flask import current_app, has_app_context, has_request_context
 
 DEFAULT_TIMEOUT = 15
 MAX_RESPONSE_BYTES = 2 * 1024 * 1024
@@ -353,6 +353,72 @@ _NETWORK_PRESETS = {
     StellarNetwork.FUTURENET.value: NetworkConfig.futurenet,
 }
 
+#: Networks a user may explicitly select (ordered; value -> human label).
+#: ``custom`` resolves to the loopback-only local/development preset. Raw
+#: endpoint URLs are never accepted here — only these fixed values.
+_NETWORK_SELECTABLE: dict[str, str] = {
+    StellarNetwork.TESTNET.value: "Testnet",
+    StellarNetwork.MAINNET.value: "Mainnet",
+    StellarNetwork.FUTURENET.value: "Futurenet",
+    StellarNetwork.CUSTOM.value: "Local / development",
+}
+
+
+def selectable_stellar_networks() -> list[dict[str, str]]:
+    """Return the supported selectable networks as ``[{value, label}]``."""
+    return [{"value": value, "label": label} for value, label in _NETWORK_SELECTABLE.items()]
+
+
+def normalize_network_selection(value: str | None) -> str:
+    """Validate a user-supplied Stellar network selection.
+
+    Only the fixed selectable networks are accepted; anything else (including
+    raw URLs) raises :class:`StellarError`. Returns the canonical network name.
+    """
+    text = (value or "").strip().lower()
+    if text not in _NETWORK_SELECTABLE:
+        choices = ", ".join(_NETWORK_SELECTABLE)
+        raise StellarError(
+            f"Unsupported Stellar network: {value or '(none)'}. " f"Supported networks: {choices}."
+        )
+    return text
+
+
+def stored_stellar_network(user) -> str | None:
+    """Return ``user``'s stored network selection when it is still supported."""
+    stored = getattr(user, "stellar_network", None)
+    if isinstance(stored, str) and stored in _NETWORK_SELECTABLE:
+        return stored
+    return None
+
+
+def set_stellar_network(user, value: str | None) -> str:
+    """Validate ``value`` and store it on ``user`` (caller persists)."""
+    normalized = normalize_network_selection(value)
+    user.stellar_network = normalized
+    return normalized
+
+
+def _request_context_network() -> str | None:
+    """Return the request's effective network override, if any.
+
+    Inside an authenticated request the current user's stored (validated)
+    selection is honored so services, RPC clients, and analysis use the network
+    the user chose. Outside a request, or for anonymous users, ``None`` is
+    returned and the operator-configured ``STELLAR_NETWORK`` stays
+    authoritative. Access to the user record is best-effort and never raises.
+    """
+    if not (has_app_context() and has_request_context()):
+        return None
+    try:
+        from flask_login import current_user
+
+        if not getattr(current_user, "is_authenticated", False):
+            return None
+        return stored_stellar_network(current_user)
+    except Exception:  # pragma: no cover - defensive; never block on this
+        return None
+
 
 def resolve_network_config(
     network: str | None = None,
@@ -371,8 +437,9 @@ def resolve_network_config(
     """
     cfg = current_app.config if has_app_context() else {}
 
+    network = network or _request_context_network()
     network = network or cfg.get("STELLAR_NETWORK", StellarNetwork.TESTNET.value)
-    network = network.lower().strip()
+    network = str(network).lower().strip()
 
     preset = _NETWORK_PRESETS.get(network)
     if preset is None and network != StellarNetwork.CUSTOM.value:
@@ -433,7 +500,9 @@ class StellarService:
         """
         if has_app_context():
             cfg = current_app.config
-            network = network or cfg.get("STELLAR_NETWORK")
+            # ``network`` is intentionally left to ``resolve_network_config``,
+            # which honors an authenticated user's stored network selection
+            # before falling back to the operator-configured STELLAR_NETWORK.
             horizon_url = horizon_url or cfg.get("STELLAR_HORIZON_URL")
             rpc_url = rpc_url or cfg.get("STELLAR_RPC_URL")
             timeout = timeout or cfg.get("STELLAR_REQUEST_TIMEOUT")

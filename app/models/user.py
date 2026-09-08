@@ -23,6 +23,10 @@ class User(UserMixin, db.Model):
     password_hash = db.Column(db.String(255), nullable=False)
     is_active = db.Column(db.Boolean, nullable=False, default=True)
     is_admin = db.Column(db.Boolean, nullable=False, default=False)
+    #: Optional per-user Stellar network selection (one of the supported
+    #: selectable networks). ``None`` means "use the operator-configured
+    #: ``STELLAR_NETWORK`` default" — mainnet is never an implicit default.
+    stellar_network = db.Column(db.String(20), nullable=True)
     created_at = db.Column(
         db.DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC)
     )
@@ -58,6 +62,7 @@ class User(UserMixin, db.Model):
             "email": self.email,
             "is_active": self.is_active,
             "is_admin": self.is_admin,
+            "stellar_network": self.stellar_network,
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "last_login_at": self.last_login_at.isoformat() if self.last_login_at else None,
         }

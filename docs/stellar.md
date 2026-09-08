@@ -51,6 +51,19 @@ configured. Explicit endpoints are validated before use (see
 - `local` / `custom` — loopback-only configuration for a local
   `stellar-core` / `stellar-rpc`.
 
+### Per-user network selection (switcher)
+
+Logged-in users can switch the network their read-only Stellar requests and
+analysis use from the **Network status** panel on `/stellar` (or via
+`GET`/`PUT /stellar/api/network`). Only the **fixed supported networks**
+(`testnet`, `mainnet`, `futurenet`, `custom`) are selectable — never a raw URL,
+so SSRF/endpoint validation is untouched. The choice is stored per user
+(`users.stellar_network`); with no stored selection the operator-configured
+`STELLAR_NETWORK` remains authoritative, and **mainnet is never an implicit
+default** — it only takes effect after an explicit user selection. The selected
+network routes through `StellarService`, `SorobanRpcClient`, and the Stellar
+analysis context inside authenticated requests.
+
 ### Read-only Horizon service (`app/services/stellar.py::StellarService`)
 
 - `get_network_info()` — network metadata (never contacts the node).
@@ -218,8 +231,8 @@ access.
 
 - Transaction signing/submission, wallets, or custodial features (out of scope
   by design — this is developer tooling).
-- A network switcher UI, an account dashboard, a contract-data browsing UI,
-  and a mock RPC server (open contributor issues).
+- An account dashboard and a contract-data browsing UI, and a mock RPC server
+  (open contributor issues).
 - `sendTransaction` / `simulateTransaction`.
 
 ## Contributing

@@ -136,6 +136,25 @@ Operators may override the RPC endpoint with `STELLAR_RPC_URL`, subject to the
 same endpoint validation (https for public networks, loopback-only for custom).
 There is **no** way for a user or an imported project to supply an RPC URL.
 
+### Per-user network selection
+
+Logged-in users can switch the network their read-only Stellar requests and
+analysis use (see the **Network status** panel on the `/stellar` page and
+`PUT /stellar/api/network`). Only the **fixed supported networks** are
+selectable — `testnet`, `mainnet`, `futurenet`, and `custom` (local /
+development) — never a raw URL. Validation rejects anything else before it can
+be stored.
+
+- An unset selection keeps the operator-configured `STELLAR_NETWORK`
+  authoritative.
+- **Mainnet is never an implicit default.** With the shipped configuration the
+  default is `testnet`; mainnet only takes effect after a user explicitly
+  selects it.
+- The stored selection is per user, applies within an authenticated request,
+  and routes `StellarService`, `SorobanRpcClient`, and the Stellar analysis
+  context through the chosen network. It grants no additional access and does
+  not weaken any endpoint/SSRF validation.
+
 > Related: the GitHub PR/issue analyses are **detection-driven** and
 > Stellar-aware without calling the RPC. They reuse `stellar_detection` over
 > the changed files / a bounded repo slice and add bounded Stellar review

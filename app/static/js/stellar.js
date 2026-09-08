@@ -57,6 +57,41 @@
     return html;
   }
 
+  function renderSelection(selection) {
+    if (!selection) return "";
+    var options = (selection.selectable || []).map(function (item) {
+      var selected = item.value === selection.effective_network ? " selected" : "";
+      return '<option value="' + escapeHtml(item.value) + '"' + selected + ">" +
+        escapeHtml(item.label) + "</option>";
+    }).join("");
+    var note = selection.stored_network
+      ? "Using your saved selection (" + escapeHtml(selection.stored_network) + ")."
+      : "Using the configured default (" + escapeHtml(selection.default_network) + ").";
+    var html = '<div class="repo-toolbar">';
+    html += '<select id="stellar-network-select" class="sidebar-search" aria-label="Active Stellar network">' + options + "</select>";
+    html += '<button id="stellar-network-apply" class="btn btn-primary btn-sm" type="button">Switch network</button>';
+    html += "</div>";
+    html += '<p class="field-hint">' + note + " Mainnet is never used automatically; select it explicitly.</p>";
+    return html;
+  }
+
+  function saveNetwork() {
+    var output = document.getElementById("stellar-network-output");
+    var select = document.getElementById("stellar-network-select");
+    if (!select) return;
+    var value = select.value;
+    output.innerHTML = '<p class="sidebar-empty">Switching network…</p>';
+    api("/stellar/api/network", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ network: value }),
+    })
+      .then(loadNetwork)
+      .catch(function (error) {
+        renderError(output, error);
+      });
+  }
+
   function renderAccount(data) {
     var account = data.account;
     var html = "<ul class=\"metric-list\">";
@@ -106,7 +141,11 @@
     var output = document.getElementById("stellar-network-output");
     api("/stellar/api/network")
       .then(function (data) {
-        output.innerHTML = renderNetwork(data);
+        var html = renderNetwork(data);
+        html += renderSelection(data.selection || null);
+        output.innerHTML = html;
+        var apply = document.getElementById("stellar-network-apply");
+        if (apply) apply.addEventListener("click", saveNetwork);
       })
       .catch(function (error) {
         renderError(output, error);

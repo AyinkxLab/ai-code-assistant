@@ -114,13 +114,30 @@ class TestMigrationUpgrade:
             assert result.returncode == 0, result.stderr
             with _inspect(db_url) as insp:
                 tables = set(insp.get_table_names())
-                assert PLUGIN_TABLES.isdisjoint(tables), (
-                    "plugin tables still present after downgrade"
-                )
+                assert PLUGIN_TABLES.isdisjoint(
+                    tables
+                ), "plugin tables still present after downgrade"
 
 
 class TestMigrationHead:
-    def test_head_is_phase8(self):
+    def test_head_is_phase8_with_network_switcher(self):
         result = _run_flask(["db", "heads"], {"DATABASE_URL": "sqlite:///:memory:"})
         assert result.returncode == 0, result.stderr
-        assert "b3c2d1a0f9e8" in (result.stdout + result.stderr)
+        assert "a7f8b9c0d1e2" in (result.stdout + result.stderr)
+
+    def test_users_stellar_network_column_upgraded(self):
+        with _migration_db() as db_url, _inspect(db_url) as insp:
+            columns = {col["name"] for col in insp.get_columns("users")}
+            assert "stellar_network" in columns
+
+    def test_stellar_network_column_downgrade(self):
+        # Downgrading to the previous Phase 8 revision removes the column.
+        with tempfile.TemporaryDirectory() as tmp:
+            db_url = f"sqlite:///{os.path.join(tmp, 'mig2.db')}"
+            up = _run_flask(["db", "upgrade"], {"DATABASE_URL": db_url})
+            assert up.returncode == 0, up.stderr
+            down = _run_flask(["db", "downgrade", "b3c2d1a0f9e8"], {"DATABASE_URL": db_url})
+            assert down.returncode == 0, down.stderr
+            with _inspect(db_url) as insp:
+                columns = {col["name"] for col in insp.get_columns("users")}
+                assert "stellar_network" not in columns
