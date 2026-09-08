@@ -160,3 +160,25 @@ def register_plugins_cli(app: Flask) -> None:
         else:
             click.echo(f"Installed plugin: {plugin.id} v{plugin.version}")
         return EXIT_OK
+
+    @plugins_group.command("errors")
+    @click.option("--json", "as_json", is_flag=True, help="Emit machine-readable JSON.")
+    def plugin_errors(as_json: bool) -> int:
+        """List the most recent structured plugin error reports (operator scope)."""
+        from app.services.plugin_errors import list_operator_error_reports
+
+        reports = list_operator_error_reports()
+        if as_json:
+            _write_json({"count": len(reports), "errors": reports})
+            return EXIT_OK
+        if not reports:
+            click.echo("No plugin error reports recorded.")
+            return EXIT_OK
+        for report in reports:
+            details = report.get("message") or report.get("exception_type") or ""
+            click.echo(
+                f"[{report['created_at']}] {report['plugin_id']} "
+                f"{report['operation']} {report['exception_type'] or ''} {details}".rstrip()
+            )
+        click.echo(f"{len(reports)} plugin error report(s).")
+        return EXIT_OK

@@ -326,10 +326,26 @@ class EventDispatcher:
                     f"Error dispatching {event.event_type} to plugin {plugin_id or 'unknown'}: {e}",
                     exc_info=True,
                 )
+                if plugin_id is not None:
+                    self._record_handler_error(plugin_id, event, e)
                 if raise_on_error:
                     raise
 
         return results
+
+    def _record_handler_error(self, plugin_id: str, event: Event, exc: Exception) -> None:
+        """Best-effort, bounded error report for a failing plugin handler."""
+        try:
+            from app.services.plugin_errors import record_plugin_error
+
+            record_plugin_error(
+                plugin_id,
+                f"dispatch:{event.event_type}",
+                exc=exc,
+                workspace_id=event.workspace_id,
+            )
+        except Exception:  # pragma: no cover - recording must never break dispatch
+            logger.debug("Could not record plugin handler error report", exc_info=True)
 
     def _record_dispatch_denial(self, plugin_id: str, event: Event, reason: str) -> None:
         """Record a workspace-scoped dispatch denial as an audit outcome.

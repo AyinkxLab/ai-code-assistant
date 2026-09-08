@@ -272,6 +272,20 @@ rejected with `400`, and every stored object is bounded (key count, nesting
 depth, serialized size). Because config may hold secrets it is owner-only and
 is deliberately **omitted** from the plugin list/inspect surfaces.
 
+### Structured error reports
+
+Plugin failures are recorded as bounded, safe rows (`app/services/plugin_errors.py`
+→ `plugin_error_reports`) instead of only log lines. Each report stores the
+plugin id, the operation (`dispatch:<event_type>`, `hook:<hook>`, …), the
+exception type, and a length-bounded message. **No stack traces, event
+payloads, or secrets are stored by default.**
+
+Recording happens automatically when a plugin dispatch handler raises and when
+a lifecycle hook fails inside an app context; it is best-effort and never
+changes the existing failure-isolation behavior. Reports are read back
+owner-scoped via `GET /plugins/api/workspaces/<ws>/plugin-errors` (owner only,
+workspace-isolated) and operator-wide via `flask plugins errors [--json]`.
+
 ## Audit trail (capabilities & state)
 
 Security-relevant plugin actions are recorded in the shared, append-only

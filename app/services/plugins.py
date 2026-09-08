@@ -480,7 +480,21 @@ class PluginRegistry:
                 hook,
                 result.get("error"),
             )
+            self._record_hook_error(plugin.manifest.id, hook, result.get("error"))
         return result
+
+    def _record_hook_error(self, plugin_id: str, hook: str, message: Any) -> None:
+        """Best-effort bounded error report when running inside an app context."""
+        try:
+            from flask import has_app_context
+
+            if not has_app_context():
+                return
+            from app.services.plugin_errors import record_plugin_error
+
+            record_plugin_error(plugin_id, f"hook:{hook}", message=str(message))
+        except Exception:  # pragma: no cover - never let recording break lifecycle
+            logger.debug("Could not record plugin hook error report", exc_info=True)
 
     def validate_capability(self, plugin_id: str, capability: str) -> bool:
         """Check if plugin has capability.

@@ -26,6 +26,7 @@ from app.services.permissions import require_workspace_capability, resolve_works
 from app.services.plugin_audit import record_plugin_audit
 from app.services.plugin_compat import compatibility_status
 from app.services.plugin_config import validate_plugin_config
+from app.services.plugin_errors import list_workspace_error_reports
 from app.services.plugins import ManifestValidationError, PluginError, PluginManifest
 
 
@@ -464,3 +465,16 @@ def api_update_plugin_config(workspace_id: int, plugin_id: str):
             "config": installation.config or {},
         }
     )
+
+
+@bp.route("/api/workspaces/<int:workspace_id>/plugin-errors", methods=["GET"])
+@login_required
+@require_workspace_capability("manage_plugins")
+def api_list_plugin_errors(workspace_id: int):
+    """Owner-scoped read of a workspace's structured plugin error reports.
+
+    Reports are bounded (no stack traces or payloads) and only ever returned
+    for the caller's own workspace (fail closed for non-owners).
+    """
+    reports = list_workspace_error_reports(workspace_id)
+    return jsonify({"workspace_id": workspace_id, "count": len(reports), "errors": reports})
