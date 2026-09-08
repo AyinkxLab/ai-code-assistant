@@ -6,6 +6,24 @@ from app import create_app
 from app.extensions import db as _db
 
 
+@pytest.fixture(scope="session")
+def mock_stellar():
+    """Boot the deterministic offline mock Stellar network once per session.
+
+    Yields the running :class:`MockStellarServer`; point a ``custom`` network
+    config's ``STELLAR_HORIZON_URL`` / ``STELLAR_RPC_URL`` at
+    ``server.horizon_url`` / ``server.rpc_url`` to exercise the real service
+    and RPC client code paths offline.
+    """
+    from app.services.stellar_mock import MockStellarServer
+
+    server = MockStellarServer().start()
+    try:
+        yield server
+    finally:
+        server.stop()
+
+
 @pytest.fixture(autouse=True)
 def _reset_event_dispatcher():
     """Clear the shared event dispatcher after each test.

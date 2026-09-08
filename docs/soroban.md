@@ -183,8 +183,11 @@ be stored.
 
 - A UI for browsing decoded contract data and ledger entries (tracked in #185).
 - `getLedgerEntries` durable-key pagination, and symbol-key lookups.
-- A mock RPC server for local development (#182).
 - Durable pagination and cursor support for all methods.
+
+For offline tests and local development, use the deterministic in-process mock
+Stellar network (`app/services/stellar_mock.py`; served via the session-scoped
+`mock_stellar` pytest fixture) instead of a live node.
 
 ## Contributing
 

@@ -224,15 +224,45 @@ access.
 
 - Point `STELLAR_NETWORK=custom` and `STELLAR_HORIZON_URL` /
   `STELLAR_RPC_URL` at a local `stellar-core`/`stellar-rpc` (loopback only).
-- The test suite uses deterministic fixtures and mocked transport; no real
-  network access is required.
+
+### Offline mock network (`app/services/stellar_mock.py`)
+
+For tests and local development with **no** Stellar node and **no** external
+network, boot the deterministic offline mock:
+
+```python
+from app.services.stellar_mock import MockStellarServer
+
+server = MockStellarServer().start()
+print(server.horizon_url, server.rpc_url)  # -> http://127.0.0.1:<port>[/rpc]
+# ...point a custom network config at server.horizon_url / server.rpc_url...
+server.stop()
+```
+
+or run it as a standalone process for manual local development:
+
+```bash
+python -m app.services.stellar_mock
+```
+
+The mock serves a fixed fixture set over the same two APIs the app reads:
+Horizon-style JSON (`/accounts/...`, `/transactions/...`, `/ledgers/...`,
+`/assets`) and the read-only Stellar RPC JSON-RPC method set on `/rpc`
+(health, version, latest ledger, network, ledger entries, ledgers,
+transactions, events, fee stats). It is read-only, deterministic, and never
+touches a real network. In pytest it is available via the session-scoped
+`mock_stellar` fixture; see `tests/test_stellar_mock_network.py` for an
+end-to-end example driving the real `StellarService` and `SorobanRpcClient`.
+
+- The test suite uses deterministic fixtures and mocked transport (including
+  the in-process mock network); no real network access is required.
 
 ## What is not implemented
 
 - Transaction signing/submission, wallets, or custodial features (out of scope
   by design — this is developer tooling).
-- An account dashboard and a contract-data browsing UI, and a mock RPC server
-  (open contributor issues).
+- An account dashboard and a contract-data browsing UI (open contributor
+  issues).
 - `sendTransaction` / `simulateTransaction`.
 
 ## Contributing
