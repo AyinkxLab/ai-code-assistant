@@ -650,6 +650,28 @@ def api_project_stellar(project_id: int):
     return jsonify(metadata)
 
 
+@bp.route("/api/projects/<int:project_id>/stellar/security-findings", methods=["GET"])
+@login_required
+def api_project_stellar_security_findings(project_id: int):
+    """Owner-only read of a project's persisted Stellar security findings.
+
+    Uses the same owner-only ``_get_project`` gate as every project surface:
+    anyone who does not own the project receives a 404 (no existence oracle),
+    and findings are only ever returned for the caller's own project.
+    """
+    project = _get_project(project_id)
+    from app.services.stellar_findings import list_project_findings
+
+    findings = list_project_findings(project.id)
+    return jsonify(
+        {
+            "project_id": project.id,
+            "count": len(findings),
+            "findings": findings,
+        }
+    )
+
+
 def _is_test_path(path: str) -> bool:
     name = path.rsplit("/", 1)[-1].lower()
     return (

@@ -136,6 +136,30 @@ and **`stellar_security`** (Soroban-aware security review). Both:
 - Ground claims in the indexed files, mark `[CONFIRMED]` vs `[SUGGESTION]`,
   and include an honest live-RPC availability note.
 
+#### Structured findings (`app/services/stellar_findings.py`)
+
+The `stellar_security` model is asked to close its narrative with a bounded
+JSON findings block. That block is parsed **defensively** — malformed or
+missing JSON never crashes or alters the analysis; the narrative is returned
+unchanged and nothing is persisted:
+
+- Values are normalized to a shared vocabulary (severity, Stellar category,
+  confidence), length-bounded, capped at 50 findings, and never invented from
+  prose. `[CONFIRMED]`/`[SUGGESTION]` markers map to `confirmed`/`suggestion`.
+- Findings are persisted per project as `StellarSecurityFinding` rows (the
+  analysis request commits atomically with its activity row). Re-running an
+  analysis replaces the previous run's findings.
+- Findings are **evidence, not verdicts** — the narrative itself states the AI
+  never claims formal verification or proven vulnerabilities.
+- Non-Stellar projects always receive the honest "not applicable" result with
+  an empty findings list and nothing is persisted.
+
+Findings ride along in the `stellar_security` analysis API response and are
+read back owner-scoped via
+`GET /workspaces/api/projects/<id>/stellar/security-findings` (same 404-on-
+non-owner gate as every project surface, so there is no existence oracle).
+Display in the project developer panel is handled by the results-panel UI.
+
 ### UI
 
 - A **Stellar** section in the main navigation (`/stellar`) with network

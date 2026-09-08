@@ -120,15 +120,35 @@ class TestMigrationUpgrade:
 
 
 class TestMigrationHead:
-    def test_head_is_phase8_with_network_switcher(self):
+    def test_head_is_latest_phase8(self):
         result = _run_flask(["db", "heads"], {"DATABASE_URL": "sqlite:///:memory:"})
         assert result.returncode == 0, result.stderr
-        assert "a7f8b9c0d1e2" in (result.stdout + result.stderr)
+        assert "c9d8e7f6a5b4" in (result.stdout + result.stderr)
 
     def test_users_stellar_network_column_upgraded(self):
         with _migration_db() as db_url, _inspect(db_url) as insp:
             columns = {col["name"] for col in insp.get_columns("users")}
             assert "stellar_network" in columns
+
+    def test_stellar_security_findings_table_upgraded(self):
+        expected = {
+            "id",
+            "project_id",
+            "file",
+            "line",
+            "severity",
+            "category",
+            "confidence",
+            "evidence",
+            "explanation",
+            "recommendation",
+            "created_at",
+        }
+        with _migration_db() as db_url, _inspect(db_url) as insp:
+            tables = set(insp.get_table_names())
+            assert "stellar_security_findings" in tables
+            columns = {col["name"] for col in insp.get_columns("stellar_security_findings")}
+            assert columns == expected
 
     def test_stellar_network_column_downgrade(self):
         # Downgrading to the previous Phase 8 revision removes the column.
@@ -141,3 +161,17 @@ class TestMigrationHead:
             with _inspect(db_url) as insp:
                 columns = {col["name"] for col in insp.get_columns("users")}
                 assert "stellar_network" not in columns
+
+    def test_stellar_security_findings_downgrade_removed(self):
+        # Downgrading to the revision before the table removes it.
+        with tempfile.TemporaryDirectory() as tmp:
+            db_url = f"sqlite:///{os.path.join(tmp, 'mig3.db')}"
+            up = _run_flask(["db", "upgrade"], {"DATABASE_URL": db_url})
+            assert up.returncode == 0, up.stderr
+            down = _run_flask(["db", "downgrade", "a7f8b9c0d1e2"], {"DATABASE_URL": db_url})
+            assert down.returncode == 0, down.stderr
+            with _inspect(db_url) as insp:
+                tables = set(insp.get_table_names())
+                assert "stellar_security_findings" not in tables
+                columns = {col["name"] for col in insp.get_columns("users")}
+                assert "stellar_network" in columns
