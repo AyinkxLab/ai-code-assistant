@@ -54,7 +54,6 @@ def _manifest_dict(plugin_id):
         "author": "tester",
         "entry_point": "plugins.test:TestPlugin",
         "capabilities": CAPS,
-        "compatibility": ">=0.8.0",
         "configuration": CONFIG,
     }
 
@@ -168,7 +167,8 @@ class TestInstallConfigureGrantExecute:
 
     def test_disabled_installation_never_executes(self, app, client, workspace):
         plugin_id = "e2e-disabled"
-        _install(client, workspace.id, _manifest_dict(plugin_id))
+        install_resp = _install(client, workspace.id, _manifest_dict(plugin_id))
+        assert install_resp.status_code == 201, install_resp.get_json()
         _grant(client, workspace.id, plugin_id)
         assert (
             client.post(

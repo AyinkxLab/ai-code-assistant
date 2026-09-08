@@ -18,6 +18,8 @@ from pathlib import Path
 from types import ModuleType
 from typing import Any
 
+from app.services.plugin_compat import is_valid_compatibility
+
 logger = logging.getLogger(__name__)
 
 
@@ -56,7 +58,7 @@ class PluginManifest:
     author: str
     entry_point: str
     capabilities: list[str]
-    compatibility: str = ">=0.8.0"
+    compatibility: str | None = None
     permissions: list[str] | None = None
     dependencies: list[str] | None = None
     configuration: dict[str, Any] | None = None
@@ -136,6 +138,12 @@ class PluginManifest:
                 if cap not in valid_capabilities:
                     errors.append(f"Unknown capability: {cap}")
 
+        # Validate the PEP 440 compatibility specifier (e.g. ">=0.8.0"). The
+        # field is optional; when omitted the plugin supports any app version.
+        compatibility = data.get("compatibility")
+        if compatibility is not None and not is_valid_compatibility(compatibility):
+            errors.append(f"Invalid compatibility specifier: {compatibility}")
+
         if errors:
             raise ManifestValidationError("; ".join(errors))
 
@@ -147,7 +155,7 @@ class PluginManifest:
             author=data["author"],
             entry_point=data["entry_point"],
             capabilities=data["capabilities"],
-            compatibility=data.get("compatibility", ">=0.8.0"),
+            compatibility=compatibility,
             permissions=data.get("permissions", []),
             dependencies=data.get("dependencies", []),
             configuration=data.get("configuration", {}),

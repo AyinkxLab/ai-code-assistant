@@ -56,9 +56,27 @@ JSON Schema is at [`plugins/plugin.schema.json`](../plugins/plugin.schema.json).
 - Use an invalid `entry_point` (must be `module.path:ClassName`).
 - Declare an unknown capability.
 - Declare an empty capability list.
+- Declare an invalid `compatibility` specifier (when present, it must be valid
+  PEP 440 syntax such as `>=0.8.0` or `>=0.1.0,<0.5.0`).
 
 Validation errors raise `ManifestValidationError`; unreadable or malformed
 manifest files raise `PluginError`.
+
+### Compatibility (PEP 440)
+
+The optional `compatibility` field declares the application versions a plugin
+supports (`==`, `!=`, `<=`, `>=`, `<`, `>`, `~=`, wildcards, and comma/space
+separated ranges). Enforcement lives in
+`app/services/plugin_compat.py` and is compared against the running app version
+(installed package metadata, falling back to `pyproject.toml`):
+
+- **Omitted / empty** → the plugin supports any application version.
+- **Invalid** specifier → the manifest is rejected during validation.
+- **Incompatible** range → installation is refused with a clear message naming
+  the required range and the current app version.
+- Compatible plugins register normally, and the management API exposes a
+  compatibility badge in plugin metadata (`compatibility`,
+  `compatible_with_app`, and `app_version`).
 
 ## Registry
 

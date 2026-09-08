@@ -23,6 +23,7 @@ from app.plugins import bp
 from app.services.capabilities import Capability, CapabilityStore
 from app.services.permissions import require_workspace_capability, resolve_workspace, role_for
 from app.services.plugin_audit import record_plugin_audit
+from app.services.plugin_compat import compatibility_status
 from app.services.plugins import ManifestValidationError, PluginError, PluginManifest
 
 
@@ -57,6 +58,7 @@ def _serialize(plugin: Plugin, workspace_id: int) -> dict:
         granted = CapabilityStore.list_capabilities(plugin.id, workspace_id)
     else:
         granted = []
+    status = compatibility_status(plugin.compatibility)
     return {
         "id": plugin.id,
         "name": plugin.name,
@@ -67,6 +69,9 @@ def _serialize(plugin: Plugin, workspace_id: int) -> dict:
         "declared_capabilities": plugin.capabilities or [],
         "permissions": plugin.permissions or [],
         "dependencies": plugin.dependencies or [],
+        "compatibility": plugin.compatibility or "any",
+        "compatible_with_app": bool(status["compatible"]),
+        "app_version": status["app_version"],
         "installed": installation is not None,
         "enabled": bool(installation is not None and installation.enabled),
         "granted_capabilities": granted,
@@ -170,6 +175,24 @@ def api_install_plugin(workspace_id: int):
     except PluginError as exc:
         return jsonify({"error": str(exc)}), 400
 
+    # Reject a plugin whose explicit PEP 440 compatibility range does not
+    # include the running application version (an absent field is unrestricted).
+    if manifest.compatibility is not None:
+        status = compatibility_status(manifest.compatibility)
+        if not status["compatible"]:
+            return (
+                jsonify(
+                    {
+                        "error": (
+                            f"Plugin {manifest.id} requires application "
+                            f"{manifest.compatibility}, but this app is "
+                            f"{status['app_version']}."
+                        )
+                    }
+                ),
+                400,
+            )
+
     plugin = Plugin.query.filter_by(id=manifest.id).first()
     if plugin is None:
         plugin = Plugin(
@@ -182,6 +205,7 @@ def api_install_plugin(workspace_id: int):
             capabilities=manifest.capabilities,
             permissions=manifest.permissions or [],
             dependencies=manifest.dependencies or [],
+            compatibility=manifest.compatibility,
             configuration=manifest.configuration or {},
         )
         db.session.add(plugin)
