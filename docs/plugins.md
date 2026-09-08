@@ -251,4 +251,26 @@ tracked under the **Phase 8 - Plugins & Extensions** milestone (label
 - Dependency resolution and version compatibility checks.
 - A plugin development guide and an example plugin.
 - CLI commands for plugin management.
-- A capability audit trail.
+- A capability audit trail (implemented).
+
+## Testing
+
+Run the whole suite with `pytest` (no external services; the event dispatcher
+is reset between tests):
+
+- `tests/test_plugins_manifest.py`, `tests/test_capabilities.py` — unit tests
+  for manifest validation, capability grants, and role mappings.
+- `tests/test_plugins_api.py` — the workspace-scoped plugin management API
+  (install/enable/disable/grant) with authorization fail-closed and workspace
+  isolation.
+- `tests/test_plugin_audit.py` — the capability/state audit trail.
+- `tests/test_event_authorization.py` — dispatch-time capability enforcement.
+- `tests/test_event_wiring.py` — real routes emit events to authorized
+  installed+granted plugins.
+- `tests/test_plugin_integration.py` — the end-to-end flow: a manifest written
+  to a temp directory is parsed/validated, installed through the real API
+  (configuration stored, **no** implicit grant), the capability is granted
+  explicitly, a handler subscribes to `project.created`, a real request emits
+  the event, and the authorized handler runs and persists a result. It also
+  proves a failing handler is isolated and that an un-granted (or disabled)
+  plugin never executes.
