@@ -101,6 +101,35 @@ result = inspect_contract("C…contract id", wasm_hash="…64 hex chars…")
 print(result["found"], result["instance_entry"])
 ```
 
+## Scaffolding a new contract
+
+Starting a Soroban contract is boilerplate-heavy, so the app can generate a
+minimal, deterministic scaffold and import it straight into a workspace:
+
+```http
+POST /workspaces/api/workspaces/<id>/projects
+Content-Type: application/json
+
+{"source": "scaffold", "name": "My Token"}
+```
+
+The generated project (`app/services/soroban_scaffold.py`) contains a
+`Cargo.toml` with the `soroban-sdk`, a `src/lib.rs` with a `#[contract]` /
+`#[contractimpl]` hello contract, a `.soroban/config.toml` testnet network
+config for the Soroban CLI, a `README`, and a `.gitignore`. The name is
+normalized into a valid Cargo package name.
+
+Important honesty rules:
+
+- **Generation only.** No `cargo` is executed and no network operation happens.
+  The scaffold is documented as *not compiled/verified* in this environment;
+  nothing claims it builds.
+- **No secrets.** No keys or deploy accounts are generated.
+- The generated project is detected as **likely** Soroban
+  (`project_stellar_metadata` → `confidence: "likely"`), so it flows through
+  the Stellar analysis and RPC inspection surfaces like any imported Soroban
+  repository.
+
 ## Decoding contract data
 
 Each `getLedgerEntries` result carries a base64 `LedgerKey` (`key`), the entry's

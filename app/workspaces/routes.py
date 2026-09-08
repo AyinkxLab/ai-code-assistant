@@ -54,7 +54,12 @@ from app.models.activity_event import (
     EVENT_PROJECT_IMPORTED,
     EVENT_ROLE_CHANGED,
 )
-from app.models.project import SOURCE_ARCHIVE, SOURCE_GITHUB, STATUS_READY
+from app.models.project import (
+    SOURCE_ARCHIVE,
+    SOURCE_GITHUB,
+    SOURCE_SCAFFOLD,
+    STATUS_READY,
+)
 from app.models.workspace_member import (
     MEMBER_ROLES,
     ROLE_OWNER,
@@ -374,11 +379,79 @@ def api_list_projects(workspace_id: int):
 @bp.route("/api/workspaces/<int:workspace_id>/projects", methods=["POST"])
 @login_required
 def api_import_project(workspace_id: int):
-    """Import a project from an uploaded archive or a GitHub repository."""
+    """Import a project from an archive, GitHub, or a generated Soroban scaffold."""
     workspace = _get_workspace(workspace_id)
     if request.files.get("file"):
         return _import_archive(workspace)
+    data = request.get_json(silent=True) or {}
+    if (data.get("source") or "").strip().lower() == SOURCE_SCAFFOLD:
+        return _import_scaffold(workspace, data)
     return _import_github(workspace)
+
+
+def _finish_project_import(workspace: Workspace, project: Project, source: str):
+    """Record activity/events for a completed import and return its JSON body."""
+    record_activity(
+        workspace.id,
+        EVENT_PROJECT_IMPORTED,
+        actor=current_user,
+        target=project,
+        metadata={"source": source, "file_count": project.file_count},
+    )
+    db.session.commit()
+    emit_event(
+        "project.created",
+        data={"project_id": project.id, "name": project.name, "source": source},
+        workspace_id=workspace.id,
+        user_id=current_user.id,
+    )
+    stellar_meta = project_stellar_metadata(project)
+    if stellar_meta.get("is_stellar"):
+        emit_event(
+            "stellar.network.detected",
+            data={
+                "project_id": project.id,
+                "confidence": stellar_meta.get("confidence"),
+                "is_soroban": stellar_meta.get("is_soroban"),
+                "network_hints": stellar_meta.get("network_hints") or [],
+            },
+            workspace_id=workspace.id,
+            user_id=current_user.id,
+        )
+    response = project.to_dict()
+    response["stellar"] = stellar_meta
+    return jsonify(response), 201
+
+
+def _import_scaffold(workspace: Workspace, data: dict):
+    """Generate and import a deterministic Soroban contract scaffold.
+
+    Generation only: no ``cargo`` and no network operations are run, and the
+    scaffold is documented as not compiled/verified in this environment.
+    """
+    from app.services.importing import store_project_files
+    from app.services.soroban_scaffold import (
+        ScaffoldError,
+        normalize_crate_name,
+        soroban_scaffold_rows,
+    )
+
+    try:
+        crate_name = normalize_crate_name(data.get("name"))
+    except ScaffoldError as exc:
+        return jsonify({"error": str(exc)}), 400
+
+    rows = soroban_scaffold_rows(crate_name)
+    project = Project(
+        workspace_id=workspace.id,
+        user_id=current_user.id,
+        name=crate_name[:200],
+        source=SOURCE_SCAFFOLD,
+    )
+    db.session.add(project)
+    db.session.commit()
+    store_project_files(project, rows)
+    return _finish_project_import(workspace, project, SOURCE_SCAFFOLD)
 
 
 def _import_archive(workspace: Workspace):
@@ -411,36 +484,7 @@ def _import_archive(workspace: Workspace):
     from app.services.importing import store_project_files
 
     store_project_files(project, rows)
-    record_activity(
-        workspace.id,
-        EVENT_PROJECT_IMPORTED,
-        actor=current_user,
-        target=project,
-        metadata={"source": SOURCE_ARCHIVE, "file_count": project.file_count},
-    )
-    db.session.commit()
-    emit_event(
-        "project.created",
-        data={"project_id": project.id, "name": project.name, "source": SOURCE_ARCHIVE},
-        workspace_id=workspace.id,
-        user_id=current_user.id,
-    )
-    stellar_meta = project_stellar_metadata(project)
-    if stellar_meta.get("is_stellar"):
-        emit_event(
-            "stellar.network.detected",
-            data={
-                "project_id": project.id,
-                "confidence": stellar_meta.get("confidence"),
-                "is_soroban": stellar_meta.get("is_soroban"),
-                "network_hints": stellar_meta.get("network_hints") or [],
-            },
-            workspace_id=workspace.id,
-            user_id=current_user.id,
-        )
-    response = project.to_dict()
-    response["stellar"] = stellar_meta
-    return jsonify(response), 201
+    return _finish_project_import(workspace, project, SOURCE_ARCHIVE)
 
 
 def _import_github(workspace: Workspace):
@@ -471,36 +515,7 @@ def _import_github(workspace: Workspace):
         db.session.commit()
         return jsonify({"error": str(exc)}), 502
 
-    record_activity(
-        workspace.id,
-        EVENT_PROJECT_IMPORTED,
-        actor=current_user,
-        target=project,
-        metadata={"source": SOURCE_GITHUB, "file_count": project.file_count},
-    )
-    db.session.commit()
-    emit_event(
-        "project.created",
-        data={"project_id": project.id, "name": project.name, "source": SOURCE_GITHUB},
-        workspace_id=workspace.id,
-        user_id=current_user.id,
-    )
-    stellar_meta = project_stellar_metadata(project)
-    if stellar_meta.get("is_stellar"):
-        emit_event(
-            "stellar.network.detected",
-            data={
-                "project_id": project.id,
-                "confidence": stellar_meta.get("confidence"),
-                "is_soroban": stellar_meta.get("is_soroban"),
-                "network_hints": stellar_meta.get("network_hints") or [],
-            },
-            workspace_id=workspace.id,
-            user_id=current_user.id,
-        )
-    response = project.to_dict()
-    response["stellar"] = stellar_meta
-    return jsonify(response), 201
+    return _finish_project_import(workspace, project, SOURCE_GITHUB)
 
 
 @bp.route("/api/projects/<int:project_id>", methods=["DELETE"])
