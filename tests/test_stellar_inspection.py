@@ -11,12 +11,23 @@ from app.services.stellar_inspection import (
     inspect_ledger_entry,
     network_status,
 )
-from app.services.stellar_xdr import ledger_key_for_contract
+from app.services.stellar_xdr import (
+    contract_address_to_bytes,
+    ledger_key_contract_code,
+    ledger_key_for_contract,
+)
+from tests.stellar_xdr_fixtures import (
+    contract_code_entry,
+    contract_data_instance_entry,
+    ledger_data_b64,
+)
 
 VALID_ADDRESS = "GALAXYVOIDAOPZTDLHILAJQKCVVFMD4IKLXLSZV5YHO7VY74IWZILUTO"
 DOCS_CONTRACT = "CCPYZFKEAXHHS5VVW5J45TOU7S2EODJ7TZNJIA5LKDVL3PESCES6FNCI"
 HASH64 = "a" * 64
 INVALID_STRUCTURAL_ADDRESS = "G" + "A" * 55
+WASM_HASH = bytes(range(32))
+CODE = bytes(range(64)) * 4
 
 
 class _FakeResponse:
@@ -76,7 +87,13 @@ class _StubRpc:
     def get_network(self):
         return self._network
 
-    def get_ledger_entries(self, keys, xdr_format="base64"):
+    def get_ledger_entries(self, keys, xdr_format="base64", clip_xdr=True):
+        if getattr(self, "_entries_by_key", None):
+            return {
+                "entries": [
+                    self._entries_by_key[key] for key in keys if key in self._entries_by_key
+                ]
+            }
         return self._entries
 
 
@@ -187,7 +204,7 @@ class TestInspectContract:
         }
         stub = _StubRpc(entries={"entries": [entry], "latestLedger": 10})
         with app.app_context():
-            stub.get_ledger_entries = lambda keys, xdr_format="base64": {
+            stub.get_ledger_entries = lambda keys, xdr_format="base64", clip_xdr=True: {
                 "entries": [entry if "xdr" not in keys[0] else code_entry],
                 "latestLedger": 10,
             }
@@ -218,3 +235,124 @@ class TestInspectLedgerEntry:
     def test_invalid_key_rejected(self, app):
         with app.app_context(), pytest.raises(AccountError):
             inspect_ledger_entry("not base64")
+
+
+class TestInspectContractDecoded:
+    """inspect_contract surfaces decoded contract-data/contract-code XDR."""
+
+    def _stub(self, entries_by_key, latest=10):
+        stub = _StubRpc()
+        stub._entries_by_key = entries_by_key
+        return stub
+
+    def _instance_entry(self, contract_id=DOCS_CONTRACT, xdr="AAAA"):
+        key = ledger_key_for_contract(contract_id)
+        return {"key": key, "xdr": xdr, "lastModifiedLedgerSeq": 5, "liveUntilLedgerSeq": 0}
+
+    def test_decoded_instance_entry(self, app):
+        contract_bytes = contract_address_to_bytes(DOCS_CONTRACT)
+        xdr = ledger_data_b64(contract_data_instance_entry(contract_bytes, WASM_HASH))
+        instance_key = ledger_key_for_contract(DOCS_CONTRACT)
+        stub = self._stub(
+            {
+                instance_key: {
+                    "key": instance_key,
+                    "xdr": xdr,
+                    "lastModifiedLedgerSeq": 5,
+                    "liveUntilLedgerSeq": 0,
+                }
+            }
+        )
+        with app.app_context():
+            result = inspect_contract(DOCS_CONTRACT, rpc=stub)
+        assert result["found"] is True
+        assert result["decoded"] is True
+        decoded = result["instance_entry"]["decoded"]
+        assert decoded["decoded"] is True
+        assert decoded["type"] == "CONTRACT_DATA"
+        assert decoded["detail"]["contract_id"] == DOCS_CONTRACT
+        assert decoded["detail"]["durability"] == "persistent"
+        assert decoded["detail"]["value"]["executable"]["type"] == "wasm"
+        assert decoded["detail"]["value"]["executable"]["wasm_hash"] == WASM_HASH.hex()
+
+    def test_decoded_with_wasm_hash_and_code(self, app):
+        contract_bytes = contract_address_to_bytes(DOCS_CONTRACT)
+        instance_key = ledger_key_for_contract(DOCS_CONTRACT)
+        code_key = ledger_key_contract_code(WASM_HASH)
+        code_xdr = ledger_data_b64(contract_code_entry(WASM_HASH, CODE))
+        stub = self._stub(
+            {
+                instance_key: self._instance_entry(
+                    xdr=ledger_data_b64(contract_data_instance_entry(contract_bytes, WASM_HASH))
+                ),
+                code_key: {
+                    "key": code_key,
+                    "xdr": code_xdr,
+                    "lastModifiedLedgerSeq": 6,
+                    "liveUntilLedgerSeq": 0,
+                },
+            }
+        )
+        with app.app_context():
+            result = inspect_contract(DOCS_CONTRACT, rpc=stub, wasm_hash=WASM_HASH.hex())
+        assert result["code_found"] is True
+        assert result["code_byte_size"] == len(CODE)
+        code_decoded = result["code_entry"]["decoded"]
+        assert code_decoded["decoded"] is True
+        assert code_decoded["type"] == "CONTRACT_CODE"
+        assert code_decoded["detail"]["wasm_hash"] == WASM_HASH.hex()
+
+    def test_undecodable_instance_not_guessed(self, app):
+        # An ACCOUNT entry is structurally valid but outside the decoder scope.
+        stub = self._stub(
+            {ledger_key_for_contract(DOCS_CONTRACT): self._instance_entry(xdr="AAAAAA==")}
+        )
+        with app.app_context():
+            result = inspect_contract(DOCS_CONTRACT, rpc=stub)
+        assert result["found"] is True
+        assert result["decoded"] is False
+        decoded = result["instance_entry"]["decoded"]
+        assert decoded["decoded"] is False
+        assert "no structured decoder" in decoded["reason"]
+
+
+class TestInspectLedgerEntryDecoded:
+    """inspect_ledger_entry decodes supported entries and reports the rest."""
+
+    def test_decoded_code_entry(self, app):
+        code_key = ledger_key_contract_code(WASM_HASH)
+        code_xdr = ledger_data_b64(contract_code_entry(WASM_HASH, CODE))
+        stub = _StubRpc()
+        stub._entries_by_key = {
+            code_key: {
+                "key": code_key,
+                "xdr": code_xdr,
+                "lastModifiedLedgerSeq": 3,
+                "liveUntilLedgerSeq": 0,
+            }
+        }
+        with app.app_context():
+            result = inspect_ledger_entry(code_key, rpc=stub)
+        assert result["found"] is True
+        assert result["decoded"] is True
+        decoded = result["entry"]["decoded"]
+        assert decoded["type"] == "CONTRACT_CODE"
+        assert decoded["detail"]["code_byte_size"] == len(CODE)
+
+    def test_unsupported_type_reported_explicitly(self, app):
+        key = ledger_key_for_contract(DOCS_CONTRACT)
+        stub = _StubRpc()
+        stub._entries_by_key = {
+            key: {
+                "key": key,
+                "xdr": "AAAAAA==",
+                "lastModifiedLedgerSeq": 3,
+                "liveUntilLedgerSeq": 0,
+            }
+        }
+        with app.app_context():
+            result = inspect_ledger_entry(key, rpc=stub)
+        assert result["found"] is True
+        assert result["decoded"] is False
+        assert result["entry"]["decoded"]["decoded"] is False
+        assert result["entry"]["decoded"]["type"] == "ACCOUNT"

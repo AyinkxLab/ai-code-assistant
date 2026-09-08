@@ -82,9 +82,19 @@ therefore validates addresses properly rather than structurally only.
   latest ledger (honest when the RPC is unreachable).
 - `inspect_account(address)` — parsed account data plus ledger freshness.
 - `inspect_contract(contract_id, wasm_hash=None)` — the contract's instance
-  ledger entry and (optionally) its deployed wasm metadata. Raw XDR is
-  returned bounded and marked **not decoded**.
-- `inspect_ledger_entry(key)` — a live ledger entry by base64 `LedgerKey`.
+  ledger entry and (optionally) its deployed wasm metadata. Supported
+  contract-data/contract-code entries are decoded into a structured view
+  (`instance_entry["decoded"]`, `code_entry["decoded"]`); the raw XDR is
+  returned bounded alongside it.
+- `inspect_ledger_entry(key)` — a live ledger entry by base64 `LedgerKey`,
+  with the same decoded view where the entry type is supported.
+
+Contract-data decoding lives in `app/services/stellar_xdr_decode.py` (bounded
+`LedgerKey`/`LedgerEntryData`/`SCVal` decoding, pinned by fixtures): a contract
+instance entry decodes into its contract id, durability, executable wasm hash
+and storage, and a contract-code entry into its wasm hash + byte size (raw wasm
+bytes are never dumped). Unsupported entry types and malformed XDR are reported
+explicitly as undecodable — decoded values are never guessed at.
 
 ### Project detection (`app/services/stellar_detection.py`)
 
@@ -208,8 +218,6 @@ access.
 
 - Transaction signing/submission, wallets, or custodial features (out of scope
   by design — this is developer tooling).
-- Full XDR/`SCVal` decoding of contract data into a human-readable view
-  (tracked as contributor work).
 - A network switcher UI, an account dashboard, a contract-data browsing UI,
   and a mock RPC server (open contributor issues).
 - `sendTransaction` / `simulateTransaction`.

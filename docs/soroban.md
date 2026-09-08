@@ -5,8 +5,9 @@ Code Assistant: what it does, which methods it implements, how it stays safe,
 what it deliberately does **not** do, and how contributors can extend it.
 
 > Honest status: this is a real, tested, read-only RPC client. It never signs,
-> simulates, or submits transactions, and it never claims to decode XDR it does
-> not decode.
+> simulates, or submits transactions. Supported contract-data/contract-code XDR
+> is decoded into a structured, bounded view; anything unsupported or malformed
+> is reported explicitly and never guessed at.
 
 ## Why an RPC layer exists
 
@@ -57,6 +58,10 @@ Deliberately **not** implemented: `sendTransaction` and `simulateTransaction`
   fixtures (including an exact match for the official docs' account key).
 - `app/services/stellar_inspection.py` — developer-facing `inspect_account`,
   `inspect_contract`, `inspect_ledger_entry`, `network_status`.
+- `app/services/stellar_xdr_decode.py` — bounded, read-only decoder for the
+  base64 `LedgerKey`/`LedgerEntryData`/`SCVal` values `getLedgerEntries`
+  returns (contract-data instances, symbol keys, contract-code metadata,
+  `SCVal`/`SCAddress` values), pinned by spec-derived fixtures.
 - `app/stellar/` — the `/stellar` page and its read-only APIs.
 - `app/services/stellar_cli.py` — `flask stellar …` commands.
 
@@ -96,6 +101,27 @@ result = inspect_contract("C…contract id", wasm_hash="…64 hex chars…")
 print(result["found"], result["instance_entry"])
 ```
 
+## Decoding contract data
+
+Each `getLedgerEntries` result carries a base64 `LedgerKey` (`key`), the entry's
+data (`xdr`, a `LedgerEntryData`), and its ledger metadata. The decoder
+(`app/services/stellar_xdr_decode.py`) turns supported values into a bounded,
+JSON-safe, developer-facing view:
+
+- `decode_ledger_key(value)` — account, contract-data, and contract-code keys.
+- `decode_ledger_entry_data(value)` — `CONTRACT_DATA` entries (contract
+  address, `SCVal` key, durability, `SCVal` value incl. a contract instance's
+  executable wasm hash and storage) and `CONTRACT_CODE` entries (wasm hash +
+  byte size; the wasm bytes are never dumped).
+- `decode_scval_xdr(value)` — a standalone `SCVal` (e.g. an event topic/value).
+
+Decoded values always carry a `decoded: true/false` flag. Unsupported entry
+types (e.g. classic `ACCOUNT`) and malformed XDR return `decoded: false` with a
+reason — decoding never fabricates a value, and raw wasm bytes are never copied
+into results. `inspect_contract` / `inspect_ledger_entry` attach this decoded
+view (via `instance_entry["decoded"]`, `code_entry["decoded"]`,
+`entry["decoded"]`) beside the bounded raw XDR.
+
 ## Network configuration
 
 RPC endpoints come **exclusively** from validated configuration:
@@ -128,23 +154,24 @@ There is **no** way for a user or an imported project to supply an RPC URL.
 - **Fail closed.** Malformed JSON, non-JSON-RPC payloads, id mismatches, HTTP
   errors, and RPC error payloads all raise typed errors; nothing is silently
   ignored.
-- **Honest about XDR.** Raw XDR is returned bounded and marked *not decoded*.
-  The project does not pretend to decode `SCVal`/`SCAddress` values it does not
-  decode.
+- **Honest about XDR.** Supported contract-data/contract-code XDR returned by
+  `getLedgerEntries` is decoded into a structured, bounded view (see
+  `stellar_xdr_decode.py`). Unsupported entry types and malformed XDR are
+  reported explicitly as undecodable; the project never guesses at decoded
+  values and never dumps raw wasm bytes.
 
 ## Known limitations / gaps (open contributor work)
 
-- Full XDR/`SCVal` decoding of contract data into a human-readable view
-  (tracked in #174).
-- A UI for browsing contract data and ledger entries.
+- A UI for browsing decoded contract data and ledger entries (tracked in #185).
 - `getLedgerEntries` durable-key pagination, and symbol-key lookups.
 - A mock RPC server for local development (#182).
 - Durable pagination and cursor support for all methods.
 
 ## Contributing
 
-- Run the suite: `pytest tests/test_soroban_rpc.py tests/test_stellar_xdr.py`
+- Run the suite:
+  `pytest tests/test_soroban_rpc.py tests/test_stellar_xdr.py tests/test_stellar_xdr_decode.py`
 - Keep the SSRF/redirect/`_check_url` guards intact — new methods must go
   through `_rpc_call`.
-- Verify XDR discriminants against `stellar-xdr` before changing encoders;
-  the encoders are pinned by fixture tests.
+- Verify XDR discriminants against `stellar-xdr` before changing encoders or
+  the decoder; both are pinned by fixture tests.

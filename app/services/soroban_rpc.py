@@ -103,18 +103,37 @@ def _clip_xdr(value: str | None) -> str | None:
     return value[:MAX_XDR_CHARS] + "…[truncated]"
 
 
-def _bound_entries(entries: list[dict]) -> list[dict]:
-    """Bound the number and size of raw ledger entries returned."""
+def _bound_entries(entries: list[dict], *, clip_xdr: bool = True) -> list[dict]:
+    """Bound the number and size of raw ledger entries returned.
+
+    Args:
+        entries: Raw ledger-entry objects from the RPC response.
+        clip_xdr: When True (default) every ``key``/``xdr`` string is bounded to
+            ``MAX_XDR_CHARS`` for display/transport. Set to False to keep the
+            base64 XDR intact so it can be decoded by
+            :mod:`app.services.stellar_xdr_decode` (still bounded by the
+            transport response-size cap).
+    """
     out: list[dict] = []
     for entry in entries[:MAX_RESULTS]:
-        out.append(
-            {
-                "key": _clip_xdr(entry.get("key")),
-                "xdr": _clip_xdr(entry.get("xdr")),
-                "lastModifiedLedgerSeq": entry.get("lastModifiedLedgerSeq"),
-                "liveUntilLedgerSeq": entry.get("liveUntilLedgerSeq"),
-            }
-        )
+        if clip_xdr:
+            out.append(
+                {
+                    "key": _clip_xdr(entry.get("key")),
+                    "xdr": _clip_xdr(entry.get("xdr")),
+                    "lastModifiedLedgerSeq": entry.get("lastModifiedLedgerSeq"),
+                    "liveUntilLedgerSeq": entry.get("liveUntilLedgerSeq"),
+                }
+            )
+        else:
+            out.append(
+                {
+                    "key": entry.get("key"),
+                    "xdr": entry.get("xdr"),
+                    "lastModifiedLedgerSeq": entry.get("lastModifiedLedgerSeq"),
+                    "liveUntilLedgerSeq": entry.get("liveUntilLedgerSeq"),
+                }
+            )
     return out
 
 
@@ -209,6 +228,7 @@ class SorobanRpcClient:
         keys: list[str],
         *,
         xdr_format: str = "base64",
+        clip_xdr: bool = True,
     ) -> dict:
         """Look up live ledger entries by their base64 ``LedgerKey`` values.
 
@@ -216,6 +236,9 @@ class SorobanRpcClient:
             keys: Base64 ``LedgerKey`` strings (validated, at most
                 ``max_ledger_keys``).
             xdr_format: ``"base64"`` (default) or ``"json"``.
+            clip_xdr: When True (default) ``key``/``xdr`` strings are bounded to
+                ``MAX_XDR_CHARS``. Pass False to receive intact base64 XDR for
+                decoding (still bounded by the transport response-size cap).
 
         Returns:
             ``{"entries": [...], "latestLedger": int}`` with bounded entries.
@@ -228,7 +251,7 @@ class SorobanRpcClient:
             raise SorobanRpcInvalidParamsError('xdr_format must be "base64" or "json".')
         result = self._rpc_call("getLedgerEntries", params)
         return {
-            "entries": _bound_entries(result.get("entries") or []),
+            "entries": _bound_entries(result.get("entries") or [], clip_xdr=clip_xdr),
             "latestLedger": result.get("latestLedger"),
         }
 
