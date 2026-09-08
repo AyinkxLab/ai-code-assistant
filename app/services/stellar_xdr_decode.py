@@ -27,6 +27,14 @@ What it decodes (all read-only, verified against the authoritative
   executable-tag, non-account/contract address types) are returned as explicit
   ``unsupported`` markers after safely skipping their authoritative byte
   lengths.
+* ``TransactionEnvelope`` — a bounded read-only view of the transaction
+  envelopes the RPC returns (V1, legacy V0, and fee-bump) with their common
+  operations decoded into structured, developer-facing summaries: payment,
+  create account, change trust, bump sequence, invoke host function (including
+  a bounded view of the Soroban auth entries), extend footprint TTL, and
+  restore footprint. Any other operation type is reported explicitly as
+  unsupported and decoding stops there (the remaining operations and
+  signatures are then honestly marked "not parsed"); values are never guessed.
 
 Design rules:
 
@@ -41,14 +49,16 @@ Design rules:
   result; nothing here raises out of the public API.
 
 The decode entry points (``decode_ledger_key``, ``decode_ledger_entry_data``,
-``decode_scval_xdr``) never raise: each returns a dict whose ``decoded`` key is
-``True`` on success and ``False`` with a ``reason`` otherwise.
+``decode_scval_xdr``, ``decode_transaction_envelope``) never raise: each
+returns a dict whose ``decoded`` key is ``True`` on success and ``False`` with
+a ``reason`` otherwise.
 """
 
 from __future__ import annotations
 
 import base64
 import binascii
+from decimal import Decimal
 from typing import Any
 
 from app.services.stellar_xdr import StrkeyError, strkey_encode
@@ -624,6 +634,648 @@ def decode_scval_xdr(value: str) -> dict[str, Any]:
         reader.ensure_exhausted()
         if result.get("type") == "unsupported":
             return _undecodable(str(result.get("reason", "SCVal is not rendered.")))
+        result["decoded"] = True
+        return result
+    except XdrDecodeError as exc:
+        return _undecodable(str(exc))
+    except StrkeyError as exc:
+        return _undecodable(f"Could not render an embedded address: {exc}")
+
+
+# ---------------------------------------------------------------------------
+# Transaction envelope decoding (Stellar-transaction.x, current protocol)
+# ---------------------------------------------------------------------------
+
+#: ``EnvelopeType`` discriminants relevant to developer transaction inspection.
+_ENVELOPE_TYPE_TX_V0 = 0
+_ENVELOPE_TYPE_TX = 2
+_ENVELOPE_TYPE_TX_FEE_BUMP = 5
+_ENVELOPE_NAMES: dict[int, str] = {
+    0: "ENVELOPE_TYPE_TX_V0",
+    2: "ENVELOPE_TYPE_TX",
+    5: "ENVELOPE_TYPE_TX_FEE_BUMP",
+}
+
+#: ``OperationType`` discriminants (Stellar-transaction.x).
+_OPERATION_NAMES: dict[int, str] = {
+    0: "CREATE_ACCOUNT",
+    1: "PAYMENT",
+    2: "PATH_PAYMENT_STRICT_RECEIVE",
+    3: "MANAGE_SELL_OFFER",
+    4: "CREATE_PASSIVE_SELL_OFFER",
+    5: "SET_OPTIONS",
+    6: "CHANGE_TRUST",
+    7: "ALLOW_TRUST",
+    8: "ACCOUNT_MERGE",
+    9: "INFLATION",
+    10: "MANAGE_DATA",
+    11: "BUMP_SEQUENCE",
+    12: "MANAGE_BUY_OFFER",
+    13: "PATH_PAYMENT_STRICT_SEND",
+    14: "CREATE_CLAIMABLE_BALANCE",
+    15: "CLAIM_CLAIMABLE_BALANCE",
+    16: "BEGIN_SPONSORING_FUTURE_RESERVES",
+    17: "END_SPONSORING_FUTURE_RESERVES",
+    18: "REVOKE_SPONSORSHIP",
+    19: "CLAWBACK",
+    20: "CLAWBACK_CLAIMABLE_BALANCE",
+    21: "SET_TRUST_LINE_FLAGS",
+    22: "LIQUIDITY_POOL_DEPOSIT",
+    23: "LIQUIDITY_POOL_WITHDRAW",
+    24: "INVOKE_HOST_FUNCTION",
+    25: "EXTEND_FOOTPRINT_TTL",
+    26: "RESTORE_FOOTPRINT",
+}
+
+#: ``CryptoKeyType`` discriminants (Stellar-transaction.x / Stellar-SCP.x).
+_KEY_TYPE_ED25519 = 0
+_KEY_TYPE_PRE_AUTH_TX = 1
+_KEY_TYPE_HASH_X = 2
+_KEY_TYPE_ED25519_SIGNED_PAYLOAD = 3
+_KEY_TYPE_MUXED_ED25519 = 256
+
+#: ``MemoType`` discriminants.
+_MEMO_NAMES = {0: "none", 1: "text", 2: "id", 3: "hash", 4: "return"}
+
+#: ``PreconditionType`` discriminants.
+_PRECOND_NONE = 0
+_PRECOND_TIME = 1
+_PRECOND_V2 = 2
+
+#: ``AssetType`` discriminants.
+_ASSET_NATIVE = 0
+_ASSET_CREDIT_ALPHANUM4 = 1
+_ASSET_CREDIT_ALPHANUM12 = 2
+
+#: ``HostFunctionType`` discriminants.
+_HOST_FN_INVOKE_CONTRACT = 0
+_HOST_FN_CREATE_CONTRACT = 1
+_HOST_FN_UPLOAD_WASM = 2
+_HOST_FN_CREATE_CONTRACT_V2 = 3
+
+#: ``ContractIDPreimageType`` discriminants.
+_CONTRACT_ID_PREIMAGE_FROM_ADDRESS = 0
+_CONTRACT_ID_PREIMAGE_FROM_ASSET = 1
+
+#: ``SorobanCredentialsType`` discriminants.
+_CREDENTIALS_SOURCE_ACCOUNT = 0
+_CREDENTIALS_ADDRESS = 1
+_CREDENTIALS_ACCOUNT = 2
+
+#: ``SorobanAuthorizedFunctionType`` discriminants.
+_AUTHORIZED_FN_CONTRACT = 0
+_AUTHORIZED_FN_CREATE_CONTRACT = 1
+
+#: Strkey version bytes used to present extra signer keys (SEP-23).
+_STRKEY_PRE_AUTH_TX = 0x98  # "T..."
+_STRKEY_HASH_X = 0xB8  # "X..."
+_STRKEY_MUXED = 0x60  # "M..."
+
+#: Decode limits for transaction structures (defense in depth).
+MAX_TX_OPERATIONS = 256
+MAX_TX_SIGNATURES = 128
+MAX_AUTH_ENTRIES = 64
+MAX_AUTH_DEPTH = 8
+MAX_SUBINVOCATIONS = 128
+MAX_EXTRA_SIGNERS = 16
+_SIGNATURE_MAX_BYTES = 64  # XDR ``Signature`` is ``opaque<64>``.
+
+
+def _lumens(stroops: int) -> str:
+    """Format an int64 stroop amount as an exact decimal lumen string."""
+    if not stroops:
+        return "0"
+    value = Decimal(stroops) / Decimal(10**7)
+    if value == value.to_integral_value():
+        return format(value.quantize(Decimal(1)), "f")
+    return format(value.normalize(), "f")
+
+
+def _amount(stroops: int) -> dict[str, Any]:
+    """Present an amount in stroops together with its lumen equivalent."""
+    return {"stroops": stroops, "lumens": _lumens(stroops)}
+
+
+def _skip_opaque(reader: _Reader) -> int:
+    """Skip an XDR ``opaque``/``string`` body, returning its byte length."""
+    length = reader.u32()
+    if length > reader.remaining():
+        raise XdrDecodeError("XDR byte array length exceeds available data.")
+    pad = (4 - (length % 4)) % 4
+    reader.skip(length + pad)
+    return length
+
+
+def _read_account_id(reader: _Reader) -> str:
+    """Decode an ``AccountID`` (a ``PublicKey`` union) into a ``G`` strkey."""
+    _expect(reader.u32(), 0, "PublicKeyType")  # ED25519
+    return strkey_encode(_STRKEY_ACCOUNT, reader.read(32))
+
+
+def _read_muxed_account(reader: _Reader) -> dict[str, Any]:
+    """Decode a ``MuxedAccount`` into a strkey-based summary."""
+    key_type = reader.u32()
+    if key_type == _KEY_TYPE_ED25519:
+        payload = reader.read(32)
+        return {
+            "type": "ed25519",
+            "account": strkey_encode(_STRKEY_ACCOUNT, payload),
+        }
+    if key_type == _KEY_TYPE_MUXED_ED25519:
+        account_id = reader.u64()
+        payload = reader.read(32)
+        account = strkey_encode(_STRKEY_ACCOUNT, payload)
+        muxed = strkey_encode(_STRKEY_MUXED, account_id.to_bytes(8, "big") + payload)
+        return {"type": "muxed", "id": account_id, "account": account, "muxed_account": muxed}
+    raise XdrDecodeError(f"Unsupported MuxedAccount key type {key_type}.")
+
+
+def _read_optional_muxed(reader: _Reader) -> dict[str, Any] | None:
+    """Decode an optional ``MuxedAccount*`` (an Operation source account)."""
+    pointer = reader.u32()
+    if pointer == 0:
+        return None
+    if pointer != 1:
+        raise XdrDecodeError("Operation source-account pointer must be 0 or 1.")
+    return _read_muxed_account(reader)
+
+
+def _read_memo(reader: _Reader) -> dict[str, Any]:
+    """Decode a ``Memo`` union into a bounded summary."""
+    memo_type = reader.u32()
+    if memo_type == 0:
+        return {"type": "none"}
+    if memo_type == 1:  # MEMO_TEXT string<28>
+        raw = reader.read_var_octets()
+        if len(raw) > 28:
+            raise XdrDecodeError("Text memo exceeds the 28-byte limit.")
+        try:
+            return {"type": "text", "value": raw.decode("utf-8")}
+        except UnicodeDecodeError:
+            return {"type": "text", "value": _bounded_bytes(raw)}
+    if memo_type == 2:
+        return {"type": "id", "value": reader.u64()}
+    if memo_type in (3, 4):  # MEMO_HASH / MEMO_RETURN (32-byte hashes)
+        raw = reader.read(32)
+        name = "hash" if memo_type == 3 else "return"
+        return {"type": name, "hex": raw.hex()}
+    raise XdrDecodeError(f"Unsupported Memo type {memo_type}.")
+
+
+def _read_asset(reader: _Reader) -> dict[str, Any]:
+    """Decode an ``Asset`` union into a bounded summary."""
+    asset_type = reader.u32()
+    if asset_type == _ASSET_NATIVE:
+        return {"type": "native"}
+    if asset_type in (_ASSET_CREDIT_ALPHANUM4, _ASSET_CREDIT_ALPHANUM12):
+        code_bytes = reader.read(4 if asset_type == _ASSET_CREDIT_ALPHANUM4 else 12)
+        issuer = _read_account_id(reader)
+        try:
+            code = code_bytes.rstrip(b"\x00").decode("ascii")
+        except UnicodeDecodeError:
+            code = code_bytes.hex()
+        kind = "alphanum4" if asset_type == _ASSET_CREDIT_ALPHANUM4 else "alphanum12"
+        return {"type": kind, "code": code, "issuer": issuer}
+    raise XdrDecodeError(f"Unsupported Asset type {asset_type}.")
+
+
+def _read_time_bounds(reader: _Reader) -> dict[str, Any]:
+    return {"min_time": reader.u64(), "max_time": reader.u64()}
+
+
+def _read_ledger_bounds(reader: _Reader) -> dict[str, Any]:
+    return {"min_ledger": reader.u32(), "max_ledger": reader.u32()}
+
+
+def _read_extra_signer(reader: _Reader) -> dict[str, Any]:
+    """Decode a ``SignerKey`` union into a strkey-based summary."""
+    key_type = reader.u32()
+    if key_type == _KEY_TYPE_ED25519:
+        return {"type": "ed25519", "account": strkey_encode(_STRKEY_ACCOUNT, reader.read(32))}
+    if key_type == _KEY_TYPE_PRE_AUTH_TX:
+        return {
+            "type": "pre_auth_tx",
+            "strkey": strkey_encode(_STRKEY_PRE_AUTH_TX, reader.read(32)),
+        }
+    if key_type == _KEY_TYPE_HASH_X:
+        return {"type": "hash_x", "strkey": strkey_encode(_STRKEY_HASH_X, reader.read(32))}
+    if key_type == _KEY_TYPE_ED25519_SIGNED_PAYLOAD:
+        account = _read_account_id(reader)
+        payload = reader.read_var_octets()
+        return {
+            "type": "signed_payload",
+            "account": account,
+            "payload": _bounded_bytes(payload),
+        }
+    raise XdrDecodeError(f"Unsupported SignerKey type {key_type}.")
+
+
+def _read_preconditions(reader: _Reader) -> dict[str, Any]:
+    """Decode the ``Preconditions`` union into a bounded summary."""
+    precondition_type = reader.u32()
+    if precondition_type == _PRECOND_NONE:
+        return {"type": "none"}
+    if precondition_type == _PRECOND_TIME:
+        return {"type": "time", "time_bounds": _read_time_bounds(reader)}
+    if precondition_type == _PRECOND_V2:
+        time_bounds = None
+        pointer = reader.u32()
+        if pointer not in (0, 1):
+            raise XdrDecodeError("PreconditionsV2 time-bounds pointer must be 0 or 1.")
+        if pointer == 1:
+            time_bounds = _read_time_bounds(reader)
+
+        ledger_bounds = None
+        pointer = reader.u32()
+        if pointer not in (0, 1):
+            raise XdrDecodeError("PreconditionsV2 ledger-bounds pointer must be 0 or 1.")
+        if pointer == 1:
+            ledger_bounds = _read_ledger_bounds(reader)
+
+        min_sequence = None
+        pointer = reader.u32()
+        if pointer not in (0, 1):
+            raise XdrDecodeError("PreconditionsV2 min-sequence pointer must be 0 or 1.")
+        if pointer == 1:
+            min_sequence = reader.i64()
+
+        min_sequence_age = None
+        pointer = reader.u32()
+        if pointer not in (0, 1):
+            raise XdrDecodeError("PreconditionsV2 min-sequence-age pointer must be 0 or 1.")
+        if pointer == 1:
+            min_sequence_age = reader.i64()
+
+        min_sequence_ledger_gap = reader.u32()
+        extra_signers: list[dict[str, Any]] = []
+        count = reader.u32()
+        if count > MAX_EXTRA_SIGNERS:
+            raise XdrDecodeError(f"Extra signers exceed {MAX_EXTRA_SIGNERS}.")
+        for _ in range(count):
+            extra_signers.append(_read_extra_signer(reader))
+        return {
+            "type": "v2",
+            "time_bounds": time_bounds,
+            "ledger_bounds": ledger_bounds,
+            "min_sequence": min_sequence,
+            "min_sequence_age": min_sequence_age,
+            "min_sequence_ledger_gap": min_sequence_ledger_gap,
+            "extra_signers": extra_signers,
+        }
+    raise XdrDecodeError(f"Unsupported Preconditions type {precondition_type}.")
+
+
+def _read_contract_id_preimage(reader: _Reader) -> dict[str, Any]:
+    """Decode a ``ContractIDPreimage`` union."""
+    preimage_type = reader.u32()
+    if preimage_type == _CONTRACT_ID_PREIMAGE_FROM_ADDRESS:
+        address = _read_scaddress(reader)
+        return {"type": "from_address", "address": address, "salt": reader.read(32).hex()}
+    if preimage_type == _CONTRACT_ID_PREIMAGE_FROM_ASSET:
+        return {"type": "from_asset", "asset": _read_asset(reader)}
+    raise XdrDecodeError(f"Unsupported ContractIDPreimage type {preimage_type}.")
+
+
+def _read_scval_array_count(reader: _Reader, depth: int) -> int:
+    """Consume a plain ``SCVal<>`` vector, returning its length (bounded)."""
+    count = reader.u32()
+    if count > MAX_COLLECTION_ITEMS:
+        raise XdrDecodeError(f"SCVal vector exceeds {MAX_COLLECTION_ITEMS} items.")
+    for _ in range(count):
+        _read_scval(reader, depth + 1)
+    return count
+
+
+def _read_authorized_function(reader: _Reader, depth: int) -> dict[str, Any]:
+    """Decode a ``SorobanAuthorizedFunction`` union into a compact summary.
+
+    The argument ``SCVal``s of a contract function are decoded (so their bytes
+    are consumed exactly) but not echoed — only their count is surfaced.
+    """
+    function_type = reader.u32()
+    if function_type == _AUTHORIZED_FN_CONTRACT:
+        contract = _read_scaddress(reader)
+        name = _read_scstring(reader)
+        if len(name.encode("utf-8")) > 32:
+            raise XdrDecodeError("Soroban function name exceeds the 32-byte limit.")
+        args_count = _read_scval_array_count(reader, depth)
+        return {
+            "function": "contract_fn",
+            "contract": contract,
+            "function_name": name,
+            "args_count": args_count,
+        }
+    if function_type == _AUTHORIZED_FN_CREATE_CONTRACT:
+        preimage = _read_contract_id_preimage(reader)
+        executable = _read_contract_executable(reader)
+        return {
+            "function": "create_contract",
+            "preimage": {"type": preimage.get("type")},
+            "executable": executable,
+        }
+    raise XdrDecodeError(f"Unsupported SorobanAuthorizedFunction type {function_type}.")
+
+
+def _read_authorized_invocation(reader: _Reader, depth: int) -> dict[str, Any]:
+    """Decode a ``SorobanAuthorizedInvocation`` into a compact summary."""
+    if depth > MAX_AUTH_DEPTH:
+        raise XdrDecodeError(f"Soroban invocation nesting exceeds {MAX_AUTH_DEPTH}.")
+    function = _read_authorized_function(reader, depth)
+    sub_invocations: list[dict[str, Any]] = []
+    count = reader.u32()
+    if count > MAX_SUBINVOCATIONS:
+        raise XdrDecodeError(f"Soroban sub-invocations exceed {MAX_SUBINVOCATIONS}.")
+    for _ in range(count):
+        sub_invocations.append(_read_authorized_invocation(reader, depth + 1))
+    return {"function": function, "sub_invocations": sub_invocations}
+
+
+def _read_soroban_credentials(reader: _Reader) -> dict[str, Any]:
+    """Decode ``SorobanCredentials`` (signature bytes are never dumped)."""
+    credentials_type = reader.u32()
+    if credentials_type == _CREDENTIALS_SOURCE_ACCOUNT:
+        return {"type": "source_account"}
+    if credentials_type == _CREDENTIALS_ADDRESS:
+        address = _read_scaddress(reader)
+        return {"type": "address", "address": address, "nonce": reader.i64()}
+    if credentials_type == _CREDENTIALS_ACCOUNT:
+        account = _read_account_id(reader)
+        signature_length = _skip_opaque(reader)
+        return {
+            "type": "account",
+            "account": account,
+            "signature_length": signature_length,
+        }
+    raise XdrDecodeError(f"Unsupported SorobanCredentials type {credentials_type}.")
+
+
+def _decode_host_function(reader: _Reader) -> dict[str, Any]:
+    """Decode the ``HostFunction`` union of an INVOKE_HOST_FUNCTION operation."""
+    function_type = reader.u32()
+    if function_type == _HOST_FN_INVOKE_CONTRACT:
+        contract = _read_scaddress(reader)
+        args_count = _read_scval_array_count(reader, 1)
+        return {
+            "type": "invoke_contract",
+            "contract": contract,
+            "args_count": args_count,
+        }
+    if function_type == _HOST_FN_CREATE_CONTRACT:
+        preimage = _read_contract_id_preimage(reader)
+        executable = _read_contract_executable(reader)
+        constructor_count = _read_scval_array_count(reader, 1)
+        return {
+            "type": "create_contract",
+            "preimage": preimage,
+            "executable": executable,
+            "constructor_args_count": constructor_count,
+        }
+    if function_type == _HOST_FN_UPLOAD_WASM:
+        return {"type": "upload_wasm", "wasm_byte_size": _skip_opaque(reader)}
+    if function_type == _HOST_FN_CREATE_CONTRACT_V2:
+        preimage = _read_contract_id_preimage(reader)
+        executable = _read_contract_executable(reader)
+        constructor_count = _read_scval_array_count(reader, 1)
+        return {
+            "type": "create_contract_v2",
+            "preimage": preimage,
+            "executable": executable,
+            "constructor_args_count": constructor_count,
+        }
+    raise XdrDecodeError(f"Unsupported HostFunction type {function_type}.")
+
+
+def _decode_operation_payload(reader: _Reader, operation_type: int) -> dict[str, Any]:
+    """Decode the body of a supported operation type (read-only)."""
+    if operation_type == 0:  # CREATE_ACCOUNT
+        destination = _read_account_id(reader)
+        starting_balance = reader.i64()
+        return {
+            "destination": destination,
+            "starting_balance": _amount(starting_balance),
+        }
+    if operation_type == 1:  # PAYMENT
+        destination = _read_muxed_account(reader)
+        asset = _read_asset(reader)
+        amount = reader.i64()
+        return {"destination": destination, "asset": asset, "amount": _amount(amount)}
+    if operation_type == 6:  # CHANGE_TRUST
+        line = _read_asset(reader)
+        limit = reader.i64()
+        ext_version = reader.u32()
+        if ext_version == 1:
+            liquidity_pool = {
+                "asset_a": _read_asset(reader),
+                "asset_b": _read_asset(reader),
+                "fee_bps": reader.i32(),
+            }
+        elif ext_version == 0:
+            liquidity_pool = None
+        else:
+            raise XdrDecodeError(f"Unsupported ChangeTrust extension {ext_version}.")
+        return {"line": line, "limit": _amount(limit), "liquidity_pool": liquidity_pool}
+    if operation_type == 11:  # BUMP_SEQUENCE
+        return {"bump_to": reader.i64()}
+    if operation_type == 24:  # INVOKE_HOST_FUNCTION
+        host_function = _decode_host_function(reader)
+        auth_count = reader.u32()
+        if auth_count > MAX_AUTH_ENTRIES:
+            raise XdrDecodeError(f"Soroban auth entries exceed {MAX_AUTH_ENTRIES}.")
+        auth: list[dict[str, Any]] = []
+        for _ in range(auth_count):
+            credentials = _read_soroban_credentials(reader)
+            invocation = _read_authorized_invocation(reader, 1)
+            auth.append({"credentials": credentials, "root_invocation": invocation})
+        return {"host_function": host_function, "auth_count": auth_count, "auth": auth}
+    if operation_type == 25:  # EXTEND_FOOTPRINT_TTL
+        return {"extend_to": reader.u32()}
+    if operation_type == 26:  # RESTORE_FOOTPRINT (no payload)
+        return {}
+    raise XdrDecodeError(f"Operation type {operation_type} has no decoder.")
+
+
+def _decode_operations(
+    reader: _Reader, declared: int
+) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    """Decode an ``Operation<>`` vector; stop cleanly at the first unsupported op.
+
+    Returns ``(operations, parsing)``. Because each operation type has its own
+    variable-length layout, an unsupported operation cannot be skipped: decoding
+    stops at that index and the remaining operations (and the signature vector
+    that follows the transaction) are honestly marked as not parsed.
+    """
+    operations: list[dict[str, Any]] = []
+    note: str | None = None
+    stopped_at: int | None = None
+    for index in range(declared):
+        source_account = _read_optional_muxed(reader)
+        operation_type = reader.u32()
+        name = _OPERATION_NAMES.get(operation_type)
+        if name is None:
+            stopped_at = index
+            note = f"Operation type {operation_type} is unknown and not parsed."
+            operations.append(
+                {
+                    "index": index,
+                    "decoded": False,
+                    "type": "UNKNOWN",
+                    "reason": note,
+                }
+            )
+            break
+        if operation_type not in (0, 1, 6, 11, 24, 25, 26):
+            stopped_at = index
+            note = (
+                f"Operation type {name} is not decoded; the operations after it " "were not parsed."
+            )
+            operations.append(
+                {
+                    "index": index,
+                    "decoded": False,
+                    "type": name,
+                    "reason": note,
+                }
+            )
+            break
+        payload = _decode_operation_payload(reader, operation_type)
+        operations.append(
+            {
+                "index": index,
+                "decoded": True,
+                "type": name,
+                "source_account": source_account,
+                "payload": payload,
+            }
+        )
+    if stopped_at is None:
+        parsing = {"complete": True, "declared": declared, "decoded": declared, "note": None}
+    else:
+        parsing = {
+            "complete": False,
+            "declared": declared,
+            "decoded": stopped_at,
+            "note": note,
+        }
+    return operations, parsing
+
+
+def _decode_signatures(reader: _Reader) -> list[dict[str, Any]]:
+    """Decode a ``DecoratedSignature<>`` vector (hints + bounded signatures)."""
+    count = reader.u32()
+    if count > MAX_TX_SIGNATURES:
+        raise XdrDecodeError(f"Transaction signatures exceed {MAX_TX_SIGNATURES}.")
+    signatures: list[dict[str, Any]] = []
+    for _ in range(count):
+        hint = reader.read(4).hex()
+        signature = reader.read_var_octets()
+        if len(signature) > _SIGNATURE_MAX_BYTES:
+            raise XdrDecodeError("Signature exceeds the 64-byte limit.")
+        signatures.append({"hint": hint, "signature_hex": signature.hex()})
+    return signatures
+
+
+def _decode_transaction(reader: _Reader, *, v0: bool) -> dict[str, Any]:
+    """Decode a ``Transaction``/``TransactionV0`` body (read-only)."""
+    if v0:
+        source_account = {
+            "type": "ed25519",
+            "account": strkey_encode(_STRKEY_ACCOUNT, reader.read(32)),
+        }
+    else:
+        source_account = _read_muxed_account(reader)
+
+    fee = reader.u32()
+    sequence = reader.i64()
+
+    if v0:
+        preconditions: dict[str, Any] = {"type": "none"}
+        pointer = reader.u32()
+        if pointer not in (0, 1):
+            raise XdrDecodeError("V0 time-bounds pointer must be 0 or 1.")
+        if pointer == 1:
+            preconditions = {"type": "time", "time_bounds": _read_time_bounds(reader)}
+    else:
+        preconditions = _read_preconditions(reader)
+
+    memo = _read_memo(reader)
+    declared_ops = reader.u32()
+    if declared_ops > MAX_TX_OPERATIONS:
+        raise XdrDecodeError(f"Transaction operations exceed {MAX_TX_OPERATIONS}.")
+    operations, operation_parsing = _decode_operations(reader, declared_ops)
+
+    signatures: list[dict[str, Any]] | None = None
+    signature_parsing: dict[str, Any] = {"complete": True, "note": None}
+    if operation_parsing["complete"]:
+        ext_version = reader.u32()
+        if ext_version != 0:
+            raise XdrDecodeError(f"Unsupported transaction extension {ext_version}.")
+        signatures = _decode_signatures(reader)
+    else:
+        signature_parsing = {
+            "complete": False,
+            "note": "Signatures were not parsed because an operation could not be decoded.",
+        }
+
+    return {
+        "source_account": source_account,
+        "fee": _amount(fee),
+        "sequence": sequence,
+        "preconditions": preconditions,
+        "memo": memo,
+        "operations": operations,
+        "operation_parsing": operation_parsing,
+        "signatures": signatures,
+        "signature_parsing": signature_parsing,
+    }
+
+
+def _decode_fee_bump(reader: _Reader) -> dict[str, Any]:
+    """Decode a ``FeeBumpTransaction`` plus its (single-level) inner envelope."""
+    fee_source = _read_muxed_account(reader)
+    fee = reader.i64()
+    inner_type = reader.u32()
+    if inner_type != _ENVELOPE_TYPE_TX:
+        raise XdrDecodeError(f"Fee-bump inner envelope must be V1, got {inner_type}.")
+    inner = _decode_transaction(reader, v0=False)
+    signatures = _decode_signatures(reader)
+    reader.ensure_exhausted()
+    return {
+        "fee_source": fee_source,
+        "fee": _amount(fee),
+        "inner_transaction": inner,
+        "signatures": signatures,
+        "signature_parsing": {"complete": True, "note": None},
+    }
+
+
+def decode_transaction_envelope(value: str) -> dict[str, Any]:
+    """Decode a base64 ``TransactionEnvelope`` into a structured, read-only view.
+
+    Supported envelopes: V1 (``ENVELOPE_TYPE_TX``), legacy V0
+    (``ENVELOPE_TYPE_TX_V0``), and fee-bump (``ENVELOPE_TYPE_TX_FEE_BUMP``).
+    Common operations (payment, create account, change trust, bump sequence,
+    invoke host function, extend footprint TTL, restore footprint) are decoded;
+    any other operation type is reported explicitly as unsupported and the
+    decode of that transaction's remaining operations/signatures is honestly
+    marked as not parsed. Malformed or truncated XDR returns ``decoded: False``
+    with a reason. This function never raises and never fabricates values.
+    """
+    try:
+        reader = _Reader(_decode_b64(value, "TransactionEnvelope"))
+        envelope_type = reader.u32()
+        name = _ENVELOPE_NAMES.get(envelope_type)
+        if name is None:
+            return _undecodable(
+                f"Unknown TransactionEnvelope type {envelope_type}.", type="UNKNOWN"
+            )
+        if envelope_type == _ENVELOPE_TYPE_TX_FEE_BUMP:
+            detail = _decode_fee_bump(reader)
+        else:
+            detail = _decode_transaction(reader, v0=envelope_type == _ENVELOPE_TYPE_TX_V0)
+            if detail["signature_parsing"]["complete"]:
+                reader.ensure_exhausted()
+        result: dict[str, Any] = {"envelope_type": name}
+        result.update(detail)
         result["decoded"] = True
         return result
     except XdrDecodeError as exc:

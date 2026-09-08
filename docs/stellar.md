@@ -109,6 +109,20 @@ and storage, and a contract-code entry into its wasm hash + byte size (raw wasm
 bytes are never dumped). Unsupported entry types and malformed XDR are reported
 explicitly as undecodable — decoded values are never guessed at.
 
+The same module adds a bounded, **read-only transaction-envelope decoder**,
+`decode_transaction_envelope(base64_xdr)` (pinned by round-trip fixtures):
+V1, legacy V0, and fee-bump envelopes decode into source account, fee (stroops
++ exact lumens), sequence, memo, preconditions, signatures, and operations.
+Supported operations are payment, create account, change trust, bump sequence,
+invoke host function (contract, function name, argument count, and a bounded
+view of the Soroban auth entries — signature bytes are never dumped), extend
+footprint TTL, and restore footprint. Amounts are presented in stroops with an
+exact lumen string. Any other operation type is reported explicitly as
+unsupported; because each operation has a variable-length layout, decoding
+stops at that operation and the remaining operations/signatures are honestly
+marked *not parsed* rather than guessed at. Malformed/truncated XDR returns an
+explicit undecodable result.
+
 ### Project detection (`app/services/stellar_detection.py`)
 
 `detect_stellar_project(files)` classifies an indexed project:
