@@ -25,6 +25,7 @@ from app.services.events import emit_event
 from app.services.permissions import require_workspace_capability, resolve_workspace, role_for
 from app.services.plugin_audit import record_plugin_audit
 from app.services.plugin_compat import compatibility_status
+from app.services.plugin_config import validate_plugin_config
 from app.services.plugins import ManifestValidationError, PluginError, PluginManifest
 
 
@@ -402,3 +403,64 @@ def api_update_capabilities(workspace_id: int, plugin_id: str):
 
     db.session.commit()
     return jsonify(_serialize(plugin, workspace_id))
+
+
+# --------------------------------------------------------------------------
+# API: per-workspace plugin configuration (owner only)
+# --------------------------------------------------------------------------
+
+
+@bp.route("/api/workspaces/<int:workspace_id>/plugins/<plugin_id>/config", methods=["GET"])
+@login_required
+@require_workspace_capability("manage_plugins")
+def api_get_plugin_config(workspace_id: int, plugin_id: str):
+    """Read a plugin installation's workspace-scoped configuration.
+
+    Owner-only: the config may hold secrets, so it is never exposed on the
+    list/inspect surfaces (which omit ``config``) and never to non-owners.
+    """
+    installation = _installation(plugin_id, workspace_id)
+    if installation is None:
+        return jsonify({"error": "Plugin is not installed in this workspace."}), 404
+    return jsonify(
+        {
+            "plugin_id": plugin_id,
+            "workspace_id": workspace_id,
+            "config": installation.config or {},
+        }
+    )
+
+
+@bp.route("/api/workspaces/<int:workspace_id>/plugins/<plugin_id>/config", methods=["PUT"])
+@login_required
+@require_workspace_capability("manage_plugins")
+def api_update_plugin_config(workspace_id: int, plugin_id: str):
+    """Replace a plugin installation's workspace-scoped configuration.
+
+    The replacement is validated against the manifest's declared ``configuration``
+    when one is present (unknown keys and wrong-typed values are rejected with
+    a 400); it is size/depth-bounded and never includes secrets from elsewhere.
+    """
+    installation = _installation(plugin_id, workspace_id)
+    if installation is None:
+        return jsonify({"error": "Plugin is not installed in this workspace."}), 404
+    plugin = db.session.get(Plugin, plugin_id)
+
+    data = request.get_json(silent=True) or {}
+    proposed = data.get("config")
+    if proposed is None:
+        proposed = {}
+    declared = (plugin.configuration if plugin is not None else None) or {}
+    ok, reason = validate_plugin_config(declared, proposed)
+    if not ok:
+        return jsonify({"error": reason}), 400
+
+    installation.config = proposed
+    db.session.commit()
+    return jsonify(
+        {
+            "plugin_id": plugin_id,
+            "workspace_id": workspace_id,
+            "config": installation.config or {},
+        }
+    )

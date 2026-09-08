@@ -234,6 +234,21 @@ create or remove capability grants. A disabled installation is denied by the
 dispatch-time enforcement (see above), so disabled plugins cannot execute.
 Re-enabling restores delivery while the grant remains valid.
 
+### Per-workspace configuration
+
+Each `PluginInstallation` carries a workspace-scoped `config` (JSON) that
+installations read/write through owner-only endpoints:
+
+- `GET .../plugins/<plugin_id>/config` — read the workspace configuration.
+- `PUT .../plugins/<plugin_id>/config` with `{"config": {...}}` — replace it.
+
+The stored config is seeded from the manifest's `configuration` at install.
+Updates are validated (`app/services/plugin_config.py`) against that declared
+configuration when one is present: unknown keys and wrong-typed values are
+rejected with `400`, and every stored object is bounded (key count, nesting
+depth, serialized size). Because config may hold secrets it is owner-only and
+is deliberately **omitted** from the plugin list/inspect surfaces.
+
 ## Audit trail (capabilities & state)
 
 Security-relevant plugin actions are recorded in the shared, append-only
