@@ -58,6 +58,29 @@ Security-relevant coverage includes:
   and invalid-parameter fail-closed cases.
 - `tests/test_stellar_xdr.py` — strkey checksum validation and LedgerKey
   encoders verified against authoritative Stellar fixtures.
+
+### Stellar SSRF adversarial matrix
+
+`tests/test_stellar_security.py` proves the guards fail closed across:
+private/loopback/link-local/reserved IP literals (IPv4 + IPv6),
+obviously-private hostnames, redirect refusal for both clients, request-time
+host resolution via an injected resolver, the strict-validation toggle,
+response-size caps, 404/malformed-JSON mapping, and **timeout aborts** against
+a loopback HTTP server that never responds (the clients raise the typed
+`NetworkError` / `SorobanRpcUnavailableError` instead of hanging).
+
+Host forms are normalized before every check: the scheme and host are
+lowercased and a single trailing dot is stripped, so
+`HTTPS://HORIZON.STELLAR.ORG.` is equivalent to `https://horizon.stellar.org`,
+while `https://127.0.0.1./` is rejected. Percent-encoded or otherwise unsafe
+hosts are rejected outright, so an encoded private literal (e.g.
+`https://%31%32%37.0.0.1/`) can never bypass the literal checks.
+
+**DNS bypass limitation:** only guard logic is testable offline. A public
+hostname that later resolves to a private address is caught at request time by
+the injectable `host_resolver`; real DNS behavior cannot be proven without
+network access, and public RPC/Horizon endpoints remain operator-controlled
+configuration (see "Known limitations / planned hardening").
 - `tests/test_stellar_inspection.py` — account/contract/ledger inspection and
   honest "unavailable" handling.
 - `tests/test_stellar_analysis.py` — non-owner and unauthenticated users fail

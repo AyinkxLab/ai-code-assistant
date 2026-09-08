@@ -12,6 +12,7 @@ and a response-body cap.
 
 import ipaddress
 import json
+import re
 import socket
 from dataclasses import dataclass
 from enum import StrEnum
@@ -309,17 +310,42 @@ def validate_stellar_address(address: str) -> bool:
 # ---------------------------------------------------------------------------
 
 
+#: Hosts/characters permitted in an endpoint host. Anything else (percent
+#: encoding, whitespace, unicode) is rejected outright so encoded forms can
+#: never disguise a private literal; hosts are compared only in this safe form.
+_HOST_SAFE_RE = re.compile(r"^[A-Za-z0-9.\-:_]+$")
+
+
+def _host_chars_safe(host: str) -> bool:
+    """Return ``True`` when ``host`` uses only safe hostname characters."""
+    return bool(_HOST_SAFE_RE.fullmatch(host))
+
+
 def _parse_host(url: str) -> tuple[str, str, str] | None:
-    """Return ``(scheme, host, port)`` for ``url`` or ``None`` if malformed."""
+    """Return ``(scheme, host, port)`` for ``url`` or ``None`` if malformed.
+
+    The host is normalized before any safety check: the scheme and host are
+    lowercased and a single trailing dot (the DNS root form) is stripped, so
+    ``HTTPS://HORIZON.Stellar.ORG.`` and ``https://horizon.stellar.org`` are
+    equivalent. Hosts containing percent-encoding or any other unsafe character
+    are treated as malformed (fail closed) — an encoded private IP can never be
+    smuggled past the literal checks.
+    """
     try:
         from urllib.parse import urlparse
 
         parsed = urlparse(url)
     except ValueError:
         return None
-    if parsed.scheme not in ("http", "https") or not parsed.hostname:
+    scheme = (parsed.scheme or "").lower()
+    if scheme not in ("http", "https") or not parsed.hostname:
         return None
-    return parsed.scheme, (parsed.hostname or "").lower(), str(parsed.port or "")
+    host = (parsed.hostname or "").lower()
+    if host.endswith("."):
+        host = host[:-1]
+    if not _host_chars_safe(host):
+        return None
+    return scheme, host, str(parsed.port or "")
 
 
 def validate_endpoint_url(url: str, *, is_public: bool) -> bool:
