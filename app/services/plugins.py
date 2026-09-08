@@ -47,6 +47,16 @@ class PluginLoadError(PluginError):
     pass
 
 
+#: Optional lifecycle hook names a plugin class may implement.
+#:
+#: Hooks are invoked on registry ``enable``/``disable``/``uninstall`` **only for
+#: plugins already loaded in-process** (``plugin.module is not None``) — the
+#: management API never loads arbitrary plugin code on its own. Hook failures
+#: are isolated: the state change still happens and the registry stays
+#: consistent.
+LIFECYCLE_HOOKS = ("on_enable", "on_disable", "on_uninstall")
+
+
 @dataclass
 class PluginManifest:
     """Parsed and validated plugin manifest."""
@@ -256,6 +266,43 @@ class Plugin:
         """
         return capability in self.manifest.capabilities
 
+    def invoke_hook(self, hook: str, app: Any | None = None) -> dict[str, Any]:
+        """Invoke an optional lifecycle hook on the loaded plugin instance.
+
+        ``hook`` is one of :data:`LIFECYCLE_HOOKS`. Hooks are best-effort and
+        isolated: an absent hook, an unloaded plugin, or a raising hook never
+        propagates. Returns ``{"hook", "called", "ok", "error"}`` so callers can
+        surface failures without breaking state.
+        """
+        if self.module is None:
+            return {"hook": hook, "called": False, "ok": True, "error": None}
+        try:
+            instance = self.get_instance(app=app)
+        except Exception as exc:  # never let an instance error break a lifecycle change
+            logger.error(
+                "Could not instantiate plugin %s for hook %s: %s",
+                self.manifest.id,
+                hook,
+                exc,
+                exc_info=True,
+            )
+            return {"hook": hook, "called": False, "ok": False, "error": str(exc)}
+        method = getattr(instance, hook, None)
+        if not callable(method):
+            return {"hook": hook, "called": False, "ok": True, "error": None}
+        try:
+            method()
+        except Exception as exc:
+            logger.error(
+                "Plugin %s hook %s failed: %s",
+                self.manifest.id,
+                hook,
+                exc,
+                exc_info=True,
+            )
+            return {"hook": hook, "called": True, "ok": False, "error": str(exc)}
+        return {"hook": hook, "called": True, "ok": True, "error": None}
+
     def get_instance(self, app: Any | None = None) -> Any:
         """Get instantiated plugin class.
 
@@ -368,7 +415,7 @@ class PluginRegistry:
         return [p for p in self._plugins.values() if p.enabled]
 
     def enable(self, plugin_id: str) -> None:
-        """Enable plugin.
+        """Enable plugin and run its optional ``on_enable`` hook.
 
         Args:
             plugin_id: Plugin identifier
@@ -379,11 +426,14 @@ class PluginRegistry:
         plugin = self.get(plugin_id)
         if not plugin:
             raise PluginRegistrationError(f"Plugin not found: {plugin_id}")
+        if plugin.enabled:
+            return
         plugin.enabled = True
+        self._run_hook(plugin, "on_enable")
         logger.info(f"Enabled plugin: {plugin_id}")
 
     def disable(self, plugin_id: str) -> None:
-        """Disable plugin.
+        """Disable plugin and run its optional ``on_disable`` hook.
 
         Args:
             plugin_id: Plugin identifier
@@ -394,8 +444,43 @@ class PluginRegistry:
         plugin = self.get(plugin_id)
         if not plugin:
             raise PluginRegistrationError(f"Plugin not found: {plugin_id}")
+        if not plugin.enabled:
+            return
         plugin.enabled = False
+        self._run_hook(plugin, "on_disable")
         logger.info(f"Disabled plugin: {plugin_id}")
+
+    def uninstall(self, plugin_id: str) -> None:
+        """Uninstall a plugin from the registry.
+
+        Runs the optional ``on_uninstall`` hook first, then removes the plugin.
+        A raising hook never blocks removal, so the registry always ends
+        consistent.
+
+        Args:
+            plugin_id: Plugin identifier
+
+        Raises:
+            PluginRegistrationError: If plugin not found
+        """
+        plugin = self.get(plugin_id)
+        if not plugin:
+            raise PluginRegistrationError(f"Plugin not found: {plugin_id}")
+        self._run_hook(plugin, "on_uninstall")
+        del self._plugins[plugin_id]
+        logger.info(f"Uninstalled plugin: {plugin_id}")
+
+    def _run_hook(self, plugin: Plugin, hook: str) -> dict[str, Any]:
+        """Invoke a lifecycle hook, logging (never propagating) failures."""
+        result = plugin.invoke_hook(hook)
+        if result.get("ok") is False:
+            logger.warning(
+                "Plugin %s %s reported a problem: %s",
+                plugin.manifest.id,
+                hook,
+                result.get("error"),
+            )
+        return result
 
     def validate_capability(self, plugin_id: str, capability: str) -> bool:
         """Check if plugin has capability.

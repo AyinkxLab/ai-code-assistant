@@ -155,7 +155,35 @@ application code) and are exempt from plugin capability enforcement. See
 
 The application already emits events from real flows: project import/delete,
 workspace member add/remove, AI analysis completion, Stellar analysis
-completion, and GitHub connection.
+completion, GitHub connection, and plugin lifecycle.
+
+### Lifecycle hooks (`on_enable` / `on_disable` / `on_uninstall`)
+
+A loaded plugin class may implement optional lifecycle methods
+(`app/services/plugins.py`):
+
+```python
+class MyPlugin:
+    def __init__(self, app=None, manifest=None):
+        ...
+
+    def on_enable(self): ...      # after the registry enables the plugin
+    def on_disable(self): ...     # after the registry disables the plugin
+    def on_uninstall(self): ...   # before the registry removes the plugin
+```
+
+`PluginRegistry.enable` / `disable` / `uninstall` invoke the matching hook for
+plugins already loaded in-process. Hooks are **isolated and non-fatal**: an
+absent hook is a no-op, and a raising hook is logged without preventing the
+state change — enabling/disabling always lands in the new state and uninstall
+always removes the plugin, so the registry never ends inconsistent. The
+management API never loads or executes plugin code on its own.
+
+Per-workspace lifecycle is also observable through the dispatcher events
+`plugin.enabled`, `plugin.disabled`, and `plugin.uninstalled` (mapped to
+`WORKSPACE_READ`; emitted only on real transitions). The API exposes
+enable/disable and an owner-only `uninstall` action that revokes every
+workspace capability grant and removes the workspace installation.
 
 ## Plugin management (API + UI)
 

@@ -70,6 +70,10 @@ SUPPORTED_EVENTS = {
     # GitHub events
     "github.connected": "GitHub account connected",
     "github.disconnected": "GitHub account disconnected",
+    # Plugin lifecycle events
+    "plugin.enabled": "Plugin enabled in a workspace",
+    "plugin.disabled": "Plugin disabled in a workspace",
+    "plugin.uninstalled": "Plugin uninstalled from a workspace",
     # AI events
     "ai.analysis.completed": "AI analysis complete",
     # Stellar events
@@ -96,6 +100,10 @@ EVENT_CAPABILITY_MAP: dict[str, Capability] = {
     # GitHub events
     "github.connected": Capability.GITHUB_READ,
     "github.disconnected": Capability.GITHUB_READ,
+    # Plugin lifecycle events (workspace scoped)
+    "plugin.enabled": Capability.WORKSPACE_READ,
+    "plugin.disabled": Capability.WORKSPACE_READ,
+    "plugin.uninstalled": Capability.WORKSPACE_READ,
     # AI events
     "ai.analysis.completed": Capability.AI_ACCESS,
     # Stellar events

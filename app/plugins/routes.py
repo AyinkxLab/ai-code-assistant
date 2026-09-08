@@ -21,6 +21,7 @@ from app.models import Plugin, PluginInstallation, Workspace, WorkspaceMember
 from app.models.workspace_member import STATUS_ACTIVE
 from app.plugins import bp
 from app.services.capabilities import Capability, CapabilityStore
+from app.services.events import emit_event
 from app.services.permissions import require_workspace_capability, resolve_workspace, role_for
 from app.services.plugin_audit import record_plugin_audit
 from app.services.plugin_compat import compatibility_status
@@ -249,7 +250,15 @@ def api_enable_plugin(workspace_id: int, plugin_id: str):
             plugin_id=plugin_id,
             outcome="success",
         )
-    db.session.commit()
+        db.session.commit()
+        emit_event(
+            "plugin.enabled",
+            data={"plugin_id": plugin_id},
+            workspace_id=workspace_id,
+            user_id=current_user.id,
+        )
+    else:
+        db.session.commit()
     return jsonify(_serialize(installation.plugin, workspace_id))
 
 
@@ -269,8 +278,43 @@ def api_disable_plugin(workspace_id: int, plugin_id: str):
             plugin_id=plugin_id,
             outcome="success",
         )
-    db.session.commit()
+        db.session.commit()
+        emit_event(
+            "plugin.disabled",
+            data={"plugin_id": plugin_id},
+            workspace_id=workspace_id,
+            user_id=current_user.id,
+        )
+    else:
+        db.session.commit()
     return jsonify(_serialize(installation.plugin, workspace_id))
+
+
+@bp.route("/api/workspaces/<int:workspace_id>/plugins/<plugin_id>/uninstall", methods=["POST"])
+@login_required
+@require_workspace_capability("manage_plugins")
+def api_uninstall_plugin(workspace_id: int, plugin_id: str):
+    """Uninstall a plugin from the workspace.
+
+    Revokes every capability grant for that workspace, removes the per-workspace
+    installation, and emits ``plugin.uninstalled``. The global ``Plugin`` row is
+    kept so other workspaces' installations remain intact. Lifecycle code, when
+    a plugin runs it, reacts to the ``plugin.uninstalled`` event; the management
+    API never loads or executes plugin code itself.
+    """
+    installation = _installation(plugin_id, workspace_id)
+    if installation is None:
+        return jsonify({"error": "Plugin is not installed in this workspace."}), 404
+    CapabilityStore.revoke_all(plugin_id, workspace_id)
+    db.session.delete(installation)
+    db.session.commit()
+    emit_event(
+        "plugin.uninstalled",
+        data={"plugin_id": plugin_id},
+        workspace_id=workspace_id,
+        user_id=current_user.id,
+    )
+    return jsonify({"ok": True, "plugin_id": plugin_id})
 
 
 @bp.route("/api/workspaces/<int:workspace_id>/plugins/<plugin_id>/capabilities", methods=["POST"])
