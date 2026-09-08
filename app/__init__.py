@@ -97,4 +97,10 @@ def create_app(config_name: str | None = None) -> Flask:
 
     register_stellar_cli(app)
 
+    # Operator-facing plugin management CLI (list/inspect/enable/disable and
+    # local-only install). Reuses the plugin services; never grants capabilities.
+    from app.services.plugins_cli import register_plugins_cli
+
+    register_plugins_cli(app)
+
     return app

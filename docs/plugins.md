@@ -187,8 +187,31 @@ workspace capability grant and removes the workspace installation.
 
 ## Plugin management (API + UI)
 
-The `plugins` blueprint (`app/plugins/`) provides the user-facing management
-layer. Plugin state is **workspace-scoped**: a plugin exists globally (a
+### Operator CLI
+
+`app/services/plugins_cli.py` registers a `flask plugins` command group that
+acts as the **operator**, reading/writing the persisted `Plugin` rows (the same
+store the management API and dispatch-time authorization use) through
+`app/services/plugin_ops.py`:
+
+```bash
+flask plugins list                      # id, version, enabled state
+flask plugins inspect <plugin_id>       # full manifest metadata + state
+flask plugins enable <plugin_id>        # enable (operator scope)
+flask plugins disable <plugin_id>       # disable (operator scope)
+flask plugins install <local-path>      # register from a local manifest dir
+```
+
+Every command supports `--json` for stable, parseable output. Exit codes
+distinguish success (`0`), unknown plugin (`1`), and validation/service errors
+(`2`). Security rules: installs accept **only local filesystem paths** with a
+validated `manifest.json` (URLs are refused), the CLI never grants
+capabilities (they remain explicit and per-workspace), and it never loads or
+executes plugin code.
+
+The user-facing **API + UI** is workspace-scoped: the `plugins` blueprint
+(`app/plugins/`) provides the management layer. Plugin state is
+**workspace-scoped**: a plugin exists globally (a
 `Plugin` row) while having a separate `PluginInstallation` per workspace, each
 with its own enabled state and capability grants.
 
