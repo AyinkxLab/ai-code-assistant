@@ -22,6 +22,7 @@ from app.models.workspace_member import STATUS_ACTIVE
 from app.plugins import bp
 from app.services.capabilities import Capability, CapabilityStore
 from app.services.permissions import require_workspace_capability, resolve_workspace, role_for
+from app.services.plugin_audit import record_plugin_audit
 from app.services.plugins import ManifestValidationError, PluginError, PluginManifest
 
 
@@ -215,7 +216,15 @@ def api_enable_plugin(workspace_id: int, plugin_id: str):
     installation = _installation(plugin_id, workspace_id)
     if installation is None:
         return jsonify({"error": "Plugin is not installed in this workspace."}), 404
-    installation.enabled = True
+    if not installation.enabled:
+        installation.enabled = True
+        record_plugin_audit(
+            workspace_id,
+            "enabled",
+            actor=current_user,
+            plugin_id=plugin_id,
+            outcome="success",
+        )
     db.session.commit()
     return jsonify(_serialize(installation.plugin, workspace_id))
 
@@ -227,7 +236,15 @@ def api_disable_plugin(workspace_id: int, plugin_id: str):
     installation = _installation(plugin_id, workspace_id)
     if installation is None:
         return jsonify({"error": "Plugin is not installed in this workspace."}), 404
-    installation.enabled = False
+    if installation.enabled:
+        installation.enabled = False
+        record_plugin_audit(
+            workspace_id,
+            "disabled",
+            actor=current_user,
+            plugin_id=plugin_id,
+            outcome="success",
+        )
     db.session.commit()
     return jsonify(_serialize(installation.plugin, workspace_id))
 
@@ -239,7 +256,9 @@ def api_update_capabilities(workspace_id: int, plugin_id: str):
     """Explicitly grant/revoke capabilities for a plugin in a workspace.
 
     Grants are never implicit: each requested capability must be declared in
-    the plugin's manifest and is recorded through ``CapabilityStore``.
+    the plugin's manifest and is recorded through ``CapabilityStore``. Every
+    successful grant/revoke and every rejected capability request is appended
+    to the workspace audit trail (owner-visible only).
     """
     plugin = Plugin.query.filter_by(id=plugin_id).first()
     if plugin is None:
@@ -258,18 +277,60 @@ def api_update_capabilities(workspace_id: int, plugin_id: str):
     for raw in [*grant_names, *revoke_names]:
         cap_name = _capability_name(str(raw))
         if cap_name is None:
+            record_plugin_audit(
+                workspace_id,
+                "denied",
+                actor=current_user,
+                plugin_id=plugin_id,
+                capability=str(raw)[:64],
+                outcome="denied",
+                reason="capability request rejected",
+            )
+            db.session.commit()
             return jsonify({"error": f"Unknown capability: {raw}"}), 400
         if cap_name not in declared:
+            record_plugin_audit(
+                workspace_id,
+                "denied",
+                actor=current_user,
+                plugin_id=plugin_id,
+                capability=Capability[cap_name].value,
+                outcome="denied",
+                reason="capability not declared by plugin",
+            )
+            db.session.commit()
             return jsonify({"error": f"Capability {cap_name} is not declared by this plugin."}), 400
 
     for raw in grant_names:
         cap_name = _capability_name(str(raw))
-        if cap_name is not None and cap_name in declared:
-            CapabilityStore.grant(plugin_id, workspace_id, Capability[cap_name].value)
+        if cap_name is None or cap_name not in declared:
+            continue
+        value = Capability[cap_name].value
+        if CapabilityStore.has_capability(plugin_id, workspace_id, value):
+            continue
+        CapabilityStore.grant(plugin_id, workspace_id, value, granted_by_id=current_user.id)
+        record_plugin_audit(
+            workspace_id,
+            "granted",
+            actor=current_user,
+            plugin_id=plugin_id,
+            capability=value,
+            outcome="success",
+        )
     for raw in revoke_names:
         cap_name = _capability_name(str(raw))
-        if cap_name is not None and cap_name in declared:
-            CapabilityStore.revoke(plugin_id, workspace_id, Capability[cap_name].value)
+        if cap_name is None or cap_name not in declared:
+            continue
+        value = Capability[cap_name].value
+        if CapabilityStore.revoke(plugin_id, workspace_id, value):
+            record_plugin_audit(
+                workspace_id,
+                "revoked",
+                actor=current_user,
+                plugin_id=plugin_id,
+                capability=value,
+                outcome="success",
+            )
 
     db.session.commit()
     return jsonify(_serialize(plugin, workspace_id))

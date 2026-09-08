@@ -188,6 +188,30 @@ create or remove capability grants. A disabled installation is denied by the
 dispatch-time enforcement (see above), so disabled plugins cannot execute.
 Re-enabling restores delivery while the grant remains valid.
 
+## Audit trail (capabilities & state)
+
+Security-relevant plugin actions are recorded in the shared, append-only
+workspace audit log (`ActivityEvent`, via `app/services/plugin_audit.py`):
+
+- `plugin.capability.granted` / `plugin.capability.revoked` — explicit grant or
+  revoke through the management API.
+- `plugin.enabled` / `plugin.disabled` — workspace installation state changes.
+- `plugin.denied` — a rejected capability request (e.g. not declared by the
+  manifest) or a workspace-scoped dispatch-time denial (plugin disabled /
+  not installed / missing capability grant).
+
+Each entry carries only safe facts — actor, workspace, `plugin_id`, capability
+name, action, outcome, a static reason, and (for dispatch denials) the refused
+event type. **Secrets and event payloads are never stored.** Grant/revoke rows
+are only appended on an actual change (repeat grants are not duplicated), and
+dispatch-time denial recording is best-effort and never changes the fail-closed
+delivery decision.
+
+Entries are owner-visible through the workspace audit view (`GET
+/workspaces/api/workspaces/<id>/audit`); the member activity feed always
+excludes this audit subset, and cross-workspace records are never readable
+outside the workspace they belong to (non-members receive 404).
+
 ## Writing a plugin
 
 ```python
