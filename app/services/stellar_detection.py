@@ -216,9 +216,19 @@ def _is_config_file(path: str) -> bool:
 
 def _is_cli_tooling(path: str) -> bool:
     lower = path.lower()
-    if _basename(path) in _CLI_TOOLING_FILES:
+    base = _basename(path)
+    if base in _CLI_TOOLING_FILES:
         return True
-    return lower.startswith(_CI_WORKFLOW_MARKER) and lower.endswith((".yml", ".yaml"))
+    if base in (".gitlab-ci.yml", ".travis.yml"):
+        return True
+    if (lower.startswith(_CI_WORKFLOW_MARKER) or lower.startswith(".circleci/")) and lower.endswith(
+        (".yml", ".yaml")
+    ):
+        return True
+    # Shell scripts are matched only when their *content* contains a real
+    # command fragment (checked by the caller); the file type alone is not
+    # enough to trigger the signal.
+    return lower.endswith(".sh")
 
 
 def _cargo_dependencies(content: str) -> Iterable[str]:

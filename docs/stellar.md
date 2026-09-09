@@ -131,7 +131,12 @@ explicit undecodable result.
   `#[contract]` attributes / `soroban_sdk::` imports in Rust sources.
 - **possible** — Stellar SDK dependency (JS/Python/Go), a `stellar.toml` /
   `soroban.toml` / `.soroban` config, a `contracts/` layout, or Stellar/Soroban
-  CLI tooling in build/CI files.
+  CLI tooling in build/CI files and shell scripts (Makefile/Justfile/Dockerfile,
+  `build.rs`/`xtask`, GitHub Actions workflows, GitLab CI (`.gitlab-ci.yml`),
+  CircleCI (`.circleci/`), Travis (`.travis.yml`), and `*.sh` scripts). Tooling
+  detection is command-fragment based (`soroban contract …`, `stellar xdr …`,
+  …) — merely mentioning “Stellar/Soroban” in a README or keyword-only comments
+  never triggers it.
 - **none** — otherwise. A plain Rust crate is never classified as Soroban.
 
 `detect_stellar_network(files)` extracts a network hint (testnet/mainnet/
