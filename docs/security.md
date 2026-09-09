@@ -43,6 +43,16 @@ kept in sync as the plugin system grows.
 | RPC malformed responses          | Non-JSON-RPC payloads, id mismatches, HTTP errors, and RPC error payloads map to typed `SorobanRpc*` errors; nothing is silently ignored. | Implemented |
 | Stellar read-only enforcement    | `SorobanRpcClient` implements only read-only methods; `sendTransaction`/`simulateTransaction` are absent; the CLI and web APIs only wrap read-only operations. | Implemented |
 | Stellar address validation       | Structural G-address checks plus full strkey checksum validation (SEP-23 CRC16-XMODEM) for account/contract inspection; the strkey alphabet correctly includes `I`/`O` (only `0`, `1`, `8`, `9` are excluded). | Implemented |
+| Network selection                | Users can select only the fixed supported networks (testnet/mainnet/futurenet/local); mainnet is never an implicit default and raw URLs are never accepted. Stored selection only routes read-only requests through `STELLAR_NETWORK`-derived config. | Implemented |
+| Plugin capability audit         | Every grant/revoke/enable/disable and every dispatch denial is appended to the owner-visible `ActivityEvent` audit trail with plugin/capability/action/outcome (never payloads). | Implemented |
+| Structured error reports        | Plugin handler/lifecycle failures are recorded as bounded `PluginErrorReport` rows (plugin id, operation, exception type, truncated message). No stack traces, payloads, or secrets by default; workspace reports are owner-scoped; recording never affects failure isolation. | Implemented |
+| Config secrecy                  | Per-workspace plugin config is validated and stored on `PluginInstallation.config`, is **omitted** from list/inspect surfaces, and is only read/updated by the workspace owner. | Implemented |
+| Compatibility enforcement       | A plugin’s optional PEP 440 `compatibility` is validated at manifest parse and enforced against the running app version at install; invalid/incompatible plugins are refused. | Implemented |
+| Lifecycle hooks + uninstall     | Optional hooks run isolated/non-fatal on registry enable/disable/uninstall; the workspace uninstall endpoint revokes every capability grant for that workspace before removing the installation. | Implemented |
+| Plugin events                   | `plugin.enabled`/`plugin.disabled`/`plugin.uninstalled` are workspace-scoped events mapped to `WORKSPACE_READ` (dispatch-time enforcement applies). | Implemented |
+| Plugin CLI                      | `flask plugins …` acts as the operator on persisted rows; installs are local-path only (URLs refused) and never grant capabilities or load code. | Implemented |
+| Stellar security findings       | `stellar_security` findings are evidence-labelled rows owned by a single project; reads are owner-scoped (404 for non-owners, no existence oracle). | Implemented |
+| XDR decoding                    | Transaction/envelope + contract-data decoding is bounded and read-only; decoded values are never guessed, malformed/unsupported XDR is explicit, and no signing/submission/keys exist. | Implemented |
 
 ## Testing
 
@@ -100,14 +110,36 @@ configuration (see "Known limitations / planned hardening").
   project/workspace consistency (confused-deputy defense), no auto-grant, and
   the Stellar/AI event capability requirements.
 - `tests/test_project_import.py` — archive traversal/symlink/size guards.
+- `tests/test_stellar_security_findings.py` — findings parsing/normalization,
+  persistence, owner read access, and non-Stellar gating.
+- `tests/test_stellar_network_switcher.py` — validated network selection,
+  mainnet-default protection, persistence, and SSRF-safe routing.
+- `tests/test_stellar_mock_network.py` — end-to-end reads against the offline
+  mock network.
+- `tests/test_stellar_xdr_transaction.py` — bounded transaction-envelope XDR
+  decoding (supported ops, unsupported/malformed/truncated cases).
+- `tests/test_plugin_integration.py` — end-to-end plugin flow and
+  failure-isolation with real dispatch.
+- `tests/test_plugin_audit.py` — capability/state audit trail, owner-only
+  reads, no sensitive-data leakage.
+- `tests/test_plugin_error_reports.py` — bounded error recording, dispatch/hook
+  failures, owner-scoped endpoint, operator CLI.
+- `tests/test_plugin_config.py` — owner-scoped config read/update and
+  validation (unknown keys/types rejected).
+- `tests/test_plugin_compat.py` — PEP 440 compatibility parsing/enforcement.
+- `tests/test_plugin_lifecycle.py` — lifecycle hooks and plugin events.
+- `tests/test_plugins_cli.py` — CLI commands, `--json`, exit codes, URL
+  refusal, and no implicit grants.
 
 ## Known limitations / planned hardening
 
 - Custom-network endpoints are restricted to loopback; a production operator
   using a remote custom node needs to extend the allow-list policy.
-- Plugin code loading is available (`Plugin.load`) but not yet wired to any
-  user-controlled install flow; a plugin install API must enforce capabilities
-  and review before execution.
+- Installing/registering a plugin (API or CLI) **never loads or executes**
+  plugin code; executing real plugin modules at runtime (auto-loading entry
+  points, subscribing their handlers) is intentionally not wired to any
+  install flow yet — plugins are subscribed in-process by code, and a future
+  runtime must keep capability enforcement and review in front of execution.
 - Global events (`github.connected`, `github.disconnected`) carry no workspace
   context and are delivered to any enabled plugin that subscribes; capability
   grants are workspace-scoped, so a per-workspace grant check does not apply to
