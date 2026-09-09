@@ -67,6 +67,8 @@ developer tooling. This project is built incrementally across phases:
   how the Stellar tooling fits in.
 - [Security model](docs/security.md) — threat review and controls for the
   plugin and Stellar architecture.
+- [Security policy](SECURITY.md) — how to report a vulnerability.
+- [Code of conduct](CODE_OF_CONDUCT.md) — community standards.
 
 ## Features
 

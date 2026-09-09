@@ -425,11 +425,10 @@ pytest tests/test_plugins_manifest.py tests/test_capabilities.py \
 
 ## Security reporting
 
-There is currently **no `SECURITY.md`** and GitHub vulnerability alerts are
-not enabled on this repository. Until that changes:
+See [SECURITY.md](SECURITY.md) for how to report a vulnerability privately.
 
-- **Report security issues privately and promptly.** Open a GitHub issue with
-  the `security` label describing the problem.
+Guidelines for security-sensitive work:
+
 - Do not post secrets, credentials, or working exploit code in public issues
   or commit them to the repository.
 - Never commit real secrets: `.env`, API keys, OAuth client secrets, or
@@ -453,8 +452,7 @@ not enabled on this repository. Until that changes:
 
 ## Code of conduct
 
-There is currently **no `CODE_OF_CONDUCT.md`** in this repository. Until one
-is added, we expect everyone to treat each other professionally and with
-respect: be welcoming to new contributors, give and receive feedback
-constructively, and assume good intent. Harassment or abusive behavior is not
-acceptable in issues, PRs, or reviews.
+See [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md). We expect everyone to treat each
+other professionally and with respect: be welcoming to new contributors, give
+and receive feedback constructively, and assume good intent. Harassment or
+abusive behavior is not acceptable in issues, PRs, or reviews.
