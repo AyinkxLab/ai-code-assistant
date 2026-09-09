@@ -335,6 +335,10 @@ Stellar work is tracked under the **Phase 8** milestone with the
 | Web page + read-only APIs       | `app/stellar/`                                    |
 | CLI                              | `app/services/stellar_cli.py`                     |
 
+The `flask stellar …` CLI commands support `--json` for scriptable output and
+documented exit codes (0 success, 2 service error/not found, 3 invalid input);
+see [docs/stellar.md](docs/stellar.md).
+
 ### Rules for Stellar contributions
 
 - **Keep it read-only.** The project never signs, simulates, or submits

@@ -204,7 +204,15 @@ Display in the project developer panel is handled by the results-panel UI.
 ### CLI (`flask stellar …`)
 
 `flask stellar network`, `validate <address>`, `account <address>`, `health`,
-`contract <id>`, `ledger-entry <key>` — all read-only.
+`contract <id>`, `ledger-entry <key>` — all read-only and scriptable:
+
+- Add `--json` to any command for a stable, parseable JSON document
+  (network info, validation result, account, health, contract, or ledger
+  entry). Human-readable output is the default and is unchanged.
+- Errors are printed to stderr and never leak stack traces; when `--json` is
+  given the error is emitted as a JSON object with an `error` message.
+- Exit codes are documented: `0` success, `2` service error / not found /
+  RPC unreachable, `3` invalid input (address/contract/key/hash).
 
 ## Endpoint safety
 
