@@ -195,6 +195,11 @@ Display in the project developer panel is handled by the results-panel UI.
   and its on-chain data in one place. Detection evidence and relevant files
   come from the indexed project only; the live lookups are bound to the
   configured network and never accept a URL from project content.
+- **Import feedback** — the workspace import flow surfaces detection at import
+  time: a detected (Stellar/Soroban) project shows a confidence badge with
+  links to open the project or jump straight to its **Stellar tab**
+  (`?tab=stellar`); non-Stellar imports behave exactly as before (detection is
+  read-only and non-blocking).
 
 ### CLI (`flask stellar …`)
 

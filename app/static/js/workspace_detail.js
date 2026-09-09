@@ -51,6 +51,50 @@
     status.textContent = message || "";
   }
 
+  function projectUrl(project) {
+    return "/workspaces/" + WORKSPACE_ID + "/projects/" + project.id;
+  }
+
+  function handleImportSuccess(project, label) {
+    var stellar = project && project.stellar;
+    var url = projectUrl(project);
+    if (!stellar || !stellar.is_stellar) {
+      flash(label + " " + project.name + " (" + project.file_count + " files).", "success");
+      window.location.href = url;
+      return;
+    }
+    flash(label + " " + project.name + " — Stellar/Soroban project detected.", "success");
+    var status = document.getElementById("import-status");
+    status.hidden = false;
+    status.innerHTML = "";
+    status.appendChild(
+      document.createTextNode("Imported " + project.name + " — ")
+    );
+    var badge = document.createElement("span");
+    badge.className = "tag tag-confirmed";
+    badge.textContent = "Stellar/Soroban project";
+    status.appendChild(badge);
+    status.appendChild(document.createTextNode(" confidence: "));
+    var code = document.createElement("code");
+    code.textContent = stellar.confidence || "possible";
+    status.appendChild(code);
+    if (stellar.is_soroban) {
+      status.appendChild(document.createTextNode(" (Soroban smart contracts)"));
+    }
+    status.appendChild(document.createTextNode("  "));
+    var openProject = document.createElement("a");
+    openProject.className = "btn btn-primary btn-sm";
+    openProject.href = url;
+    openProject.textContent = "Open project";
+    var openStellar = document.createElement("a");
+    openStellar.className = "btn btn-ghost btn-sm";
+    openStellar.href = url + "?tab=stellar";
+    openStellar.textContent = "Open Stellar tab";
+    status.appendChild(openProject);
+    status.appendChild(document.createTextNode(" "));
+    status.appendChild(openStellar);
+  }
+
   function importArchive() {
     var input = document.getElementById("import-archive");
     var btn = document.getElementById("import-archive-btn");
@@ -67,8 +111,7 @@
       body: data,
     })
       .then(function (project) {
-        flash("Imported " + project.name + " (" + project.file_count + " files).", "success");
-        window.location.href = "/workspaces/" + WORKSPACE_ID + "/projects/" + project.id;
+        handleImportSuccess(project, "Imported archive");
       })
       .catch(function (error) {
         setStatus("");
@@ -93,8 +136,7 @@
       body: JSON.stringify({ source: "github", repo: repo }),
     })
       .then(function (project) {
-        flash("Imported " + project.name + " (" + project.file_count + " files).", "success");
-        window.location.href = "/workspaces/" + WORKSPACE_ID + "/projects/" + project.id;
+        handleImportSuccess(project, "Imported repository");
       })
       .catch(function (error) {
         setStatus("");

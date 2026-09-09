@@ -244,3 +244,88 @@ class TestProjectStellarApi:
         login()
         response = client.get(f"/workspaces/api/projects/{project.id}/stellar")
         assert response.status_code == 404
+
+
+class TestImportDetectionMatrix:
+    """Parameterized import fixtures proving detection + no false positives."""
+
+    # (files, expected_confidence, expected_soroban) — live-repo style trees.
+    @pytest.mark.parametrize(
+        ("tree", "confidence", "is_soroban"),
+        [
+            (
+                [
+                    ("Cargo.toml", "[dependencies]\nsoroban-sdk = '21.0.0'\n"),
+                    (
+                        "src/lib.rs",
+                        "#![no_std]\nuse soroban_sdk::contract;\n#[contract]\npub struct C;\n",
+                    ),
+                ],
+                "likely",
+                True,
+            ),
+            (
+                [
+                    ("Cargo.toml", "[dependencies]\nserde = '1.0'\n"),
+                    ("src/main.rs", "fn main() {}\n"),
+                ],
+                "none",
+                False,
+            ),
+            (
+                [("package.json", '{"dependencies": {"stellar-sdk": "^11.0.0"}}\n')],
+                "possible",
+                False,
+            ),
+            (
+                [
+                    ("src/app.py", "print('hi')\n"),
+                    ("README.md", "Built on the Stellar network with Soroban.\n"),
+                ],
+                "none",
+                False,
+            ),
+        ],
+    )
+    def test_github_import_detection_matrix(self, client, workspace, tree, confidence, is_soroban):
+        response = _github_import(client, workspace, _entries_for(tree))
+        assert response.status_code == 201
+        data = response.get_json()
+        assert data["stellar"]["confidence"] == confidence
+        assert data["stellar"]["is_stellar"] is (confidence != "none")
+        assert data["stellar"]["is_soroban"] is is_soroban
+
+    def test_archive_and_github_imports_agree(self, client, workspace):
+        tree = [
+            ("Cargo.toml", "[dependencies]\nsoroban-sdk = '21.0.0'\n"),
+            ("src/lib.rs", "#![no_std]\n#[contractimpl]\npub struct Counter;\n"),
+        ]
+        gh = _github_import(client, workspace, _entries_for(tree))
+        assert gh.status_code == 201
+
+        archive = client.post(
+            f"/workspaces/api/workspaces/{workspace.id}/projects",
+            data={"file": (io.BytesIO(_zip_bytes(tree)), "demo.zip")},
+            content_type="multipart/form-data",
+        )
+        assert archive.status_code == 201
+
+        gh_stellar = gh.get_json()["stellar"]
+        archive_stellar = archive.get_json()["stellar"]
+        assert gh_stellar["confidence"] == archive_stellar["confidence"] == "likely"
+        assert gh_stellar["is_stellar"] is archive_stellar["is_stellar"] is True
+        assert set(gh_stellar["relevant_files"]) == set(archive_stellar["relevant_files"])
+
+    @pytest.mark.parametrize(
+        "tree",
+        [
+            [("README.md", "This repo mentions Stellar and Soroban.\n")],
+            [("notes.txt", "soroban sdk integration plan\n")],
+        ],
+    )
+    def test_readme_only_mentions_are_not_detected(self, client, workspace, tree):
+        response = _github_import(client, workspace, _entries_for(tree))
+        assert response.status_code == 201
+        data = response.get_json()
+        assert data["stellar"]["is_stellar"] is False
+        assert data["stellar"]["confidence"] == "none"

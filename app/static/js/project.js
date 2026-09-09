@@ -731,5 +731,11 @@
           flashError(error.message);
         });
     });
+
+    // Import flows can deep-link straight into the Stellar tab.
+    var params = new URLSearchParams(window.location.search);
+    if (params.get("tab") === "stellar" && document.getElementById("tab-stellar")) {
+      switchTab("stellar");
+    }
   });
 })();
