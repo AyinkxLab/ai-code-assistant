@@ -50,7 +50,15 @@ Services implement the real logic:
   retrieval, project chat, and project analyses (including the Stellar-aware
   kinds).
 - **Stellar** (`stellar.py`, `soroban_rpc.py`, `stellar_inspection.py`,
-  `stellar_detection.py`, `stellar_xdr.py`) — see [Stellar architecture](#stellar-architecture).
+  `stellar_detection.py`, `stellar_xdr.py`, `stellar_xdr_decode.py`,
+  `stellar_mock.py`, `stellar_findings.py`, `soroban_scaffold.py`) — see
+  [Stellar architecture](#stellar-architecture).
+- **Plugins** (`plugins.py`, `capabilities.py`, `events.py`, `plugin_audit.py`,
+  `plugin_compat.py`, `plugin_config.py`, `plugin_errors.py`, `plugin_ops.py`)
+  — manifest parsing/validation, explicit per-workspace capability grants,
+  capability-checked event dispatch, audit + bounded error reporting,
+  PEP 440 compatibility, per-workspace configuration, and the operator CLI
+  logic. See [Plugin architecture](#plugin-architecture).
 
 ### 3. Persistence layer
 
@@ -117,6 +125,41 @@ live data.
 - Report honestly when a project is not Stellar (no fabricated claims).
 - Ground every claim in the indexed files, mark `[CONFIRMED]` vs `[SUGGESTION]`,
   and never claim live data the RPC could not provide.
+
+Supporting read-only modules:
+
+- `stellar_xdr_decode.py` — bounded, fixture-pinned decoding of `LedgerKey`,
+  `LedgerEntryData`, `SCVal`s, and transaction envelopes (V1/V0/fee-bump) with
+  common operations; unsupported/malformed XDR is reported explicitly.
+- `stellar_mock.py` — a deterministic offline Horizon + Stellar RPC server used
+  by tests and local development (no external network).
+- `stellar_findings.py` — defensive parsing + per-project persistence of
+  `stellar_security` findings (owner-scoped reads).
+- `soroban_scaffold.py` — deterministic Soroban contract scaffold generation
+  (no cargo/network; importable into a workspace).
+
+## Plugin architecture
+
+Plugins are **workspace-scoped** at runtime but globally declared:
+
+- A validated `manifest.json` (`plugins.py`) describes a plugin; the management
+  API/CLI persist it as a `Plugin` row and per-workspace `PluginInstallation`
+  rows (enabled state + `config`). Install/enable/disable/uninstall never load
+  or execute plugin code and never grant capabilities implicitly.
+- Capabilities are granted explicitly per workspace (`CapabilityStore` →
+  `CapabilityGrant`) and restricted to manifest-declared capabilities.
+- `events.py` dispatches supported events; before a plugin handler runs, it
+  verifies the plugin is installed+enabled in the event's workspace, the
+  emitting user is authorized, the event's project/workspace context is
+  consistent, and the plugin holds the event's mapped capability
+  (`EVENT_CAPABILITY_MAP`). Handler failures are isolated.
+- Security-relevant actions append to the owner-visible audit trail
+  (`plugin_audit.py` → `ActivityEvent`); handler/lifecycle failures are
+  recorded as bounded `PluginErrorReport` rows (`plugin_errors.py`).
+- Operator surfaces: the workspace management API (`app/plugins/routes.py`),
+  the plugin UI page, and the `flask plugins …` CLI (`plugins_cli.py` +
+  `plugin_ops.py`), which supports `--json`, distinct exit codes, and local-only
+  installs. See [docs/plugins.md](plugins.md).
 
 ## Security model
 

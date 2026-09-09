@@ -34,8 +34,23 @@ from app.extensions import db
 from app.models import Plugin, PluginInstallation, Project, User, Workspace
 from app.services.capabilities import Capability, CapabilityStore
 from app.services.permissions import role_for
+from app.services.plugin_audit import record_plugin_audit
 
 logger = logging.getLogger(__name__)
+
+#: Dispatch denial reasons that are security-relevant enough to audit. Reasons
+#: are static strings (never payloads); transient/user-context rejections are
+#: excluded to keep the trail meaningful.
+_DENIAL_LOG_REASONS = frozenset(
+    {
+        "plugin disabled",
+        "plugin not installed in workspace",
+        "plugin installation disabled",
+        "missing capability grant",
+        "event has no mapped capability",
+        "authorization check failed",
+    }
+)
 
 
 # Predefined event types that plugins can subscribe to
@@ -55,6 +70,10 @@ SUPPORTED_EVENTS = {
     # GitHub events
     "github.connected": "GitHub account connected",
     "github.disconnected": "GitHub account disconnected",
+    # Plugin lifecycle events
+    "plugin.enabled": "Plugin enabled in a workspace",
+    "plugin.disabled": "Plugin disabled in a workspace",
+    "plugin.uninstalled": "Plugin uninstalled from a workspace",
     # AI events
     "ai.analysis.completed": "AI analysis complete",
     # Stellar events
@@ -81,6 +100,10 @@ EVENT_CAPABILITY_MAP: dict[str, Capability] = {
     # GitHub events
     "github.connected": Capability.GITHUB_READ,
     "github.disconnected": Capability.GITHUB_READ,
+    # Plugin lifecycle events (workspace scoped)
+    "plugin.enabled": Capability.WORKSPACE_READ,
+    "plugin.disabled": Capability.WORKSPACE_READ,
+    "plugin.uninstalled": Capability.WORKSPACE_READ,
     # AI events
     "ai.analysis.completed": Capability.AI_ACCESS,
     # Stellar events
@@ -285,6 +308,7 @@ class EventDispatcher:
                 if not allowed:
                     results["denied"] += 1
                     results["denials"].append((plugin_id, reason))
+                    self._record_dispatch_denial(plugin_id, event, reason)
                     logger.info(
                         "Denied event %s to plugin %s: %s",
                         event.event_type,
@@ -302,10 +326,55 @@ class EventDispatcher:
                     f"Error dispatching {event.event_type} to plugin {plugin_id or 'unknown'}: {e}",
                     exc_info=True,
                 )
+                if plugin_id is not None:
+                    self._record_handler_error(plugin_id, event, e)
                 if raise_on_error:
                     raise
 
         return results
+
+    def _record_handler_error(self, plugin_id: str, event: Event, exc: Exception) -> None:
+        """Best-effort, bounded error report for a failing plugin handler."""
+        try:
+            from app.services.plugin_errors import record_plugin_error
+
+            record_plugin_error(
+                plugin_id,
+                f"dispatch:{event.event_type}",
+                exc=exc,
+                workspace_id=event.workspace_id,
+            )
+        except Exception:  # pragma: no cover - recording must never break dispatch
+            logger.debug("Could not record plugin handler error report", exc_info=True)
+
+    def _record_dispatch_denial(self, plugin_id: str, event: Event, reason: str) -> None:
+        """Record a workspace-scoped dispatch denial as an audit outcome.
+
+        Only meaningful workspace/capability denials are recorded; the audit
+        entry never contains event payloads, only the plugin, capability, a
+        static reason, and the refused event type. Recording is best-effort and
+        never affects the (already enforced) fail-closed dispatch decision.
+        """
+        if event.workspace_id is None or reason not in _DENIAL_LOG_REASONS:
+            return
+        capability = EVENT_CAPABILITY_MAP.get(event.event_type)
+        try:
+            record_plugin_audit(
+                event.workspace_id,
+                "denied",
+                plugin_id=plugin_id,
+                capability=capability.value if capability is not None else None,
+                outcome="denied",
+                reason=reason,
+                trigger_event_type=event.event_type,
+            )
+        except Exception:  # pragma: no cover - defensive; audit must not fail dispatch
+            logger.warning(
+                "Could not record plugin denial audit for %s on %s",
+                plugin_id,
+                event.event_type,
+                exc_info=True,
+            )
 
     def _authorize_plugin(self, plugin_id: str, event: Event) -> tuple[bool, str]:
         """Return ``(allowed, reason)`` for a plugin subscriber.

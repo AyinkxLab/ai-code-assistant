@@ -51,8 +51,7 @@
     },
     "compatibility": {
       "type": "string",
-      "default": ">=0.8.0",
-      "description": "Compatible AI Code Assistant versions (PEP 440 syntax)"
+      "description": "Optional PEP 440 specifier of supported AI Code Assistant versions (e.g. '>=0.8.0'). Omit or leave empty for any version; an incompatible range is refused at install."
     },
     "capabilities": {
       "type": "array",

@@ -7,9 +7,12 @@
   <div>
     <h1>Stellar / Soroban developer tools</h1>
     <p class="repo-meta">
-      Read-only network, account, and contract inspection bound to the configured
-      Stellar network ({{ config.STELLAR_NETWORK }}). Nothing here signs, simulates,
-      or submits transactions, and no secrets are ever handled.
+      Read-only network, account, contract, and ledger-entry inspection bound to
+      the configured Stellar network ({{ config.STELLAR_NETWORK }}). You can
+      switch the active network to any supported network below (testnet,
+      mainnet, futurenet, or a local node). Supported contract-data/code XDR is
+      decoded into a structured view; raw XDR is shown bounded. Nothing here
+      signs, simulates, or submits transactions, and no secrets are ever handled.
     </p>
   </div>
 </div>
@@ -34,8 +37,9 @@
   <section id="stellar-contract-panel" class="prompt-editor">
     <h2>Contract inspection</h2>
     <p class="field-hint">
-      Inspect a Soroban contract (C…). Ledger entries are retrieved but not
-      decoded — raw XDR is returned bounded.
+      Inspect a Soroban contract (C…). Supported contract instance/code entries
+      are decoded into a structured view; raw XDR is shown bounded and is never
+      re-encoded into a guessed value.
     </p>
     <div class="repo-toolbar">
       <input id="stellar-contract-input" class="sidebar-search" type="text" placeholder="C… contract id">
@@ -44,9 +48,24 @@
     </div>
     <div id="stellar-contract-output"></div>
   </section>
+
+  <section id="stellar-ledger-panel" class="prompt-editor">
+    <h2>Ledger-entry lookup</h2>
+    <p class="field-hint">
+      Look up a live ledger entry by a base64 LedgerKey. Supported
+      contract-data/code entries are decoded; every other entry type is reported
+      explicitly and never guessed at.
+    </p>
+    <div class="repo-toolbar">
+      <input id="stellar-ledger-input" class="sidebar-search" type="text" placeholder="base64 LedgerKey">
+      <button id="stellar-ledger-btn" class="btn btn-primary btn-sm" type="button">Look up</button>
+    </div>
+    <div id="stellar-ledger-output"></div>
+  </section>
 </div>
 {% endblock %}
 
 {% block scripts %}
+<script src="{{ url_for('static', filename='js/stellar_tools.js') }}"></script>
 <script src="{{ url_for('static', filename='js/stellar.js') }}"></script>
 {% endblock %}

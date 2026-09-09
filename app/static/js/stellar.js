@@ -1,9 +1,12 @@
-// AI Code Assistant — read-only Stellar/Soroban developer tools.
-// Network status, account inspection, and contract inspection. All requests
-// are read-only and bound to the configured Stellar network.
+// AI Code Assistant — read-only Stellar/Soroban developer tools page.
+// Network status/selection, account inspection, contract inspection, and
+// ledger-entry lookup. All requests are read-only and bound to the configured
+// Stellar network. Presentation helpers live in stellar_tools.js.
 
 (function () {
   "use strict";
+
+  var tools = window.StellarTools;
 
   function getCsrf() {
     var meta = document.querySelector('meta[name="csrf-token"]');
@@ -20,7 +23,9 @@
     return fetch(url, options).then(function (response) {
       return response.json().then(function (data) {
         if (!response.ok) {
-          var error = new Error(data && data.error ? data.error : "Request failed (" + response.status + ").");
+          var error = new Error(
+            data && data.error ? data.error : "Request failed (" + response.status + ")."
+          );
           throw error;
         }
         return data;
@@ -28,85 +33,72 @@
     });
   }
 
-  function escapeHtml(text) {
-    var div = document.createElement("div");
-    div.textContent = text == null ? "" : String(text);
-    return div.innerHTML;
-  }
-
   function renderError(container, error) {
-    container.innerHTML =
-      '<p class="sidebar-empty">' + escapeHtml(error && error.message ? error.message : "An error occurred.") + "</p>";
+    container.innerHTML = tools.errorMessage(error);
   }
 
-  function renderNetwork(data) {
-    var html = '<ul class="metric-list">';
-    html += "<li><code>Network</code> — " + escapeHtml(data.network.network) + "</li>";
-    html += "<li><code>Passphrase</code> — " + escapeHtml(data.network.network_passphrase) + "</li>";
-    html += "<li><code>Horizon</code> — " + escapeHtml(data.network.horizon_url) + "</li>";
-    html += "<li><code>RPC</code> — " + escapeHtml(data.network.rpc_url || "(none)") + "</li>";
-    html += "<li><code>Public</code> — " + (data.network.is_public ? "yes" : "no") + "</li>";
-    if (data.rpc_available) {
-      html += "<li><code>RPC status</code> — " + escapeHtml(data.health.status) + "</li>";
-      html += "<li><code>Latest ledger</code> — " + escapeHtml(String(data.latest_ledger.sequence)) + "</li>";
-      html += "<li><code>Retention</code> — " + escapeHtml(String(data.health.ledgerRetentionWindow)) + " ledgers</li>";
-    } else {
-      html += "<li><code>RPC status</code> — unavailable (" + escapeHtml(data.rpc_error || "no response") + ")</li>";
-    }
-    html += "</ul>";
+  function renderSelection(selection) {
+    if (!selection) return "";
+    var options = (selection.selectable || [])
+      .map(function (item) {
+        var selected = item.value === selection.effective_network ? " selected" : "";
+        return (
+          '<option value="' +
+          tools.esc(item.value) +
+          '"' +
+          selected +
+          ">" +
+          tools.esc(item.label) +
+          "</option>"
+        );
+      })
+      .join("");
+    var note = selection.stored_network
+      ? "Using your saved selection (" + tools.esc(selection.stored_network) + ")."
+      : "Using the configured default (" + tools.esc(selection.default_network) + ").";
+    var html = '<div class="repo-toolbar">';
+    html +=
+      '<select id="stellar-network-select" class="sidebar-search" aria-label="Active Stellar network">' +
+      options +
+      "</select>";
+    html +=
+      '<button id="stellar-network-apply" class="btn btn-primary btn-sm" type="button">Switch network</button>';
+    html += "</div>";
+    html +=
+      '<p class="field-hint">' +
+      note +
+      " Mainnet is never used automatically; select it explicitly.</p>";
     return html;
   }
 
-  function renderAccount(data) {
-    var account = data.account;
-    var html = "<ul class=\"metric-list\">";
-    html += "<li><code>Address</code> — " + escapeHtml(data.address) + "</li>";
-    html += "<li><code>Network</code> — " + escapeHtml(data.network.network) + "</li>";
-    html += "<li><code>Sequence</code> — " + escapeHtml(String(account.sequence)) + "</li>";
-    html += "<li><code>Subentry count</code> — " + escapeHtml(String(account.subentry_count)) + "</li>";
-    html += "<li><code>Ledger freshness</code> — " +
-      (data.ledger_freshness.available
-        ? "ledger " + escapeHtml(String(data.ledger_freshness.sequence))
-        : "unavailable") + "</li>";
-    html += "</ul>";
-    if (account.balances && account.balances.length) {
-      html += '<h3 class="metric-title">Balances</h3><ul class="metric-list">';
-      account.balances.forEach(function (balance) {
-        var asset = balance.asset_code
-          ? balance.asset_code + ":" + (balance.asset_issuer || "")
-          : balance.asset_type;
-        html += "<li><code>" + escapeHtml(asset) + "</code> — " + escapeHtml(balance.balance) + "</li>";
+  function saveNetwork() {
+    var output = document.getElementById("stellar-network-output");
+    var select = document.getElementById("stellar-network-select");
+    if (!select) return;
+    var value = select.value;
+    output.innerHTML = tools.loading();
+    api("/stellar/api/network", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ network: value }),
+    })
+      .then(loadNetwork)
+      .catch(function (error) {
+        renderError(output, error);
       });
-      html += "</ul>";
-    }
-    return html;
-  }
-
-  function renderContract(data) {
-    var html = "<ul class=\"metric-list\">";
-    html += "<li><code>Contract</code> — " + escapeHtml(data.contract_id) + "</li>";
-    html += "<li><code>Network</code> — " + escapeHtml(data.network.network) + "</li>";
-    html += "<li><code>Instance entry</code> — " + (data.found ? "found" : "not found") + "</li>";
-    html += "<li><code>Latest ledger</code> — " + escapeHtml(String(data.latest_ledger)) + "</li>";
-    if (data.instance_entry) {
-      html += "<li><code>Instance modified ledger</code> — " +
-        escapeHtml(String(data.instance_entry.lastModifiedLedgerSeq)) + "</li>";
-      html += "<li><code>Instance XDR</code> — retrieved (bounded, not decoded)</li>";
-    }
-    if ("wasm_hash" in data) {
-      html += "<li><code>Wasm code</code> — " + (data.code_found ? "found" : "not found") + "</li>";
-    }
-    html += "</ul>";
-    html += '<p class="field-hint">Ledger entries are returned as opaque XDR. ' +
-      "Decoding SCVal values is tracked as contributor work; nothing here pretends to decode what it does not.</p>";
-    return html;
   }
 
   function loadNetwork() {
     var output = document.getElementById("stellar-network-output");
-    api("/stellar/api/network")
+    output.innerHTML = tools.loading();
+    tools
+      .apiGet("/stellar/api/network")
       .then(function (data) {
-        output.innerHTML = renderNetwork(data);
+        var html = tools.renderNetworkStatus(data);
+        html += renderSelection(data.selection || null);
+        output.innerHTML = html;
+        var apply = document.getElementById("stellar-network-apply");
+        if (apply) apply.addEventListener("click", saveNetwork);
       })
       .catch(function (error) {
         renderError(output, error);
@@ -120,10 +112,11 @@
       renderError(output, { message: "Enter a G… account address." });
       return;
     }
-    output.innerHTML = '<p class="sidebar-empty">Inspecting account…</p>';
-    api("/stellar/api/account?address=" + encodeURIComponent(address))
+    output.innerHTML = tools.loading();
+    tools
+      .apiGet("/stellar/api/account?address=" + encodeURIComponent(address))
       .then(function (data) {
-        output.innerHTML = renderAccount(data);
+        output.innerHTML = tools.renderAccount(data);
       })
       .catch(function (error) {
         renderError(output, error);
@@ -138,12 +131,31 @@
       renderError(output, { message: "Enter a C… contract id." });
       return;
     }
-    output.innerHTML = '<p class="sidebar-empty">Inspecting contract…</p>';
+    output.innerHTML = tools.loading();
     var url = "/stellar/api/contract?address=" + encodeURIComponent(contractId);
     if (wasmHash) url += "&wasm_hash=" + encodeURIComponent(wasmHash);
-    api(url)
+    tools
+      .apiGet(url)
       .then(function (data) {
-        output.innerHTML = renderContract(data);
+        output.innerHTML = tools.renderContract(data);
+      })
+      .catch(function (error) {
+        renderError(output, error);
+      });
+  }
+
+  function inspectLedgerEntry() {
+    var output = document.getElementById("stellar-ledger-output");
+    var key = document.getElementById("stellar-ledger-input").value.trim();
+    if (!key) {
+      renderError(output, { message: "Enter a base64 ledger key." });
+      return;
+    }
+    output.innerHTML = tools.loading();
+    tools
+      .apiGet("/stellar/api/ledger-entry?key=" + encodeURIComponent(key))
+      .then(function (data) {
+        output.innerHTML = tools.renderLedgerEntry(data);
       })
       .catch(function (error) {
         renderError(output, error);
@@ -160,6 +172,13 @@
     document.getElementById("stellar-contract-btn").addEventListener("click", inspectContract);
     document.getElementById("stellar-contract-input").addEventListener("keydown", function (event) {
       if (event.key === "Enter") inspectContract();
+    });
+    document.getElementById("stellar-wasm-input").addEventListener("keydown", function (event) {
+      if (event.key === "Enter") inspectContract();
+    });
+    document.getElementById("stellar-ledger-btn").addEventListener("click", inspectLedgerEntry);
+    document.getElementById("stellar-ledger-input").addEventListener("keydown", function (event) {
+      if (event.key === "Enter") inspectLedgerEntry();
     });
   });
 })();

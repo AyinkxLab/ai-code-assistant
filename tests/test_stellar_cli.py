@@ -1,5 +1,7 @@
 ﻿"""Tests for the read-only Stellar Flask CLI commands."""
 
+import json
+
 from app.services.stellar import AccountError
 
 VALID_ADDRESS = "GALAXYVOIDAOPZTDLHILAJQKCVVFMD4IKLXLSZV5YHO7VY74IWZILUTO"
@@ -115,3 +117,88 @@ class TestStellarLedgerEntryCLI:
         result = _runner(app).invoke(args=["stellar", "ledger-entry", "AAAABgAA"])
         assert result.exit_code == 0
         assert "found: True" in result.output
+
+
+class TestJsonOutput:
+    def test_network_json(self, app):
+        result = _runner(app).invoke(args=["stellar", "network", "--json"])
+        assert result.exit_code == 0
+        data = json.loads(result.output)
+        assert data["network"] == "testnet"
+        assert data["horizon_url"].startswith("https://")
+
+    def test_validate_json_valid(self, app):
+        result = _runner(app).invoke(args=["stellar", "validate", VALID_ADDRESS, "--json"])
+        assert result.exit_code == 0
+        assert json.loads(result.output)["valid"] is True
+
+    def test_validate_json_invalid_exit_3(self, app):
+        result = _runner(app).invoke(args=["stellar", "validate", "nope", "--json"])
+        assert result.exit_code == 3
+        data = json.loads(result.output)
+        assert data["valid"] is False
+        assert data["exit_code"] == 3
+
+    def test_account_json(self, app, monkeypatch):
+        class _FakeService:
+            def get_account(self, address):
+                return {
+                    "account_id": address,
+                    "sequence": "5",
+                    "subentry_count": 1,
+                    "balances": [{"asset_type": "native", "balance": "10.0000000"}],
+                }
+
+        monkeypatch.setattr("app.services.stellar.StellarService", lambda *a, **k: _FakeService())
+        result = _runner(app).invoke(args=["stellar", "account", VALID_ADDRESS, "--json"])
+        assert result.exit_code == 0
+        assert json.loads(result.output)["sequence"] == "5"
+
+    def test_account_invalid_json_exit_3(self, app, monkeypatch):
+        class _FakeService:
+            def get_account(self, address):
+                raise AccountError("not a valid account")
+
+        monkeypatch.setattr("app.services.stellar.StellarService", lambda *a, **k: _FakeService())
+        result = _runner(app).invoke(args=["stellar", "account", VALID_ADDRESS, "--json"])
+        assert result.exit_code == 3
+        assert "error" in json.loads(result.output)
+
+    def test_health_json_service_error_exit_2(self, app, monkeypatch):
+        class _FakeClient:
+            def get_health(self):
+                from app.services.soroban_rpc import SorobanRpcUnavailableError
+
+                raise SorobanRpcUnavailableError("offline")
+
+            def get_latest_ledger(self):
+                raise AssertionError("should not be called")
+
+        monkeypatch.setattr("app.services.soroban_rpc.SorobanRpcClient", lambda: _FakeClient())
+        result = _runner(app).invoke(args=["stellar", "health", "--json"])
+        assert result.exit_code == 2
+        assert "error" in json.loads(result.output)
+
+    def test_contract_json(self, app, monkeypatch):
+        monkeypatch.setattr(
+            "app.services.stellar_inspection.inspect_contract",
+            lambda cid, wasm_hash=None: {
+                "contract_id": cid,
+                "network": {"network": "testnet"},
+                "found": True,
+                "latest_ledger": 10,
+                "instance_entry": {"lastModifiedLedgerSeq": 5},
+            },
+        )
+        result = _runner(app).invoke(args=["stellar", "contract", DOCS_CONTRACT, "--json"])
+        assert result.exit_code == 0
+        assert json.loads(result.output)["contract_id"] == DOCS_CONTRACT
+
+    def test_ledger_entry_json(self, app, monkeypatch):
+        monkeypatch.setattr(
+            "app.services.stellar_inspection.inspect_ledger_entry",
+            lambda key: {"network": {"network": "testnet"}, "found": True, "latest_ledger": 3},
+        )
+        result = _runner(app).invoke(args=["stellar", "ledger-entry", "AAAABgAA", "--json"])
+        assert result.exit_code == 0
+        assert json.loads(result.output)["found"] is True

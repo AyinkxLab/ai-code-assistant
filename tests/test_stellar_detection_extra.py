@@ -2,6 +2,8 @@
 
 from types import SimpleNamespace
 
+import pytest
+
 from app.services.stellar_detection import (
     detect_stellar_network,
     detect_stellar_project,
@@ -59,6 +61,62 @@ class TestNewSignals:
         assert "Cargo.toml" in signals.relevant_files
         assert "stellar.toml" in signals.relevant_files
         assert "src/main.rs" not in signals.relevant_files
+
+
+class TestExtendedCliToolingDetection:
+    @pytest.mark.parametrize(
+        ("path", "content"),
+        [
+            ("scripts/build.sh", "soroban contract build --package counter\n"),
+            ("scripts/deploy.sh", "stellar contract deploy --wasm foo.wasm\n"),
+            (".gitlab-ci.yml", "- soroban contract build\n"),
+            (".circleci/config.yml", "run: stellar xdr type XDR_DECODE\n"),
+            (".circleci/config.yaml", "run: soroban invoke --id C...\n"),
+            (".travis.yml", "script: stellar keys generate\n"),
+        ],
+    )
+    def test_cli_commands_in_new_surfaces_detected(self, path, content):
+        signals = detect_stellar_project([_file(path, content)])
+        assert signals.confidence == "possible"
+        assert signals.stellar_cli_tooling is True
+        assert path in signals.relevant_files
+        assert signals.evidence
+
+    @pytest.mark.parametrize(
+        ("path", "content"),
+        [
+            ("scripts/build.sh", "echo 'stellar things'\n"),
+            ("scripts/run.sh", "# soroban is mentioned in a comment\n"),
+            (".gitlab-ci.yml", "description: stellar project\n"),
+            (".circleci/config.yml", "name: soroban pipeline\n"),
+            (".travis.yml", "notifications: stellar\n"),
+        ],
+    )
+    def test_keyword_mentions_do_not_trigger(self, path, content):
+        signals = detect_stellar_project([_file(path, content)])
+        assert signals.stellar_cli_tooling is False
+        assert signals.is_stellar is False
+        assert signals.confidence == "none"
+
+    def test_plain_rust_with_stellar_readme_is_none(self):
+        files = [
+            _file("Cargo.toml", "[dependencies]\nserde = '1.0'\n"),
+            _file("src/main.rs", "fn main() {}\n"),
+            _file("README.md", "# Counter\nBuilt for the Stellar network.\n"),
+        ]
+        signals = detect_stellar_project(files)
+        assert signals.is_stellar is False
+        assert signals.confidence == "none"
+
+    def test_soroban_readme_still_none_without_tooling(self):
+        # A README mention of Soroban alone never makes a plain crate "stellar".
+        files = [
+            _file("src/lib.rs", "pub fn f() {}\n"),
+            _file("README.md", "Uses Soroban smart contracts.\n"),
+        ]
+        signals = detect_stellar_project(files)
+        assert signals.is_stellar is False
+        assert signals.confidence == "none"
 
 
 class TestNetworkHints:

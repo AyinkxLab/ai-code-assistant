@@ -883,7 +883,11 @@ def _stellar_relevant(files, structure) -> tuple[list[ProjectFile], str]:
 
 
 def _stellar_analysis_not_applicable(kind: str, confidence: str) -> dict:
-    """Honest "not applicable" result used for non-Stellar projects."""
+    """Honest "not applicable" result used for non-Stellar projects.
+
+    Carries the same finding envelope as a real run (empty findings) so API
+    consumers always see a consistent shape and nothing is ever persisted.
+    """
     return {
         "kind": kind,
         "detected": False,
@@ -894,6 +898,10 @@ def _stellar_analysis_not_applicable(kind: str, confidence: str) -> dict:
             "Stellar configuration files), so a Stellar analysis is not "
             "applicable. This is not a Stellar/Soroban project."
         ),
+        "findings": [],
+        "findings_count": 0,
+        "structured": False,
+        "persisted_count": 0,
     }
 
 
@@ -965,6 +973,11 @@ def analyze_stellar_security(project) -> dict:
     carry severity, evidence, explanation, and a recommended remediation. The
     analysis never claims formal verification or guarantees of security, and
     non-Stellar projects receive the honest "not applicable" response.
+
+    The model is asked to end its answer with a bounded JSON findings block;
+    the block is parsed defensively into structured findings that are persisted
+    per project (see ``app/services/stellar_findings.py``). If parsing fails
+    the narrative is still returned unchanged and nothing is persisted.
     """
     _assert_accessible(project)
     kind = "stellar_security"
@@ -1012,13 +1025,48 @@ evidence do not report it. Do NOT claim formal verification, and do NOT claim
 this AI analysis guarantees security. Mark [CONFIRMED] for issues directly
 proven by the files and [SUGGESTION] for inferences. If live RPC data is
 unavailable, do not claim any live contract or ledger state.
+
+Finally, after your narrative, output a single machine-readable JSON block
+(no text after it) listing the findings, or [] if there are none. Use exactly
+this schema and no other keys:
+
+{{"findings": [{{"severity": "critical|high|medium|low|informational",
+"category": "<one of the category names listed in the bullets above>",
+"file": "<path relative to repo, if known>", "line": <integer or null>,
+"confidence": "confirmed|potential|suggestion",
+"evidence": "<short quoted snippet, if any>",
+"explanation": "<what the risk is and why it matters>",
+"remediation": "<concrete fix>"}}]}}
 """
+    analysis = _run(prompt)
+    from app.services.stellar_findings import (
+        parse_stellar_findings,
+        replace_project_findings,
+    )
+
+    findings = parse_stellar_findings(analysis)
+    persisted_count = 0
+    if findings:
+        try:
+            persisted_count = replace_project_findings(project.id, findings)
+        except Exception:  # pragma: no cover - never fail the analysis on persist
+            import logging
+
+            logging.getLogger(__name__).warning(
+                "Could not persist stellar_security findings for project %s",
+                project.id,
+                exc_info=True,
+            )
     return {
         "kind": kind,
         "detected": True,
         "confidence": signals.confidence,
         "is_soroban": signals.is_soroban,
-        "analysis": _run(prompt),
+        "analysis": analysis,
+        "findings": findings,
+        "findings_count": len(findings),
+        "structured": bool(findings),
+        "persisted_count": persisted_count,
     }
 
 

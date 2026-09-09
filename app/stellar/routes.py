@@ -4,22 +4,33 @@ Endpoints (all ``@login_required``, all read-only):
 
 - ``GET /stellar``                       — developer page
 - ``GET /stellar/api/network``           — configured network + live RPC status
+- ``PUT /stellar/api/network``           — set the user's network selection
 - ``GET /stellar/api/account``           — read-only account inspection
 - ``GET /stellar/api/contract``          — read-only contract inspection
 - ``GET /stellar/api/ledger-entry``      — ledger entry lookup by base64 key
 
 Authorization: login required. Network endpoints come exclusively from the
-validated configuration; callers can never supply a URL (no SSRF). Read-only:
+validated configuration; callers can never supply a URL (no SSRF). The network
+selector only stores one of the fixed supported network names and routes
+subsequent read-only requests through it; it grants no extra access. Read-only:
 the service and RPC client never sign, simulate, or submit. A light per-user
 rate limit keeps unbounded lookups bounded.
 """
 
-from flask import jsonify, render_template, request
-from flask_login import login_required
+from flask import current_app, jsonify, render_template, request
+from flask_login import current_user, login_required
 
+from app.extensions import db
 from app.services import ratelimit
 from app.services.soroban_rpc import SorobanRpcError
-from app.services.stellar import AccountError, NetworkError, StellarError
+from app.services.stellar import (
+    AccountError,
+    NetworkError,
+    StellarError,
+    selectable_stellar_networks,
+    set_stellar_network,
+    stored_stellar_network,
+)
 from app.services.stellar_inspection import (
     inspect_account,
     inspect_contract,
@@ -33,6 +44,24 @@ def _rate_limited() -> bool:
     return not ratelimit.hit(ratelimit.client_key("stellar:"), max_hits=60)
 
 
+def _selection_payload() -> dict:
+    """Return the network-selection state for the current user.
+
+    ``stored_network`` is the user's explicit choice (if any); ``effective`` is
+    what services actually use — the stored choice, else the operator-configured
+    ``STELLAR_NETWORK``. Only the fixed supported networks are selectable; raw
+    URLs are never accepted.
+    """
+    default_network = (current_app.config.get("STELLAR_NETWORK") or "testnet").lower().strip()
+    stored = stored_stellar_network(current_user)
+    return {
+        "default_network": default_network,
+        "stored_network": stored,
+        "effective_network": stored or default_network,
+        "selectable": selectable_stellar_networks(),
+    }
+
+
 @bp.route("/")
 @login_required
 def index():
@@ -43,10 +72,35 @@ def index():
 @bp.route("/api/network")
 @login_required
 def api_network():
-    """Return the configured network plus best-effort live RPC status."""
+    """Return the configured network, live RPC status, and selection state."""
     if _rate_limited():
         return jsonify({"error": "Rate limit exceeded. Try again shortly."}), 429
-    return jsonify(network_status())
+    result = network_status()
+    result["selection"] = _selection_payload()
+    return jsonify(result)
+
+
+@bp.route("/api/network", methods=["PUT"])
+@login_required
+def api_network_update():
+    """Persist the current user's Stellar network selection.
+
+    The value is validated against the fixed supported networks before it is
+    stored; unknown values and raw URLs are rejected (fail closed). Storing the
+    selection never grants additional access and cannot weaken endpoint
+    validation — it only routes subsequent read-only Stellar requests and
+    analysis through the chosen supported network.
+    """
+    if _rate_limited():
+        return jsonify({"error": "Rate limit exceeded. Try again shortly."}), 429
+    data = request.get_json(silent=True) or {}
+    value = data.get("network")
+    try:
+        set_stellar_network(current_user, value)
+    except StellarError as exc:
+        return jsonify({"error": str(exc)}), 400
+    db.session.commit()
+    return jsonify(_selection_payload())
 
 
 @bp.route("/api/account")

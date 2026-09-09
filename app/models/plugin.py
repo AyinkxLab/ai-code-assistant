@@ -22,6 +22,7 @@ class Plugin(db.Model):
     capabilities = db.Column(db.JSON, default=[])  # List of capability strings
     permissions = db.Column(db.JSON, default=[])
     dependencies = db.Column(db.JSON, default=[])
+    compatibility = db.Column(db.String(256), nullable=True)
     configuration = db.Column(db.JSON, default={})
 
     enabled = db.Column(db.Boolean, default=True)
@@ -53,6 +54,7 @@ class Plugin(db.Model):
             "capabilities": self.capabilities or [],
             "permissions": self.permissions or [],
             "dependencies": self.dependencies or [],
+            "compatibility": self.compatibility,
             "configuration": self.configuration or {},
             "enabled": self.enabled,
             "installed_at": self.installed_at.isoformat() if self.installed_at else None,

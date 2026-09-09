@@ -18,6 +18,8 @@ from pathlib import Path
 from types import ModuleType
 from typing import Any
 
+from app.services.plugin_compat import is_valid_compatibility
+
 logger = logging.getLogger(__name__)
 
 
@@ -45,6 +47,16 @@ class PluginLoadError(PluginError):
     pass
 
 
+#: Optional lifecycle hook names a plugin class may implement.
+#:
+#: Hooks are invoked on registry ``enable``/``disable``/``uninstall`` **only for
+#: plugins already loaded in-process** (``plugin.module is not None``) — the
+#: management API never loads arbitrary plugin code on its own. Hook failures
+#: are isolated: the state change still happens and the registry stays
+#: consistent.
+LIFECYCLE_HOOKS = ("on_enable", "on_disable", "on_uninstall")
+
+
 @dataclass
 class PluginManifest:
     """Parsed and validated plugin manifest."""
@@ -56,7 +68,7 @@ class PluginManifest:
     author: str
     entry_point: str
     capabilities: list[str]
-    compatibility: str = ">=0.8.0"
+    compatibility: str | None = None
     permissions: list[str] | None = None
     dependencies: list[str] | None = None
     configuration: dict[str, Any] | None = None
@@ -136,6 +148,12 @@ class PluginManifest:
                 if cap not in valid_capabilities:
                     errors.append(f"Unknown capability: {cap}")
 
+        # Validate the PEP 440 compatibility specifier (e.g. ">=0.8.0"). The
+        # field is optional; when omitted the plugin supports any app version.
+        compatibility = data.get("compatibility")
+        if compatibility is not None and not is_valid_compatibility(compatibility):
+            errors.append(f"Invalid compatibility specifier: {compatibility}")
+
         if errors:
             raise ManifestValidationError("; ".join(errors))
 
@@ -147,7 +165,7 @@ class PluginManifest:
             author=data["author"],
             entry_point=data["entry_point"],
             capabilities=data["capabilities"],
-            compatibility=data.get("compatibility", ">=0.8.0"),
+            compatibility=compatibility,
             permissions=data.get("permissions", []),
             dependencies=data.get("dependencies", []),
             configuration=data.get("configuration", {}),
@@ -247,6 +265,43 @@ class Plugin:
             True if plugin has capability
         """
         return capability in self.manifest.capabilities
+
+    def invoke_hook(self, hook: str, app: Any | None = None) -> dict[str, Any]:
+        """Invoke an optional lifecycle hook on the loaded plugin instance.
+
+        ``hook`` is one of :data:`LIFECYCLE_HOOKS`. Hooks are best-effort and
+        isolated: an absent hook, an unloaded plugin, or a raising hook never
+        propagates. Returns ``{"hook", "called", "ok", "error"}`` so callers can
+        surface failures without breaking state.
+        """
+        if self.module is None:
+            return {"hook": hook, "called": False, "ok": True, "error": None}
+        try:
+            instance = self.get_instance(app=app)
+        except Exception as exc:  # never let an instance error break a lifecycle change
+            logger.error(
+                "Could not instantiate plugin %s for hook %s: %s",
+                self.manifest.id,
+                hook,
+                exc,
+                exc_info=True,
+            )
+            return {"hook": hook, "called": False, "ok": False, "error": str(exc)}
+        method = getattr(instance, hook, None)
+        if not callable(method):
+            return {"hook": hook, "called": False, "ok": True, "error": None}
+        try:
+            method()
+        except Exception as exc:
+            logger.error(
+                "Plugin %s hook %s failed: %s",
+                self.manifest.id,
+                hook,
+                exc,
+                exc_info=True,
+            )
+            return {"hook": hook, "called": True, "ok": False, "error": str(exc)}
+        return {"hook": hook, "called": True, "ok": True, "error": None}
 
     def get_instance(self, app: Any | None = None) -> Any:
         """Get instantiated plugin class.
@@ -360,7 +415,7 @@ class PluginRegistry:
         return [p for p in self._plugins.values() if p.enabled]
 
     def enable(self, plugin_id: str) -> None:
-        """Enable plugin.
+        """Enable plugin and run its optional ``on_enable`` hook.
 
         Args:
             plugin_id: Plugin identifier
@@ -371,11 +426,14 @@ class PluginRegistry:
         plugin = self.get(plugin_id)
         if not plugin:
             raise PluginRegistrationError(f"Plugin not found: {plugin_id}")
+        if plugin.enabled:
+            return
         plugin.enabled = True
+        self._run_hook(plugin, "on_enable")
         logger.info(f"Enabled plugin: {plugin_id}")
 
     def disable(self, plugin_id: str) -> None:
-        """Disable plugin.
+        """Disable plugin and run its optional ``on_disable`` hook.
 
         Args:
             plugin_id: Plugin identifier
@@ -386,8 +444,57 @@ class PluginRegistry:
         plugin = self.get(plugin_id)
         if not plugin:
             raise PluginRegistrationError(f"Plugin not found: {plugin_id}")
+        if not plugin.enabled:
+            return
         plugin.enabled = False
+        self._run_hook(plugin, "on_disable")
         logger.info(f"Disabled plugin: {plugin_id}")
+
+    def uninstall(self, plugin_id: str) -> None:
+        """Uninstall a plugin from the registry.
+
+        Runs the optional ``on_uninstall`` hook first, then removes the plugin.
+        A raising hook never blocks removal, so the registry always ends
+        consistent.
+
+        Args:
+            plugin_id: Plugin identifier
+
+        Raises:
+            PluginRegistrationError: If plugin not found
+        """
+        plugin = self.get(plugin_id)
+        if not plugin:
+            raise PluginRegistrationError(f"Plugin not found: {plugin_id}")
+        self._run_hook(plugin, "on_uninstall")
+        del self._plugins[plugin_id]
+        logger.info(f"Uninstalled plugin: {plugin_id}")
+
+    def _run_hook(self, plugin: Plugin, hook: str) -> dict[str, Any]:
+        """Invoke a lifecycle hook, logging (never propagating) failures."""
+        result = plugin.invoke_hook(hook)
+        if result.get("ok") is False:
+            logger.warning(
+                "Plugin %s %s reported a problem: %s",
+                plugin.manifest.id,
+                hook,
+                result.get("error"),
+            )
+            self._record_hook_error(plugin.manifest.id, hook, result.get("error"))
+        return result
+
+    def _record_hook_error(self, plugin_id: str, hook: str, message: Any) -> None:
+        """Best-effort bounded error report when running inside an app context."""
+        try:
+            from flask import has_app_context
+
+            if not has_app_context():
+                return
+            from app.services.plugin_errors import record_plugin_error
+
+            record_plugin_error(plugin_id, f"hook:{hook}", message=str(message))
+        except Exception:  # pragma: no cover - never let recording break lifecycle
+            logger.debug("Could not record plugin hook error report", exc_info=True)
 
     def validate_capability(self, plugin_id: str, capability: str) -> bool:
         """Check if plugin has capability.

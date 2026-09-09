@@ -167,6 +167,31 @@ class TestLedgerEntries:
         params = json.loads(session.requested_body)["params"]
         assert params["xdrFormat"] == "json"
 
+    def test_xdr_clipped_by_default(self, app):
+        long_xdr = "A" * 6000
+        payload = {
+            "entries": [{"key": "K", "xdr": long_xdr, "lastModifiedLedgerSeq": 1}],
+            "latestLedger": 5,
+        }
+        session = _FakeSession(_FakeResponse(200, _rpc_result(payload)))
+        with app.app_context():
+            client = SorobanRpcClient(session=session)
+            result = client.get_ledger_entries([SAMPLE_LEDGER_KEY])
+        assert result["entries"][0]["xdr"] != long_xdr
+        assert "…[truncated]" in result["entries"][0]["xdr"]
+
+    def test_clip_xdr_false_preserves_raw_for_decoding(self, app):
+        long_xdr = "A" * 6000
+        payload = {
+            "entries": [{"key": "K", "xdr": long_xdr, "lastModifiedLedgerSeq": 1}],
+            "latestLedger": 5,
+        }
+        session = _FakeSession(_FakeResponse(200, _rpc_result(payload)))
+        with app.app_context():
+            client = SorobanRpcClient(session=session)
+            result = client.get_ledger_entries([SAMPLE_LEDGER_KEY], clip_xdr=False)
+        assert result["entries"][0]["xdr"] == long_xdr
+
     def test_bad_format_rejected(self, app):
         with app.app_context():
             client = _client(app, _FakeResponse(200, _rpc_result({})))

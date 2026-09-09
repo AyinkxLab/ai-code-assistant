@@ -30,6 +30,7 @@ EXPECTED_COLUMNS = {
         "capabilities",
         "permissions",
         "dependencies",
+        "compatibility",
         "configuration",
         "enabled",
         "installed_at",
@@ -114,13 +115,108 @@ class TestMigrationUpgrade:
             assert result.returncode == 0, result.stderr
             with _inspect(db_url) as insp:
                 tables = set(insp.get_table_names())
-                assert PLUGIN_TABLES.isdisjoint(tables), (
-                    "plugin tables still present after downgrade"
-                )
+                assert PLUGIN_TABLES.isdisjoint(
+                    tables
+                ), "plugin tables still present after downgrade"
 
 
 class TestMigrationHead:
-    def test_head_is_phase8(self):
+    def test_head_is_latest_phase8(self):
         result = _run_flask(["db", "heads"], {"DATABASE_URL": "sqlite:///:memory:"})
         assert result.returncode == 0, result.stderr
-        assert "b3c2d1a0f9e8" in (result.stdout + result.stderr)
+        assert "e2f3a4b5c6d7" in (result.stdout + result.stderr)
+
+    def test_users_stellar_network_column_upgraded(self):
+        with _migration_db() as db_url, _inspect(db_url) as insp:
+            columns = {col["name"] for col in insp.get_columns("users")}
+            assert "stellar_network" in columns
+
+    def test_stellar_security_findings_table_upgraded(self):
+        expected = {
+            "id",
+            "project_id",
+            "file",
+            "line",
+            "severity",
+            "category",
+            "confidence",
+            "evidence",
+            "explanation",
+            "recommendation",
+            "created_at",
+        }
+        with _migration_db() as db_url, _inspect(db_url) as insp:
+            tables = set(insp.get_table_names())
+            assert "stellar_security_findings" in tables
+            columns = {col["name"] for col in insp.get_columns("stellar_security_findings")}
+            assert columns == expected
+
+    def test_stellar_network_column_downgrade(self):
+        # Downgrading to the previous Phase 8 revision removes the column.
+        with tempfile.TemporaryDirectory() as tmp:
+            db_url = f"sqlite:///{os.path.join(tmp, 'mig2.db')}"
+            up = _run_flask(["db", "upgrade"], {"DATABASE_URL": db_url})
+            assert up.returncode == 0, up.stderr
+            down = _run_flask(["db", "downgrade", "b3c2d1a0f9e8"], {"DATABASE_URL": db_url})
+            assert down.returncode == 0, down.stderr
+            with _inspect(db_url) as insp:
+                columns = {col["name"] for col in insp.get_columns("users")}
+                assert "stellar_network" not in columns
+
+    def test_stellar_security_findings_downgrade_removed(self):
+        # Downgrading to the revision before the table removes it.
+        with tempfile.TemporaryDirectory() as tmp:
+            db_url = f"sqlite:///{os.path.join(tmp, 'mig3.db')}"
+            up = _run_flask(["db", "upgrade"], {"DATABASE_URL": db_url})
+            assert up.returncode == 0, up.stderr
+            down = _run_flask(["db", "downgrade", "a7f8b9c0d1e2"], {"DATABASE_URL": db_url})
+            assert down.returncode == 0, down.stderr
+            with _inspect(db_url) as insp:
+                tables = set(insp.get_table_names())
+                assert "stellar_security_findings" not in tables
+                columns = {col["name"] for col in insp.get_columns("users")}
+                assert "stellar_network" in columns
+
+    def test_plugin_compatibility_column_upgraded(self):
+        with _migration_db() as db_url, _inspect(db_url) as insp:
+            columns = {col["name"] for col in insp.get_columns("plugins")}
+            assert "compatibility" in columns
+
+    def test_plugin_compatibility_column_downgrade_removed(self):
+        # Downgrading to the revision before the column removes it.
+        with tempfile.TemporaryDirectory() as tmp:
+            db_url = f"sqlite:///{os.path.join(tmp, 'mig4.db')}"
+            up = _run_flask(["db", "upgrade"], {"DATABASE_URL": db_url})
+            assert up.returncode == 0, up.stderr
+            down = _run_flask(["db", "downgrade", "c9d8e7f6a5b4"], {"DATABASE_URL": db_url})
+            assert down.returncode == 0, down.stderr
+            with _inspect(db_url) as insp:
+                columns = {col["name"] for col in insp.get_columns("plugins")}
+                assert "compatibility" not in columns
+
+    def test_plugin_error_reports_table_upgraded(self):
+        expected = {
+            "id",
+            "workspace_id",
+            "plugin_id",
+            "operation",
+            "exception_type",
+            "message",
+            "created_at",
+        }
+        with _migration_db() as db_url, _inspect(db_url) as insp:
+            tables = set(insp.get_table_names())
+            assert "plugin_error_reports" in tables
+            columns = {col["name"] for col in insp.get_columns("plugin_error_reports")}
+            assert columns == expected
+
+    def test_plugin_error_reports_downgrade_removed(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            db_url = f"sqlite:///{os.path.join(tmp, 'mig5.db')}"
+            up = _run_flask(["db", "upgrade"], {"DATABASE_URL": db_url})
+            assert up.returncode == 0, up.stderr
+            down = _run_flask(["db", "downgrade", "d1e2f3a4b5c6"], {"DATABASE_URL": db_url})
+            assert down.returncode == 0, down.stderr
+            with _inspect(db_url) as insp:
+                tables = set(insp.get_table_names())
+                assert "plugin_error_reports" not in tables

@@ -9,11 +9,11 @@ developer a structured, safe view of:
 - a contract's instance entry and deployed wasm code metadata,
 - an arbitrary ledger entry by base64 ``LedgerKey``.
 
-Everything is read-only and bounded. Raw XDR values are returned as opaque,
-length-bounded strings and are explicitly **not** decoded: the module never
-pretends to understand XDR it does not decode (full SCVal/XDR decoding is
-tracked as contributor work). Live data is always labelled with the network it
-was read from and an honest availability flag — callers must never treat an
+Everything is read-only and bounded. Contract-data and contract-code ledger
+entries are decoded into structured, human-readable values by
+:mod:`app.services.stellar_xdr_decode`; unsupported or malformed XDR is reported
+explicitly and never guessed at. Live data is always labelled with the network
+it was read from and an honest availability flag — callers must never treat an
 unavailable RPC as authoritative data.
 """
 
@@ -43,12 +43,18 @@ from app.services.stellar_xdr import (
     validate_ledger_key_base64,
     wasm_hash_from_hex,
 )
+from app.services.stellar_xdr_decode import decode_ledger_entry_data
 
 
 def _clip(value: str | None, limit: int = MAX_XDR_CHARS) -> str | None:
     if not isinstance(value, str) or len(value) <= limit:
         return value
     return value[:limit] + "…[truncated]"
+
+
+def _decode_entry_xdr(raw_xdr: str | None) -> dict[str, Any]:
+    """Decode an RPC entry's ``xdr`` (a ``LedgerEntryData``) without raising."""
+    return decode_ledger_entry_data(raw_xdr or "")
 
 
 # ---------------------------------------------------------------------------
@@ -147,8 +153,10 @@ def inspect_contract(
 
     Retrieves the contract's instance ledger entry (its code-hash reference and
     instance storage) and, when a ``wasm_hash`` is supplied, the deployed wasm
-    code's ledger entry. Raw XDR is returned bounded and explicitly marked as
-    not decoded.
+    code's ledger entry. Where the RPC returns decodable contract-data/code
+    XDR, a structured ``decoded`` view is included alongside the raw (bounded,
+    explicitly not re-encoded) XDR; unsupported or malformed XDR is reported
+    explicitly and never guessed at.
 
     Raises:
         AccountError: For an invalid contract id or wasm hash.
@@ -171,25 +179,30 @@ def inspect_contract(
         "ledger_key": instance_key,
         "instance_entry": None,
         "code_entry": None,
+        "found": False,
         "decoded": False,
         "note": (
-            "Ledger entries are returned as opaque, length-bounded XDR. "
-            "Decoding SCVal/SCAddress values into a human-readable view is "
-            "tracked as contributor work; this module reports what it actually "
-            "retrieves and never guesses at decoded values."
+            "Contract inspection is read-only network data. Supported "
+            "contract-data/code entries are decoded into a structured view; "
+            "unsupported or malformed XDR is reported explicitly and never "
+            "guessed at."
         ),
     }
 
-    entries = rpc.get_ledger_entries([instance_key])
-    result["latest_ledger"] = entries.get("latestLedger")
-    raw_entries = entries.get("entries") or []
+    instance_raw = rpc.get_ledger_entries([instance_key], clip_xdr=False)
+    result["latest_ledger"] = instance_raw.get("latestLedger")
+    raw_entries = instance_raw.get("entries") or []
     if raw_entries:
+        raw_instance = raw_entries[0]
+        instance_decoded = _decode_entry_xdr(raw_instance.get("xdr"))
         result["instance_entry"] = {
-            "lastModifiedLedgerSeq": raw_entries[0].get("lastModifiedLedgerSeq"),
-            "liveUntilLedgerSeq": raw_entries[0].get("liveUntilLedgerSeq"),
-            "xdr": _clip(raw_entries[0].get("xdr")),
+            "lastModifiedLedgerSeq": raw_instance.get("lastModifiedLedgerSeq"),
+            "liveUntilLedgerSeq": raw_instance.get("liveUntilLedgerSeq"),
+            "xdr": _clip(raw_instance.get("xdr")),
+            "decoded": instance_decoded,
         }
         result["found"] = True
+        result["decoded"] = bool(instance_decoded.get("decoded"))
     else:
         result["found"] = False
 
@@ -200,15 +213,21 @@ def inspect_contract(
         except StrkeyError as exc:
             raise AccountError(f"Invalid wasm hash: {exc}") from exc
         code_key = ledger_key_contract_code(code_bytes)
-        code_entries = rpc.get_ledger_entries([code_key]).get("entries") or []
+        code_raw = rpc.get_ledger_entries([code_key], clip_xdr=False)
+        code_entries = code_raw.get("entries") or []
         if code_entries:
+            raw_code = code_entries[0]
+            code_decoded = _decode_entry_xdr(raw_code.get("xdr"))
             result["code_entry"] = {
-                "lastModifiedLedgerSeq": code_entries[0].get("lastModifiedLedgerSeq"),
-                "liveUntilLedgerSeq": code_entries[0].get("liveUntilLedgerSeq"),
-                "xdr_bytes": len(_clip(code_entries[0].get("xdr")) or ""),
-                "xdr": _clip(code_entries[0].get("xdr")),
+                "lastModifiedLedgerSeq": raw_code.get("lastModifiedLedgerSeq"),
+                "liveUntilLedgerSeq": raw_code.get("liveUntilLedgerSeq"),
+                "xdr": _clip(raw_code.get("xdr")),
+                "decoded": code_decoded,
             }
             result["code_found"] = True
+            if code_decoded.get("decoded"):
+                detail = code_decoded.get("detail") or {}
+                result["code_byte_size"] = detail.get("code_byte_size")
         else:
             result["code_found"] = False
 
@@ -223,7 +242,9 @@ def inspect_ledger_entry(
     """Look up a live ledger entry by a caller-supplied base64 ``LedgerKey``.
 
     The key is validated structurally (base64 + sane length) before the request
-    and the response is bounded. Raw XDR is returned un-decoded.
+    and the response is bounded. Supported contract-data/contract-code entries
+    are decoded into a structured view; all other entry types and malformed XDR
+    are reported explicitly and never guessed at.
     """
     ledger_key = (ledger_key or "").strip()
     ok, reason = validate_ledger_key_base64(ledger_key)
@@ -231,20 +252,24 @@ def inspect_ledger_entry(
         raise AccountError(f"Invalid ledger key: {reason}")
 
     rpc = rpc or get_soroban_rpc_client()
-    entries = rpc.get_ledger_entries([ledger_key])
-    raw = (entries.get("entries") or [])[:1]
+    response = rpc.get_ledger_entries([ledger_key], clip_xdr=False)
+    raw = (response.get("entries") or [])[:1]
+    entry: dict[str, Any] | None = None
+    decoded = False
+    if raw:
+        raw_entry = raw[0]
+        decoded_result = _decode_entry_xdr(raw_entry.get("xdr"))
+        decoded = bool(decoded_result.get("decoded"))
+        entry = {
+            "lastModifiedLedgerSeq": raw_entry.get("lastModifiedLedgerSeq"),
+            "liveUntilLedgerSeq": raw_entry.get("liveUntilLedgerSeq"),
+            "xdr": _clip(raw_entry.get("xdr")),
+            "decoded": decoded_result,
+        }
     return {
         "network": rpc.config.to_dict(),
-        "latest_ledger": entries.get("latestLedger"),
-        "entry": (
-            {
-                "lastModifiedLedgerSeq": raw[0].get("lastModifiedLedgerSeq") if raw else None,
-                "liveUntilLedgerSeq": raw[0].get("liveUntilLedgerSeq") if raw else None,
-                "xdr": _clip(raw[0].get("xdr")) if raw else None,
-            }
-            if raw
-            else None
-        ),
+        "latest_ledger": response.get("latestLedger"),
+        "entry": entry,
         "found": bool(raw),
-        "decoded": False,
+        "decoded": decoded,
     }

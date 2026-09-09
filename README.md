@@ -67,6 +67,8 @@ developer tooling. This project is built incrementally across phases:
   how the Stellar tooling fits in.
 - [Security model](docs/security.md) — threat review and controls for the
   plugin and Stellar architecture.
+- [Security policy](SECURITY.md) — how to report a vulnerability.
+- [Code of conduct](CODE_OF_CONDUCT.md) — community standards.
 
 ## Features
 
@@ -286,20 +288,70 @@ developer tooling. This project is built incrementally across phases:
 - **Plugin management API + UI** — workspace-scoped plugin management
   (`app/plugins/`): list registered plugins, inspect metadata, install a
   trusted/local validated manifest (identity-bound, no code execution, no
-  auto-grants), enable/disable a workspace installation, and explicitly
-  grant/revoke capabilities restricted to manifest-declared capabilities.
-  Members may view; the workspace owner manages (Phase 7 `manage_plugins`
-  role). Backend is authoritative; the UI is never trusted for authorization.
+  auto-grants), enable/disable a workspace installation, uninstall, and
+  explicitly grant/revoke capabilities restricted to manifest-declared
+  capabilities. Members may view; the workspace owner manages (Phase 7
+  `manage_plugins` role). Backend is authoritative; the UI is never trusted
+  for authorization.
+- **Plugin security surfaces** — every grant/revoke/enable/disable and every
+  dispatch denial is appended to the owner-visible audit trail; structured,
+  bounded plugin error reports are recorded automatically on handler/lifecycle
+  failures and read back owner-scoped or via `flask plugins errors`.
+- **Per-workspace plugin configuration** — owner-scoped `GET/PUT …/config`
+  endpoints that validate against the manifest’s declared configuration and
+  never expose secrets on list/inspect surfaces.
+- **PEP 440 compatibility enforcement** — a plugin’s optional
+  `compatibility` range is validated and enforced against the running app
+  version at install; invalid or incompatible plugins are refused with clear
+  messages, and metadata exposes `compatibility`/`compatible_with_app`.
+- **Lifecycle hooks + events** — optional `on_enable`/`on_disable`/
+  `on_uninstall` methods on loaded plugin classes (isolated, non-fatal) plus
+  `plugin.enabled`/`plugin.disabled`/`plugin.uninstalled` dispatcher events.
+- **Plugin CLI** — `flask plugins list|inspect|enable|disable|install|errors`
+  with human output, `--json`, and distinct exit codes; installs are
+  local-path only (URLs refused) and never grant capabilities.
+- **End-to-end plugin tests** — manifest → install → grant → subscribe →
+  dispatch → persist, plus failure-isolation and capability fail-closed
+  coverage, all offline.
 
-**Planned contributor work (not yet implemented)**
+**Stellar developer tools (Phase 8)**
 
-- Plugin dependency resolution, version compatibility, and a plugin
-  marketplace.
-- Full XDR/`SCVal` decoding of contract data, XDR transaction inspection, a
-  network switcher UI, account/contract browsing UIs, a mock Stellar network
-  for tests, and Stellar project templates.
-- Deeper Stellar-specific AI prompts and security findings storage.
-- CLI commands for plugin workflows.
+- **Validated network selection** — users can switch among the supported
+  networks (testnet/mainnet/futurenet/local) explicitly; mainnet is never an
+  implicit default, and raw URLs are never accepted.
+- **Offline mock network** — a deterministic in-process Horizon + Stellar RPC
+  server (`app/services/stellar_mock.py`) for tests and local development.
+- **XDR decoding** — bounded, read-only decoding of `LedgerKey`/contract-data
+  `SCVal`s and of transaction envelopes (V1/V0/fee-bump) with common operations
+  (payment, create account, change trust, bump sequence, invoke host function,
+  extend TTL, restore footprint); unsupported/malformed XDR is reported
+  explicitly and never guessed.
+- **Soroban project scaffold** — generate a minimal, deterministic Soroban
+  contract project and import it into a workspace (generation only — never
+  compiled or verified in this environment).
+- **Structured Stellar security findings** — the `stellar_security` analysis
+  persists normalized, evidence-labelled findings per project (owner-scoped
+  read API).
+- **Developer results panel** — the project explorer’s Stellar tab and the
+  `/stellar` page present detection, live read-only network/account/contract/
+  ledger-entry results, decoded XDR, raw-XDR views, and loading/empty/error/
+  timeout states.
+- **Import-time detection UI** — imports surface Stellar detection
+  (confidence + Soroban indicator) with a link straight to the project’s
+  Stellar tab; detection stays read-only and non-blocking.
+- **Tooling detection coverage** — conservative, command-fragment-based
+  detection now also covers shell scripts and GitLab/CircleCI/Travis CI;
+  keyword-only README mentions never trigger it.
+- **Machine-readable Stellar CLI** — every `flask stellar …` command supports
+  `--json` with documented exit codes (0 success / 2 service-or-not-found /
+  3 invalid input).
+
+**Remaining contributor opportunities** (tracked as open issues under the
+Phase 8 milestone):
+
+- A plugin marketplace / remote-install and dependency *resolution* of plugin
+  runtime modules (local trusted installs only today).
+- Optional: a project-level `detect-stellar` CLI command (tracked separately).
 
 All of the above is tracked as open issues under the **Phase 8 - Plugins &
 Extensions** milestone.

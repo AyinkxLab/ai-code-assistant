@@ -33,10 +33,15 @@ EVENT_PROJECT_DELETED = "project.deleted"
 EVENT_AI_ANALYSIS_RUN = "ai.analysis.run"
 EVENT_COMMENT_ADDED = "comment.added"
 EVENT_SETTINGS_CHANGED = "settings.changed"
+EVENT_PLUGIN_CAPABILITY_GRANTED = "plugin.capability.granted"
+EVENT_PLUGIN_CAPABILITY_REVOKED = "plugin.capability.revoked"
+EVENT_PLUGIN_ENABLED = "plugin.enabled"
+EVENT_PLUGIN_DISABLED = "plugin.disabled"
+EVENT_PLUGIN_DENIED = "plugin.denied"
 
 # The audit subset: events that record security-relevant membership, permission,
-# invitation, and ownership history. The owner-only audit view (151) reads
-# exactly this set, so it is authoritative.
+# invitation, ownership, and plugin capability/state history. The owner-only
+# audit view (151) reads exactly this set, so it is authoritative.
 AUDIT_EVENT_TYPES = frozenset(
     {
         EVENT_MEMBER_ADDED,
@@ -48,6 +53,11 @@ AUDIT_EVENT_TYPES = frozenset(
         EVENT_INVITATION_ACCEPTED,
         EVENT_INVITATION_DECLINED,
         EVENT_INVITATION_CANCELLED,
+        EVENT_PLUGIN_CAPABILITY_GRANTED,
+        EVENT_PLUGIN_CAPABILITY_REVOKED,
+        EVENT_PLUGIN_ENABLED,
+        EVENT_PLUGIN_DISABLED,
+        EVENT_PLUGIN_DENIED,
     }
 )
 
@@ -67,6 +77,11 @@ EVENT_LABELS = {
     EVENT_AI_ANALYSIS_RUN: "ran an AI analysis",
     EVENT_COMMENT_ADDED: "commented on a project",
     EVENT_SETTINGS_CHANGED: "changed workspace settings",
+    EVENT_PLUGIN_CAPABILITY_GRANTED: "granted a plugin capability",
+    EVENT_PLUGIN_CAPABILITY_REVOKED: "revoked a plugin capability",
+    EVENT_PLUGIN_ENABLED: "enabled a plugin",
+    EVENT_PLUGIN_DISABLED: "disabled a plugin",
+    EVENT_PLUGIN_DENIED: "denied a plugin action",
 }
 
 

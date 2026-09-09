@@ -56,9 +56,27 @@ JSON Schema is at [`plugins/plugin.schema.json`](../plugins/plugin.schema.json).
 - Use an invalid `entry_point` (must be `module.path:ClassName`).
 - Declare an unknown capability.
 - Declare an empty capability list.
+- Declare an invalid `compatibility` specifier (when present, it must be valid
+  PEP 440 syntax such as `>=0.8.0` or `>=0.1.0,<0.5.0`).
 
 Validation errors raise `ManifestValidationError`; unreadable or malformed
 manifest files raise `PluginError`.
+
+### Compatibility (PEP 440)
+
+The optional `compatibility` field declares the application versions a plugin
+supports (`==`, `!=`, `<=`, `>=`, `<`, `>`, `~=`, wildcards, and comma/space
+separated ranges). Enforcement lives in
+`app/services/plugin_compat.py` and is compared against the running app version
+(installed package metadata, falling back to `pyproject.toml`):
+
+- **Omitted / empty** → the plugin supports any application version.
+- **Invalid** specifier → the manifest is rejected during validation.
+- **Incompatible** range → installation is refused with a clear message naming
+  the required range and the current app version.
+- Compatible plugins register normally, and the management API exposes a
+  compatibility badge in plugin metadata (`compatibility`,
+  `compatible_with_app`, and `app_version`).
 
 ## Registry
 
@@ -137,12 +155,63 @@ application code) and are exempt from plugin capability enforcement. See
 
 The application already emits events from real flows: project import/delete,
 workspace member add/remove, AI analysis completion, Stellar analysis
-completion, and GitHub connection.
+completion, GitHub connection, and plugin lifecycle.
+
+### Lifecycle hooks (`on_enable` / `on_disable` / `on_uninstall`)
+
+A loaded plugin class may implement optional lifecycle methods
+(`app/services/plugins.py`):
+
+```python
+class MyPlugin:
+    def __init__(self, app=None, manifest=None):
+        ...
+
+    def on_enable(self): ...      # after the registry enables the plugin
+    def on_disable(self): ...     # after the registry disables the plugin
+    def on_uninstall(self): ...   # before the registry removes the plugin
+```
+
+`PluginRegistry.enable` / `disable` / `uninstall` invoke the matching hook for
+plugins already loaded in-process. Hooks are **isolated and non-fatal**: an
+absent hook is a no-op, and a raising hook is logged without preventing the
+state change — enabling/disabling always lands in the new state and uninstall
+always removes the plugin, so the registry never ends inconsistent. The
+management API never loads or executes plugin code on its own.
+
+Per-workspace lifecycle is also observable through the dispatcher events
+`plugin.enabled`, `plugin.disabled`, and `plugin.uninstalled` (mapped to
+`WORKSPACE_READ`; emitted only on real transitions). The API exposes
+enable/disable and an owner-only `uninstall` action that revokes every
+workspace capability grant and removes the workspace installation.
 
 ## Plugin management (API + UI)
 
-The `plugins` blueprint (`app/plugins/`) provides the user-facing management
-layer. Plugin state is **workspace-scoped**: a plugin exists globally (a
+### Operator CLI
+
+`app/services/plugins_cli.py` registers a `flask plugins` command group that
+acts as the **operator**, reading/writing the persisted `Plugin` rows (the same
+store the management API and dispatch-time authorization use) through
+`app/services/plugin_ops.py`:
+
+```bash
+flask plugins list                      # id, version, enabled state
+flask plugins inspect <plugin_id>       # full manifest metadata + state
+flask plugins enable <plugin_id>        # enable (operator scope)
+flask plugins disable <plugin_id>       # disable (operator scope)
+flask plugins install <local-path>      # register from a local manifest dir
+```
+
+Every command supports `--json` for stable, parseable output. Exit codes
+distinguish success (`0`), unknown plugin (`1`), and validation/service errors
+(`2`). Security rules: installs accept **only local filesystem paths** with a
+validated `manifest.json` (URLs are refused), the CLI never grants
+capabilities (they remain explicit and per-workspace), and it never loads or
+executes plugin code.
+
+The user-facing **API + UI** is workspace-scoped: the `plugins` blueprint
+(`app/plugins/`) provides the management layer. Plugin state is
+**workspace-scoped**: a plugin exists globally (a
 `Plugin` row) while having a separate `PluginInstallation` per workspace, each
 with its own enabled state and capability grants.
 
@@ -188,6 +257,59 @@ create or remove capability grants. A disabled installation is denied by the
 dispatch-time enforcement (see above), so disabled plugins cannot execute.
 Re-enabling restores delivery while the grant remains valid.
 
+### Per-workspace configuration
+
+Each `PluginInstallation` carries a workspace-scoped `config` (JSON) that
+installations read/write through owner-only endpoints:
+
+- `GET .../plugins/<plugin_id>/config` — read the workspace configuration.
+- `PUT .../plugins/<plugin_id>/config` with `{"config": {...}}` — replace it.
+
+The stored config is seeded from the manifest's `configuration` at install.
+Updates are validated (`app/services/plugin_config.py`) against that declared
+configuration when one is present: unknown keys and wrong-typed values are
+rejected with `400`, and every stored object is bounded (key count, nesting
+depth, serialized size). Because config may hold secrets it is owner-only and
+is deliberately **omitted** from the plugin list/inspect surfaces.
+
+### Structured error reports
+
+Plugin failures are recorded as bounded, safe rows (`app/services/plugin_errors.py`
+→ `plugin_error_reports`) instead of only log lines. Each report stores the
+plugin id, the operation (`dispatch:<event_type>`, `hook:<hook>`, …), the
+exception type, and a length-bounded message. **No stack traces, event
+payloads, or secrets are stored by default.**
+
+Recording happens automatically when a plugin dispatch handler raises and when
+a lifecycle hook fails inside an app context; it is best-effort and never
+changes the existing failure-isolation behavior. Reports are read back
+owner-scoped via `GET /plugins/api/workspaces/<ws>/plugin-errors` (owner only,
+workspace-isolated) and operator-wide via `flask plugins errors [--json]`.
+
+## Audit trail (capabilities & state)
+
+Security-relevant plugin actions are recorded in the shared, append-only
+workspace audit log (`ActivityEvent`, via `app/services/plugin_audit.py`):
+
+- `plugin.capability.granted` / `plugin.capability.revoked` — explicit grant or
+  revoke through the management API.
+- `plugin.enabled` / `plugin.disabled` — workspace installation state changes.
+- `plugin.denied` — a rejected capability request (e.g. not declared by the
+  manifest) or a workspace-scoped dispatch-time denial (plugin disabled /
+  not installed / missing capability grant).
+
+Each entry carries only safe facts — actor, workspace, `plugin_id`, capability
+name, action, outcome, a static reason, and (for dispatch denials) the refused
+event type. **Secrets and event payloads are never stored.** Grant/revoke rows
+are only appended on an actual change (repeat grants are not duplicated), and
+dispatch-time denial recording is best-effort and never changes the fail-closed
+delivery decision.
+
+Entries are owner-visible through the workspace audit view (`GET
+/workspaces/api/workspaces/<id>/audit`); the member activity feed always
+excludes this audit subset, and cross-workspace records are never readable
+outside the workspace they belong to (non-members receive 404).
+
 ## Writing a plugin
 
 ```python
@@ -227,4 +349,26 @@ tracked under the **Phase 8 - Plugins & Extensions** milestone (label
 - Dependency resolution and version compatibility checks.
 - A plugin development guide and an example plugin.
 - CLI commands for plugin management.
-- A capability audit trail.
+- A capability audit trail (implemented).
+
+## Testing
+
+Run the whole suite with `pytest` (no external services; the event dispatcher
+is reset between tests):
+
+- `tests/test_plugins_manifest.py`, `tests/test_capabilities.py` — unit tests
+  for manifest validation, capability grants, and role mappings.
+- `tests/test_plugins_api.py` — the workspace-scoped plugin management API
+  (install/enable/disable/grant) with authorization fail-closed and workspace
+  isolation.
+- `tests/test_plugin_audit.py` — the capability/state audit trail.
+- `tests/test_event_authorization.py` — dispatch-time capability enforcement.
+- `tests/test_event_wiring.py` — real routes emit events to authorized
+  installed+granted plugins.
+- `tests/test_plugin_integration.py` — the end-to-end flow: a manifest written
+  to a temp directory is parsed/validated, installed through the real API
+  (configuration stored, **no** implicit grant), the capability is granted
+  explicitly, a handler subscribes to `project.created`, a real request emits
+  the event, and the authorized handler runs and persists a result. It also
+  proves a failing handler is isolated and that an un-granted (or disabled)
+  plugin never executes.

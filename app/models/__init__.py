@@ -12,6 +12,7 @@ from app.models.message import Message
 from app.models.notification import Notification
 from app.models.notification_preference import NotificationPreference
 from app.models.plugin import CapabilityGrant, Plugin, PluginInstallation
+from app.models.plugin_error_report import PluginErrorReport
 from app.models.project import Project
 from app.models.project_comment import ProjectComment
 from app.models.project_file import ProjectFile
@@ -20,6 +21,7 @@ from app.models.prompt import Prompt
 from app.models.review import Review
 from app.models.review_config import ReviewConfig
 from app.models.review_finding import ReviewFinding
+from app.models.stellar_security_finding import StellarSecurityFinding
 from app.models.user import User
 from app.models.workspace import Workspace
 from app.models.workspace_member import WorkspaceMember
@@ -34,6 +36,7 @@ __all__ = [
     "Notification",
     "NotificationPreference",
     "Plugin",
+    "PluginErrorReport",
     "PluginInstallation",
     "Project",
     "ProjectComment",
@@ -43,6 +46,7 @@ __all__ = [
     "Review",
     "ReviewConfig",
     "ReviewFinding",
+    "StellarSecurityFinding",
     "User",
     "Workspace",
     "WorkspaceInvitation",

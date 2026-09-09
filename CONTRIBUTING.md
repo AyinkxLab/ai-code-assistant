@@ -335,6 +335,10 @@ Stellar work is tracked under the **Phase 8** milestone with the
 | Web page + read-only APIs       | `app/stellar/`                                    |
 | CLI                              | `app/services/stellar_cli.py`                     |
 
+The `flask stellar …` CLI commands support `--json` for scriptable output and
+documented exit codes (0 success, 2 service error/not found, 3 invalid input);
+see [docs/stellar.md](docs/stellar.md).
+
 ### Rules for Stellar contributions
 
 - **Keep it read-only.** The project never signs, simulates, or submits
@@ -365,18 +369,66 @@ Stellar work is tracked under the **Phase 8** milestone with the
 
 ```bash
 pytest tests/test_soroban_rpc.py tests/test_stellar_xdr.py \
+       tests/test_stellar_xdr_decode.py tests/test_stellar_xdr_transaction.py \
        tests/test_stellar_inspection.py tests/test_stellar_security.py \
-       tests/test_stellar_detection.py tests/test_stellar_analysis.py \
-       tests/test_stellar_routes.py tests/test_stellar_cli.py
+       tests/test_stellar_detection.py tests/test_stellar_detection_extra.py \
+       tests/test_stellar_analysis.py tests/test_stellar_routes.py \
+       tests/test_stellar_cli.py tests/test_stellar_network_switcher.py \
+       tests/test_stellar_mock_network.py \
+       tests/test_stellar_security_findings.py \
+       tests/test_soroban_scaffold.py tests/test_project_import_detection.py
+```
+
+## Plugin contributions
+
+Plugin work is tracked under the **Phase 8 - Plugins & Extensions** milestone
+(`plugin`/`phase-8` labels). See [`docs/plugins.md`](docs/plugins.md) for the
+manifest schema, capability model, event dispatch/enforcement, lifecycle hooks,
+configuration, audit/error reporting, and the plugin-writing guide.
+
+### Where plugin code lives
+
+| Concern                              | Location                                      |
+| ------------------------------------ | --------------------------------------------- |
+| Manifest parsing/validation + registry | `app/services/plugins.py`                   |
+| Capabilities + grants                | `app/services/capabilities.py`               |
+| Event dispatch + capability checks   | `app/services/events.py`                     |
+| Audit trail + error reports          | `app/services/plugin_audit.py`, `app/services/plugin_errors.py` |
+| Compatibility / config / ops logic   | `app/services/plugin_{compat,config,ops}.py` |
+| Operator CLI                         | `app/services/plugins_cli.py`                |
+| Management API + UI                  | `app/plugins/`                                |
+| Database models                      | `app/models/plugin*.py`                       |
+
+### Rules for plugin contributions
+
+- **Never grant implicitly.** Capabilities are explicit, per-workspace grants;
+  install/enable never creates them.
+- **Keep installs local/trusted.** Do not add remote/URL installation. Never
+  make the management API/CLI load or execute plugin code.
+- **Fail closed.** Dispatch-time capability enforcement and workspace
+  isolation must stay intact (see `docs/security.md`).
+- **Isolate failures.** Plugin handler/hook failures must never crash a request
+  or corrupt the registry; keep them recorded (`plugin_errors.py`), not fatal.
+- **Protect secrets/config.** Workspace plugin config may hold secrets — keep
+  it owner-only and omitted from list/inspect surfaces.
+
+### Testing plugin work
+
+```bash
+pytest tests/test_plugins_manifest.py tests/test_capabilities.py \
+       tests/test_plugins_api.py tests/test_plugin_audit.py \
+       tests/test_event_authorization.py tests/test_event_wiring.py \
+       tests/test_plugin_integration.py tests/test_plugin_lifecycle.py \
+       tests/test_plugin_config.py tests/test_plugin_compat.py \
+       tests/test_plugin_error_reports.py tests/test_plugins_cli.py
 ```
 
 ## Security reporting
 
-There is currently **no `SECURITY.md`** and GitHub vulnerability alerts are
-not enabled on this repository. Until that changes:
+See [SECURITY.md](SECURITY.md) for how to report a vulnerability privately.
 
-- **Report security issues privately and promptly.** Open a GitHub issue with
-  the `security` label describing the problem.
+Guidelines for security-sensitive work:
+
 - Do not post secrets, credentials, or working exploit code in public issues
   or commit them to the repository.
 - Never commit real secrets: `.env`, API keys, OAuth client secrets, or
@@ -400,8 +452,7 @@ not enabled on this repository. Until that changes:
 
 ## Code of conduct
 
-There is currently **no `CODE_OF_CONDUCT.md`** in this repository. Until one
-is added, we expect everyone to treat each other professionally and with
-respect: be welcoming to new contributors, give and receive feedback
-constructively, and assume good intent. Harassment or abusive behavior is not
-acceptable in issues, PRs, or reviews.
+See [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md). We expect everyone to treat each
+other professionally and with respect: be welcoming to new contributors, give
+and receive feedback constructively, and assume good intent. Harassment or
+abusive behavior is not acceptable in issues, PRs, or reviews.

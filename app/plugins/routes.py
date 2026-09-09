@@ -21,7 +21,12 @@ from app.models import Plugin, PluginInstallation, Workspace, WorkspaceMember
 from app.models.workspace_member import STATUS_ACTIVE
 from app.plugins import bp
 from app.services.capabilities import Capability, CapabilityStore
+from app.services.events import emit_event
 from app.services.permissions import require_workspace_capability, resolve_workspace, role_for
+from app.services.plugin_audit import record_plugin_audit
+from app.services.plugin_compat import compatibility_status
+from app.services.plugin_config import validate_plugin_config
+from app.services.plugin_errors import list_workspace_error_reports
 from app.services.plugins import ManifestValidationError, PluginError, PluginManifest
 
 
@@ -56,6 +61,7 @@ def _serialize(plugin: Plugin, workspace_id: int) -> dict:
         granted = CapabilityStore.list_capabilities(plugin.id, workspace_id)
     else:
         granted = []
+    status = compatibility_status(plugin.compatibility)
     return {
         "id": plugin.id,
         "name": plugin.name,
@@ -66,6 +72,9 @@ def _serialize(plugin: Plugin, workspace_id: int) -> dict:
         "declared_capabilities": plugin.capabilities or [],
         "permissions": plugin.permissions or [],
         "dependencies": plugin.dependencies or [],
+        "compatibility": plugin.compatibility or "any",
+        "compatible_with_app": bool(status["compatible"]),
+        "app_version": status["app_version"],
         "installed": installation is not None,
         "enabled": bool(installation is not None and installation.enabled),
         "granted_capabilities": granted,
@@ -169,6 +178,24 @@ def api_install_plugin(workspace_id: int):
     except PluginError as exc:
         return jsonify({"error": str(exc)}), 400
 
+    # Reject a plugin whose explicit PEP 440 compatibility range does not
+    # include the running application version (an absent field is unrestricted).
+    if manifest.compatibility is not None:
+        status = compatibility_status(manifest.compatibility)
+        if not status["compatible"]:
+            return (
+                jsonify(
+                    {
+                        "error": (
+                            f"Plugin {manifest.id} requires application "
+                            f"{manifest.compatibility}, but this app is "
+                            f"{status['app_version']}."
+                        )
+                    }
+                ),
+                400,
+            )
+
     plugin = Plugin.query.filter_by(id=manifest.id).first()
     if plugin is None:
         plugin = Plugin(
@@ -181,6 +208,7 @@ def api_install_plugin(workspace_id: int):
             capabilities=manifest.capabilities,
             permissions=manifest.permissions or [],
             dependencies=manifest.dependencies or [],
+            compatibility=manifest.compatibility,
             configuration=manifest.configuration or {},
         )
         db.session.add(plugin)
@@ -215,8 +243,24 @@ def api_enable_plugin(workspace_id: int, plugin_id: str):
     installation = _installation(plugin_id, workspace_id)
     if installation is None:
         return jsonify({"error": "Plugin is not installed in this workspace."}), 404
-    installation.enabled = True
-    db.session.commit()
+    if not installation.enabled:
+        installation.enabled = True
+        record_plugin_audit(
+            workspace_id,
+            "enabled",
+            actor=current_user,
+            plugin_id=plugin_id,
+            outcome="success",
+        )
+        db.session.commit()
+        emit_event(
+            "plugin.enabled",
+            data={"plugin_id": plugin_id},
+            workspace_id=workspace_id,
+            user_id=current_user.id,
+        )
+    else:
+        db.session.commit()
     return jsonify(_serialize(installation.plugin, workspace_id))
 
 
@@ -227,9 +271,52 @@ def api_disable_plugin(workspace_id: int, plugin_id: str):
     installation = _installation(plugin_id, workspace_id)
     if installation is None:
         return jsonify({"error": "Plugin is not installed in this workspace."}), 404
-    installation.enabled = False
-    db.session.commit()
+    if installation.enabled:
+        installation.enabled = False
+        record_plugin_audit(
+            workspace_id,
+            "disabled",
+            actor=current_user,
+            plugin_id=plugin_id,
+            outcome="success",
+        )
+        db.session.commit()
+        emit_event(
+            "plugin.disabled",
+            data={"plugin_id": plugin_id},
+            workspace_id=workspace_id,
+            user_id=current_user.id,
+        )
+    else:
+        db.session.commit()
     return jsonify(_serialize(installation.plugin, workspace_id))
+
+
+@bp.route("/api/workspaces/<int:workspace_id>/plugins/<plugin_id>/uninstall", methods=["POST"])
+@login_required
+@require_workspace_capability("manage_plugins")
+def api_uninstall_plugin(workspace_id: int, plugin_id: str):
+    """Uninstall a plugin from the workspace.
+
+    Revokes every capability grant for that workspace, removes the per-workspace
+    installation, and emits ``plugin.uninstalled``. The global ``Plugin`` row is
+    kept so other workspaces' installations remain intact. Lifecycle code, when
+    a plugin runs it, reacts to the ``plugin.uninstalled`` event; the management
+    API never loads or executes plugin code itself.
+    """
+    installation = _installation(plugin_id, workspace_id)
+    if installation is None:
+        return jsonify({"error": "Plugin is not installed in this workspace."}), 404
+    CapabilityStore.revoke_all(plugin_id, workspace_id)
+    db.session.delete(installation)
+    db.session.commit()
+    emit_event(
+        "plugin.uninstalled",
+        data={"plugin_id": plugin_id},
+        workspace_id=workspace_id,
+        user_id=current_user.id,
+    )
+    return jsonify({"ok": True, "plugin_id": plugin_id})
 
 
 @bp.route("/api/workspaces/<int:workspace_id>/plugins/<plugin_id>/capabilities", methods=["POST"])
@@ -239,7 +326,9 @@ def api_update_capabilities(workspace_id: int, plugin_id: str):
     """Explicitly grant/revoke capabilities for a plugin in a workspace.
 
     Grants are never implicit: each requested capability must be declared in
-    the plugin's manifest and is recorded through ``CapabilityStore``.
+    the plugin's manifest and is recorded through ``CapabilityStore``. Every
+    successful grant/revoke and every rejected capability request is appended
+    to the workspace audit trail (owner-visible only).
     """
     plugin = Plugin.query.filter_by(id=plugin_id).first()
     if plugin is None:
@@ -258,18 +347,134 @@ def api_update_capabilities(workspace_id: int, plugin_id: str):
     for raw in [*grant_names, *revoke_names]:
         cap_name = _capability_name(str(raw))
         if cap_name is None:
+            record_plugin_audit(
+                workspace_id,
+                "denied",
+                actor=current_user,
+                plugin_id=plugin_id,
+                capability=str(raw)[:64],
+                outcome="denied",
+                reason="capability request rejected",
+            )
+            db.session.commit()
             return jsonify({"error": f"Unknown capability: {raw}"}), 400
         if cap_name not in declared:
+            record_plugin_audit(
+                workspace_id,
+                "denied",
+                actor=current_user,
+                plugin_id=plugin_id,
+                capability=Capability[cap_name].value,
+                outcome="denied",
+                reason="capability not declared by plugin",
+            )
+            db.session.commit()
             return jsonify({"error": f"Capability {cap_name} is not declared by this plugin."}), 400
 
     for raw in grant_names:
         cap_name = _capability_name(str(raw))
-        if cap_name is not None and cap_name in declared:
-            CapabilityStore.grant(plugin_id, workspace_id, Capability[cap_name].value)
+        if cap_name is None or cap_name not in declared:
+            continue
+        value = Capability[cap_name].value
+        if CapabilityStore.has_capability(plugin_id, workspace_id, value):
+            continue
+        CapabilityStore.grant(plugin_id, workspace_id, value, granted_by_id=current_user.id)
+        record_plugin_audit(
+            workspace_id,
+            "granted",
+            actor=current_user,
+            plugin_id=plugin_id,
+            capability=value,
+            outcome="success",
+        )
     for raw in revoke_names:
         cap_name = _capability_name(str(raw))
-        if cap_name is not None and cap_name in declared:
-            CapabilityStore.revoke(plugin_id, workspace_id, Capability[cap_name].value)
+        if cap_name is None or cap_name not in declared:
+            continue
+        value = Capability[cap_name].value
+        if CapabilityStore.revoke(plugin_id, workspace_id, value):
+            record_plugin_audit(
+                workspace_id,
+                "revoked",
+                actor=current_user,
+                plugin_id=plugin_id,
+                capability=value,
+                outcome="success",
+            )
 
     db.session.commit()
     return jsonify(_serialize(plugin, workspace_id))
+
+
+# --------------------------------------------------------------------------
+# API: per-workspace plugin configuration (owner only)
+# --------------------------------------------------------------------------
+
+
+@bp.route("/api/workspaces/<int:workspace_id>/plugins/<plugin_id>/config", methods=["GET"])
+@login_required
+@require_workspace_capability("manage_plugins")
+def api_get_plugin_config(workspace_id: int, plugin_id: str):
+    """Read a plugin installation's workspace-scoped configuration.
+
+    Owner-only: the config may hold secrets, so it is never exposed on the
+    list/inspect surfaces (which omit ``config``) and never to non-owners.
+    """
+    installation = _installation(plugin_id, workspace_id)
+    if installation is None:
+        return jsonify({"error": "Plugin is not installed in this workspace."}), 404
+    return jsonify(
+        {
+            "plugin_id": plugin_id,
+            "workspace_id": workspace_id,
+            "config": installation.config or {},
+        }
+    )
+
+
+@bp.route("/api/workspaces/<int:workspace_id>/plugins/<plugin_id>/config", methods=["PUT"])
+@login_required
+@require_workspace_capability("manage_plugins")
+def api_update_plugin_config(workspace_id: int, plugin_id: str):
+    """Replace a plugin installation's workspace-scoped configuration.
+
+    The replacement is validated against the manifest's declared ``configuration``
+    when one is present (unknown keys and wrong-typed values are rejected with
+    a 400); it is size/depth-bounded and never includes secrets from elsewhere.
+    """
+    installation = _installation(plugin_id, workspace_id)
+    if installation is None:
+        return jsonify({"error": "Plugin is not installed in this workspace."}), 404
+    plugin = db.session.get(Plugin, plugin_id)
+
+    data = request.get_json(silent=True) or {}
+    proposed = data.get("config")
+    if proposed is None:
+        proposed = {}
+    declared = (plugin.configuration if plugin is not None else None) or {}
+    ok, reason = validate_plugin_config(declared, proposed)
+    if not ok:
+        return jsonify({"error": reason}), 400
+
+    installation.config = proposed
+    db.session.commit()
+    return jsonify(
+        {
+            "plugin_id": plugin_id,
+            "workspace_id": workspace_id,
+            "config": installation.config or {},
+        }
+    )
+
+
+@bp.route("/api/workspaces/<int:workspace_id>/plugin-errors", methods=["GET"])
+@login_required
+@require_workspace_capability("manage_plugins")
+def api_list_plugin_errors(workspace_id: int):
+    """Owner-scoped read of a workspace's structured plugin error reports.
+
+    Reports are bounded (no stack traces or payloads) and only ever returned
+    for the caller's own workspace (fail closed for non-owners).
+    """
+    reports = list_workspace_error_reports(workspace_id)
+    return jsonify({"workspace_id": workspace_id, "count": len(reports), "errors": reports})
