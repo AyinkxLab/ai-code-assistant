@@ -126,7 +126,48 @@ class TestMigrationHead:
     def test_head_is_latest_revision(self):
         result = _run_flask(["db", "heads"], {"DATABASE_URL": "sqlite:///:memory:"})
         assert result.returncode == 0, result.stderr
-        assert "f7b8c9d0e1f2" in (result.stdout + result.stderr)
+        assert "a54b1c2d3e4f" in (result.stdout + result.stderr)
+
+    def test_conversation_shares_table_upgraded(self):
+        expected = {
+            "id",
+            "conversation_id",
+            "user_id",
+            "shared_by_id",
+            "created_at",
+        }
+        with _migration_db() as db_url, _inspect(db_url) as insp:
+            tables = set(insp.get_table_names())
+            assert "conversation_shares" in tables
+            columns = {col["name"] for col in insp.get_columns("conversation_shares")}
+            assert columns == expected
+
+    def test_conversation_shares_downgrade_removed(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            db_url = f"sqlite:///{os.path.join(tmp, 'mig54.db')}"
+            up = _run_flask(["db", "upgrade"], {"DATABASE_URL": db_url})
+            assert up.returncode == 0, up.stderr
+            down = _run_flask(["db", "downgrade", "f7b8c9d0e1f2"], {"DATABASE_URL": db_url})
+            assert down.returncode == 0, down.stderr
+            with _inspect(db_url) as insp:
+                tables = set(insp.get_table_names())
+                assert "conversation_shares" not in tables
+
+    def test_shares_preference_column_upgraded(self):
+        with _migration_db() as db_url, _inspect(db_url) as insp:
+            columns = {col["name"] for col in insp.get_columns("notification_preferences")}
+            assert "shares" in columns
+
+    def test_shares_preference_column_downgrade_removed(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            db_url = f"sqlite:///{os.path.join(tmp, 'mig54b.db')}"
+            up = _run_flask(["db", "upgrade"], {"DATABASE_URL": db_url})
+            assert up.returncode == 0, up.stderr
+            down = _run_flask(["db", "downgrade", "f7b8c9d0e1f2"], {"DATABASE_URL": db_url})
+            assert down.returncode == 0, down.stderr
+            with _inspect(db_url) as insp:
+                columns = {col["name"] for col in insp.get_columns("notification_preferences")}
+                assert "shares" not in columns
 
     def test_users_stellar_network_column_upgraded(self):
         with _migration_db() as db_url, _inspect(db_url) as insp:

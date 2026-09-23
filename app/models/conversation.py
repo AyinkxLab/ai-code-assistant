@@ -36,6 +36,15 @@ class Conversation(db.Model):
         cascade="all, delete-orphan",
         order_by="Message.created_at",
     )
+    shares = db.relationship(
+        "ConversationShare",
+        back_populates="conversation",
+        cascade="all, delete-orphan",
+    )
+
+    def is_shared_with(self, user_id: int) -> bool:
+        """Return ``True`` when the conversation was shared with ``user_id``."""
+        return any(share.user_id == user_id for share in self.shares)
 
     def to_dict(self) -> dict:
         """Serialize the conversation for JSON API responses."""
@@ -43,6 +52,7 @@ class Conversation(db.Model):
             "id": self.id,
             "title": self.title,
             "is_pinned": self.is_pinned,
+            "is_shared": len(self.shares) > 0,
             "message_count": len(self.messages),
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "updated_at": self.updated_at.isoformat() if self.updated_at else None,
