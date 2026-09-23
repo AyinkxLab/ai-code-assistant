@@ -144,6 +144,10 @@ futurenet) from config passphrases and file names — never from live data.
 Detection metadata is attached to every import response and exposed via
 `GET /workspaces/api/projects/<id>/stellar`.
 
+The full signal model, confidence semantics, why plain Rust is excluded, and how
+to add new signals without false positives are documented in
+[`stellar-detection.md`](stellar-detection.md).
+
 ### Stellar-aware AI analysis (`app/services/project_analysis.py`)
 
 Two analysis kinds: **`stellar`** (project overview for a Stellar developer)
