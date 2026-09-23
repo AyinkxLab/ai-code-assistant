@@ -6,8 +6,8 @@ from pathlib import Path
 
 import pytest
 from jsonschema import ValidationError, validate
-from app.services.plugin_compat import format_checker
 
+from app.services.plugin_compat import format_checker
 from app.services.plugins import (
     ManifestValidationError,
     Plugin,

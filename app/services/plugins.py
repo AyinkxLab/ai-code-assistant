@@ -17,9 +17,10 @@ from datetime import datetime
 from pathlib import Path
 from types import ModuleType
 from typing import Any
+
 from jsonschema import ValidationError, validate
-from app.services.plugin_compat import format_checker
-from app.services.plugin_compat import is_valid_compatibility
+
+from app.services.plugin_compat import format_checker, is_valid_compatibility
 
 logger = logging.getLogger(__name__)
 
