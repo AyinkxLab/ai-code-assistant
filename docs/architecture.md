@@ -46,6 +46,10 @@ Services implement the real logic:
   errors, retries, bounded context.
 - **Importing** (`importing.py`) — safe archive/GitHub import with
   path-traversal, size, and secret-file guards.
+- **Exporting** (`exporting.py`) — streams a project snapshot zip (#107) built
+  entirely in memory from stored rows (no filesystem); binary/oversized files
+  become clearly marked `.PLACEHOLDER.txt` stubs and a JSON manifest documents
+  what was included.
 - **Workspaces / analysis** (`project_analysis.py`) — bounded context
   retrieval, project chat, and project analyses (including the Stellar-aware
   kinds).

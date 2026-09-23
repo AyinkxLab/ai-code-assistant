@@ -111,6 +111,12 @@ class Config:
         ".git,.hg,.svn,node_modules,.venv,venv,__pycache__,.next,.cache,dist,build,"
         "vendor,.tox,.mypy_cache,.pytest_cache",
     )
+    # Snapshot export (#107): exports stream a zip built in memory from stored
+    # rows only (never the filesystem). Binary/oversized files become clearly
+    # marked .PLACEHOLDER.txt stubs; this caps the size of one stub's text.
+    PROJECT_EXPORT_PLACEHOLDER_MAX_CHARS = int(
+        os.getenv("PROJECT_EXPORT_PLACEHOLDER_MAX_CHARS", "20000")
+    )
     PROJECT_SKIP_SECRET_FILES = os.getenv(
         "PROJECT_SKIP_SECRET_FILES",
         ".env,.pem,.key,.p12,.pfx,id_rsa,id_ed25519,id_dsa,credentials,.htpasswd,"
@@ -154,6 +160,10 @@ class Config:
     RATE_LIMIT_STREAM_WINDOW = int(os.getenv("RATE_LIMIT_STREAM_WINDOW", "60"))
     RATE_LIMIT_ANALYZE_MAX = int(os.getenv("RATE_LIMIT_ANALYZE_MAX", "20"))
     RATE_LIMIT_ANALYZE_WINDOW = int(os.getenv("RATE_LIMIT_ANALYZE_WINDOW", "300"))
+    # Snapshot export (#107): builds a zip in memory per request, so it gets a
+    # tight per-user limit of its own.
+    RATE_LIMIT_EXPORT_MAX = int(os.getenv("RATE_LIMIT_EXPORT_MAX", "10"))
+    RATE_LIMIT_EXPORT_WINDOW = int(os.getenv("RATE_LIMIT_EXPORT_WINDOW", "3600"))
     # Optional SMTP for invitation email delivery. When unset, invitations are
     # delivered as in-app notifications only and the app never crashes on mail.
     SMTP_HOST = os.getenv("SMTP_HOST", "")

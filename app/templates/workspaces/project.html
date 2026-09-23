@@ -16,7 +16,12 @@
       {% if project.status == 'ready' %} · {{ project.file_count }} files{% endif %}
     </p>
   </div>
-  <button id="delete-project" class="btn btn-ghost btn-sm btn-danger" type="button">Delete</button>
+  <div class="repo-toolbar">
+    {% if project.status != 'indexing' %}
+    <a id="export-project" class="btn btn-ghost btn-sm" href="{{ url_for('workspaces.api_export_project', project_id=project.id) }}" title="Download a zip snapshot of the stored files (text files only; binary files become placeholders)">Export</a>
+    {% endif %}
+    <button id="delete-project" class="btn btn-ghost btn-sm btn-danger" type="button">Delete</button>
+  </div>
 </div>
 
 <div class="project-layout">

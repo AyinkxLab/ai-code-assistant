@@ -12,6 +12,7 @@ API (JSON, all scoped to the current user)
     /workspaces/api/workspaces/<id>                  rename / delete
     /workspaces/api/workspaces/<id>/projects         list / import
     /workspaces/api/projects/<pid>                   delete
+    /workspaces/api/projects/<pid>/export            download zip snapshot (owner)
     /workspaces/api/projects/<pid>/tree              lazy directory listing
     /workspaces/api/projects/<pid>/file              single file contents
     /workspaces/api/projects/<pid>/search            project search
@@ -51,6 +52,7 @@ from app.models.activity_event import (
     EVENT_AI_ANALYSIS_RUN,
     EVENT_MEMBER_ADDED,
     EVENT_MEMBER_REMOVED,
+    EVENT_PROJECT_EXPORTED,
     EVENT_PROJECT_IMPORTED,
     EVENT_ROLE_CHANGED,
 )
@@ -58,6 +60,7 @@ from app.models.project import (
     SOURCE_ARCHIVE,
     SOURCE_GITHUB,
     SOURCE_SCAFFOLD,
+    STATUS_INDEXING,
     STATUS_READY,
 )
 from app.models.workspace_member import (
@@ -69,6 +72,7 @@ from app.models.workspace_member import (
 from app.services import project_analysis
 from app.services.activity import record_activity
 from app.services.events import emit_event
+from app.services.exporting import export_filename, iter_export_zip
 from app.services.github import (
     GitHubError,
     GitHubInvalidError,
@@ -538,6 +542,53 @@ def api_delete_project(project_id: int):
         user_id=current_user.id,
     )
     return jsonify({"ok": True})
+
+
+# --------------------------------------------------------------------------
+# API: project snapshot export (#107)
+# --------------------------------------------------------------------------
+
+
+@bp.route("/api/projects/<int:project_id>/export", methods=["GET"])
+@login_required
+@per_user_limit(
+    "export",
+    max_config="RATE_LIMIT_EXPORT_MAX",
+    window_config="RATE_LIMIT_EXPORT_WINDOW",
+)
+def api_export_project(project_id: int):
+    """Stream a zip snapshot of the project's stored files for download (#107).
+
+    Owner-only via ``_get_project``: anyone who does not own the project gets a
+    404 (no existence oracle). Projects still indexing are rejected with 409
+    because their file set is not final. The archive is built in memory from
+    ``ProjectFile`` rows and streamed to the client; nothing touches the
+    filesystem. Binary and oversized files (stored with ``content=None``) are
+    included as clearly marked ``.PLACEHOLDER.txt`` metadata stubs, and a JSON
+    manifest describes exactly what was and was not included.
+    """
+    project = _get_project(project_id)
+    if project.status == STATUS_INDEXING:
+        return jsonify({"error": "This project is still indexing. Try again later."}), 409
+
+    record_activity(
+        project.workspace_id,
+        EVENT_PROJECT_EXPORTED,
+        actor=current_user,
+        target=project,
+        metadata={
+            "project_id": project.id,
+            "project": project.name,
+            "file_count": project.file_count,
+        },
+    )
+    db.session.commit()
+
+    response = Response(stream_with_context(iter_export_zip(project)), mimetype="application/zip")
+    response.headers["Content-Disposition"] = f'attachment; filename="{export_filename(project)}"'
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["Cache-Control"] = "no-store"
+    return response
 
 
 # --------------------------------------------------------------------------
