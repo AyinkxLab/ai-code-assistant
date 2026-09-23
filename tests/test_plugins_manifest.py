@@ -5,6 +5,8 @@ import tempfile
 from pathlib import Path
 
 import pytest
+from jsonschema import ValidationError, validate
+from app.services.plugin_compat import format_checker
 
 from app.services.plugins import (
     ManifestValidationError,
@@ -325,6 +327,218 @@ class TestPluginManifest:
         assert result["id"] == "test-plugin"
         assert result["capabilities"] == ["PROJECT_READ"]
         assert result["configuration"]["key"] == "value"
+
+    # Validate the plugin ID format and enforce the schema's 64-character limit.
+    def test_manifest_id_over_64_chars(self):
+        data = {
+            "id": "a" * 65,
+            "name": "Test Plugin",
+            "version": "1.0.0",
+            "description": "Teste",
+            "author": "Carlos",
+            "entry_point": "plugins.test:TestPlugin",
+            "capabilities": [
+                "PROJECT_READ",
+            ],
+        }
+        schema_path = Path("plugins/plugin.schema.json")
+
+        with open(schema_path) as file:
+            schema = json.load(file)
+
+        with pytest.raises(ValidationError):
+            validate(instance=data, schema=schema)
+
+        with pytest.raises(ManifestValidationError):
+            PluginManifest.from_dict(data)
+
+    # Validate required plugin capabilities. The list must be non-empty,
+    # contain only supported capability names, and have no duplicates.
+    def test_manifest_duplicates_capabilities(self):
+        data = {
+            "id": "a" * 63,
+            "name": "Test Plugin",
+            "version": "1.0.0",
+            "description": "Teste",
+            "author": "Carlos",
+            "entry_point": "plugins.test:TestPlugin",
+            "capabilities": ["PROJECT_READ", "PROJECT_READ"],
+        }
+        schema_path = Path("plugins/plugin.schema.json")
+
+        with open(schema_path) as file:
+            schema = json.load(file)
+
+        with pytest.raises(ValidationError):
+            validate(instance=data, schema=schema)
+
+        with pytest.raises(ManifestValidationError):
+            PluginManifest.from_dict(data)
+
+    # Validate optional plugin permissions. When provided, permissions must be
+    # a list of unique string values; when omitted, no extra permissions are required.
+    def test_manifest_duplicate_permissions(self):
+        data = {
+            "id": "a" * 63,
+            "name": "Test Plugin",
+            "version": "1.0.0",
+            "description": "Teste",
+            "author": "Carlos",
+            "entry_point": "plugins.test:TestPlugin",
+            "capabilities": ["PROJECT_READ"],
+            "permissions": ["read", "read"],
+        }
+        schema_path = Path("plugins/plugin.schema.json")
+
+        with open(schema_path) as file:
+            schema = json.load(file)
+
+        with pytest.raises(ValidationError):
+            validate(instance=data, schema=schema)
+
+        with pytest.raises(ManifestValidationError):
+            PluginManifest.from_dict(data)
+
+    # Validate the entry point type and format before applying the regex.
+    def test_manifest_wrong_type_in_entry_point(self):
+        data = {
+            "id": "a" * 63,
+            "name": "Test Plugin",
+            "version": "1.0.0",
+            "description": "Teste",
+            "author": "Carlos",
+            "capabilities": ["PROJECT_READ"],
+            "permissions": ["test"],
+            "entry_point": 123,
+        }
+        schema_path = Path("plugins/plugin.schema.json")
+
+        with open(schema_path) as file:
+            schema = json.load(file)
+
+        with pytest.raises(ValidationError):
+            validate(instance=data, schema=schema)
+        with pytest.raises(ManifestValidationError):
+            PluginManifest.from_dict(data)
+
+    # Validate optional plugin dependencies. When provided, dependencies must be
+    # a list of unique string values; when omitted, the plugin has no dependencies.
+    def test_manifest_duplicate_dependencies(self):
+        data = {
+            "id": "a" * 63,
+            "name": "Test Plugin",
+            "version": "1.0.0",
+            "description": "Teste",
+            "author": "Carlos",
+            "entry_point": "plugins.test:TestPlugin",
+            "capabilities": ["PROJECT_READ"],
+            "permissions": ["requests"],
+            "dependencies": ["requests", "requests"],
+        }
+        schema_path = Path("plugins/plugin.schema.json")
+
+        with open(schema_path) as file:
+            schema = json.load(file)
+
+        with pytest.raises(ValidationError):
+            validate(instance=data, schema=schema)
+
+        with pytest.raises(ManifestValidationError):
+            PluginManifest.from_dict(data)
+
+    # Validate the optional PEP 440 compatibility specifier. When omitted,
+    # the plugin supports any application version.
+    def test_manifest_valid_compatibility_specifier(self):
+        data = {
+            "id": "teste",
+            "name": "Test Plugin",
+            "version": "1.0.0",
+            "description": "Teste",
+            "author": "Carlos",
+            "entry_point": "plugins.test:TestPlugin",
+            "capabilities": ["PROJECT_READ"],
+            "permissions": ["requests"],
+            "dependencies": ["requests"],
+            "compatibility": ">=0.8,<2.0",
+        }
+        schema_path = Path("plugins/plugin.schema.json")
+
+        with open(schema_path) as file:
+            schema = json.load(file)
+
+        manifest = PluginManifest.from_dict(data)
+        assert manifest.compatibility == ">=0.8,<2.0"
+        validate(instance=data, schema=schema, format_checker=format_checker)
+
+    def test_manifest_invalid_compatibility_specifier_banana(self):
+        data = {
+            "id": "teste",
+            "name": "Test Plugin",
+            "version": "1.0.0",
+            "description": "Teste",
+            "author": "Carlos",
+            "entry_point": "plugins.test:TestPlugin",
+            "capabilities": ["PROJECT_READ"],
+            "permissions": ["requests"],
+            "dependencies": ["requests"],
+            "compatibility": "banana",
+        }
+
+        schema_path = Path("plugins/plugin.schema.json")
+
+        with open(schema_path) as file:
+            schema = json.load(file)
+
+        with pytest.raises(ValidationError):
+            validate(instance=data, schema=schema, format_checker=format_checker)
+
+        with pytest.raises(ManifestValidationError):
+            PluginManifest.from_dict(data)
+
+    def test_manifest_invalid_compatibility_specifier_none(self):
+        data = {
+            "id": "teste",
+            "name": "Test Plugin",
+            "version": "1.0.0",
+            "description": "Teste",
+            "author": "Carlos",
+            "entry_point": "plugins.test:TestPlugin",
+            "capabilities": ["PROJECT_READ"],
+            "permissions": ["requests"],
+            "dependencies": ["requests"],
+            "compatibility": None,
+        }
+
+        schema_path = Path("plugins/plugin.schema.json")
+
+        with open(schema_path) as file:
+            schema = json.load(file)
+
+        with pytest.raises(ValidationError):
+            validate(instance=data, schema=schema)
+
+        with pytest.raises(ManifestValidationError):
+            PluginManifest.from_dict(data)
+
+    def test_manifest_id_correct(self):
+        data = {
+            "id": "a" * 64,
+            "name": "Test Plugin",
+            "version": "1.0.0",
+            "description": "Teste",
+            "author": "Carlos",
+            "entry_point": "plugins.test:TestPlugin",
+            "capabilities": ["PROJECT_READ"],
+        }
+        schema_path = Path("plugins/plugin.schema.json")
+
+        with open(schema_path) as file:
+            schema = json.load(file)
+
+        manifest = PluginManifest.from_dict(data)
+        assert manifest.id == "a" * 64
+
+        validate(instance=data, schema=schema)
 
 
 class TestPlugin:

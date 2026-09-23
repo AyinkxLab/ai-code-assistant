@@ -19,6 +19,7 @@ python-dotenv==1.1.0
 requests==2.32.4
 cryptography==50.0.0
 packaging==26.3
+jsonschema==4.26.0
 
 # Production server
 gunicorn==23.0.0

@@ -17,7 +17,8 @@ from datetime import datetime
 from pathlib import Path
 from types import ModuleType
 from typing import Any
-
+from jsonschema import ValidationError, validate
+from app.services.plugin_compat import format_checker
 from app.services.plugin_compat import is_valid_compatibility
 
 logger = logging.getLogger(__name__)
@@ -55,6 +56,19 @@ class PluginLoadError(PluginError):
 #: are isolated: the state change still happens and the registry stays
 #: consistent.
 LIFECYCLE_HOOKS = ("on_enable", "on_disable", "on_uninstall")
+
+
+# Validate manifest data against the JSON Schema contract, including
+# custom formats such as PEP 440 compatibility specifiers.
+def _validate_manifest_schema(data):
+    with open("plugins/plugin.schema.json") as file:
+        schema = json.load(file)
+
+    try:
+        validate(instance=data, schema=schema, format_checker=format_checker)
+
+    except ValidationError as exc:
+        raise ManifestValidationError(str(exc)) from exc
 
 
 @dataclass
@@ -107,7 +121,7 @@ class PluginManifest:
             raise ManifestValidationError("; ".join(errors))
 
         # Validate id format
-        if not re.match(r"^[a-z][a-z0-9_-]*$", data.get("id", "")):
+        if not re.match(r"^[a-z][a-z0-9_-]{0,63}$", data.get("id", "")):
             errors.append(
                 "Invalid id format: must start with lowercase letter, "
                 "contain only lowercase letters, numbers, hyphens, underscores"
@@ -119,7 +133,10 @@ class PluginManifest:
 
         # Validate entry_point format
         entry_point = data.get("entry_point", "")
-        if not re.match(r"^[a-zA-Z0-9_][a-zA-Z0-9_.:]*:[a-zA-Z_][a-zA-Z0-9_]*$", entry_point):
+        if not isinstance(entry_point, str):
+            errors.append("Entry point must be a string")
+
+        elif not re.match(r"^[a-zA-Z0-9_][a-zA-Z0-9_.:]*:[a-zA-Z_][a-zA-Z0-9_]*$", entry_point):
             errors.append("Invalid entry_point format: must be 'module.path:ClassName'")
 
         # Validate capabilities
@@ -141,22 +158,74 @@ class PluginManifest:
             "REVIEW_READ",
             "REVIEW_CREATE",
         }
+
         if not isinstance(capabilities, list) or not capabilities:
             errors.append("Capabilities must be a non-empty list")
+
         else:
+            length_capabilities = len(capabilities)
+            length_capabilities_set = len(set(capabilities))
+
+            if length_capabilities != length_capabilities_set:
+                errors.append("Capabilities must have unique items")
             for cap in capabilities:
                 if cap not in valid_capabilities:
                     errors.append(f"Unknown capability: {cap}")
 
+        # Validate permissions
+        # Validate optional plugin permissions. When provided, permissions must be
+        # a list of unique string values; when omitted, no extra permissions are required.
+
+        permissions = data.get("permissions", [])
+        if not isinstance(permissions, list):
+            errors.append("permissions must be a list")
+
+        else:
+
+            for item in permissions:
+                if not isinstance(item, str):
+                    errors.append("Permissions must be strings")
+
+            length_permissions = len(permissions)
+            length_permissions_set = len(set(permissions))
+
+            if length_permissions != length_permissions_set:
+                errors.append("Permissions list must have unique items")
+
+        # Validate optional plugin dependencies. When provided, dependencies must be
+        # a list of unique string values; when omitted, the plugin has no dependencies.
+
+        dependencies = data.get("dependencies", [])
+        if not isinstance(dependencies, list):
+            errors.append("dependencies must be a list")
+
+        else:
+            is_all_strings = all(isinstance(item, str) for item in dependencies)
+
+            if not is_all_strings:
+                errors.append("dependencies must have strings items")
+            else:
+
+                len_dependencies = len(dependencies)
+                len_dependencies_set = len(set(dependencies))
+
+                if len_dependencies != len_dependencies_set:
+                    errors.append("dependencies list must have unique items")
+
         # Validate the PEP 440 compatibility specifier (e.g. ">=0.8.0"). The
         # field is optional; when omitted the plugin supports any app version.
+
         compatibility = data.get("compatibility")
-        if compatibility is not None and not is_valid_compatibility(compatibility):
-            errors.append(f"Invalid compatibility specifier: {compatibility}")
+        if "compatibility" in data:
+            if not isinstance(compatibility, str):
+                errors.append("Compatibility  must be a string.")
+            elif not is_valid_compatibility(compatibility):
+                errors.append(f"Invalid compatibility specifier: {compatibility}")
 
         if errors:
             raise ManifestValidationError("; ".join(errors))
 
+        _validate_manifest_schema(data)
         return cls(
             id=data["id"],
             name=data["name"],
@@ -197,9 +266,11 @@ class PluginManifest:
 
         return cls.from_dict(data)
 
+    # Omit compatibility when unrestricted so the serialized manifest remains
+    # valid against the schema, which accepts an absent field but not null.
     def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary representation."""
-        return {
+        data = {
             "id": self.id,
             "name": self.name,
             "version": self.version,
@@ -207,11 +278,13 @@ class PluginManifest:
             "author": self.author,
             "entry_point": self.entry_point,
             "capabilities": self.capabilities,
-            "compatibility": self.compatibility,
             "permissions": self.permissions or [],
             "dependencies": self.dependencies or [],
             "configuration": self.configuration or {},
         }
+        if self.compatibility is not None:
+            data["compatibility"] = self.compatibility
+        return data
 
 
 class Plugin:

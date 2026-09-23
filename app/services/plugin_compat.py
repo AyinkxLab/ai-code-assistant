@@ -25,7 +25,7 @@ import logging
 import tomllib
 from functools import lru_cache
 from pathlib import Path
-
+from jsonschema import FormatChecker
 from packaging.specifiers import InvalidSpecifier, SpecifierSet
 
 logger = logging.getLogger(__name__)
@@ -80,6 +80,16 @@ def parse_compatibility(value: str | None) -> SpecifierSet:
         return SpecifierSet(value.strip())
     except (InvalidSpecifier, ValueError) as exc:
         raise InvalidCompatibilityError(f"Invalid compatibility specifier: {value!r}") from exc
+
+
+# Register a custom JSON Schema format for PEP 440 compatibility
+# specifiers, reusing the runtime compatibility validation logic.
+format_checker = FormatChecker()
+
+
+@format_checker.checks("pep440-specifier")
+def is_pep440_specifier(value):
+    return is_valid_compatibility(value)
 
 
 def is_valid_compatibility(value: str | None) -> bool:
