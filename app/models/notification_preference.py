@@ -17,12 +17,14 @@ PREF_INVITATIONS = "invitations"
 PREF_MENTIONS = "mentions"
 PREF_MEMBERSHIP = "membership"
 PREF_AI_EVENTS = "ai_events"
+PREF_SHARES = "shares"
 
 PREFERENCE_TYPES = (
     PREF_INVITATIONS,
     PREF_MENTIONS,
     PREF_MEMBERSHIP,
     PREF_AI_EVENTS,
+    PREF_SHARES,
 )
 
 # Map notification type -> preference key. ``None`` means the notification is
@@ -33,6 +35,7 @@ TYPE_PREFERENCE_MAP = {
     "membership": PREF_MEMBERSHIP,
     "role_change": None,
     "ai_event": PREF_AI_EVENTS,
+    "share": PREF_SHARES,
 }
 
 
@@ -49,6 +52,7 @@ class NotificationPreference(db.Model):
     mentions = db.Column(db.Boolean, nullable=False, default=True)
     membership = db.Column(db.Boolean, nullable=False, default=True)
     ai_events = db.Column(db.Boolean, nullable=False, default=True)
+    shares = db.Column(db.Boolean, nullable=False, default=True)
     created_at = db.Column(
         db.DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC)
     )
@@ -66,6 +70,7 @@ class NotificationPreference(db.Model):
             "mentions": self.mentions,
             "membership": self.membership,
             "ai_events": self.ai_events,
+            "shares": self.shares,
         }
 
     def allows(self, notification_type: str) -> bool:

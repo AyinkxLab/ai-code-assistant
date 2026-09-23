@@ -1,15 +1,42 @@
-"""Chat routes: UI page, conversation CRUD, and SSE streaming."""
+"""Chat routes: UI page, conversation CRUD, sharing, and SSE streaming."""
 
 import json
 
-from flask import Response, jsonify, render_template, request
+from flask import Response, abort, jsonify, render_template, request, url_for
 from flask_login import current_user, login_required
 from sqlalchemy import func
 
 from app.chat import bp
 from app.extensions import db
-from app.models import Conversation, Message
+from app.models import Conversation, ConversationShare, Message, User
 from app.services.llm import LLMProviderError, get_provider
+from app.services.notifications import notify
+
+
+def _get_conversation(conversation_id: int) -> Conversation:
+    """Return the current user's conversation or abort with 404."""
+    conversation = Conversation.query.filter_by(
+        id=conversation_id, user_id=current_user.id
+    ).first_or_404()
+    return conversation
+
+
+def _get_visible_conversation(conversation_id: int) -> Conversation:
+    """Return a conversation readable by the current user (owner or shared)."""
+    conversation = Conversation.query.filter_by(id=conversation_id).first_or_404()
+    if conversation.user_id == current_user.id or conversation.is_shared_with(current_user.id):
+        return conversation
+    abort(404)
+
+
+def _shared_conversation_ids() -> list[int]:
+    """Conversation ids the current user can read because they were shared in."""
+    rows = (
+        ConversationShare.query.filter_by(user_id=current_user.id)
+        .with_entities(ConversationShare.conversation_id)
+        .all()
+    )
+    return [row[0] for row in rows]
 
 
 def _get_conversation(conversation_id: int) -> Conversation:
@@ -24,8 +51,11 @@ def _get_conversation(conversation_id: int) -> Conversation:
 @login_required
 def index():
     """Render the chat interface with the user's conversations."""
+    shared_ids = _shared_conversation_ids()
     conversations = (
-        Conversation.query.filter_by(user_id=current_user.id)
+        Conversation.query.filter(
+            db.or_(Conversation.user_id == current_user.id, Conversation.id.in_(shared_ids))
+        )
         .order_by(Conversation.is_pinned.desc(), Conversation.updated_at.desc())
         .all()
     )
@@ -37,7 +67,10 @@ def index():
 def list_conversations():
     """Return the current user's conversations as JSON (for search/refresh)."""
     query = request.args.get("q", "").strip().lower()
-    base = Conversation.query.filter_by(user_id=current_user.id)
+    shared_ids = _shared_conversation_ids()
+    base = Conversation.query.filter(
+        db.or_(Conversation.user_id == current_user.id, Conversation.id.in_(shared_ids))
+    )
     if query:
         base = base.filter(func.lower(Conversation.title).contains(query))
     conversations = base.order_by(Conversation.updated_at.desc()).all()
@@ -59,10 +92,14 @@ def create_conversation():
 @bp.route("/conversations/<int:conversation_id>", methods=["GET"])
 @login_required
 def get_conversation(conversation_id: int):
-    """Return a conversation with its full message history."""
-    conversation = _get_conversation(conversation_id)
+    """Return a conversation with its full message history.
+
+    Readable by the owner and by any user the conversation was shared with.
+    """
+    conversation = _get_visible_conversation(conversation_id)
     payload = conversation.to_dict()
     payload["messages"] = [m.to_dict() for m in conversation.messages]
+    payload["shared_user_ids"] = [s.user_id for s in conversation.shares]
     return jsonify(payload)
 
 
@@ -105,6 +142,72 @@ def export_conversation(conversation_id: int):
         mimetype="application/json",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
+
+
+@bp.route("/conversations/<int:conversation_id>/shares", methods=["GET"])
+@login_required
+def list_shares(conversation_id: int):
+    """Return who a conversation was shared with (owner only)."""
+    conversation = _get_conversation(conversation_id)
+    return jsonify([s.to_dict() for s in conversation.shares])
+
+
+@bp.route("/conversations/<int:conversation_id>/shares", methods=["POST"])
+@login_required
+def share_conversation(conversation_id: int):
+    """Share a conversation with another registered user (owner only).
+
+    Creates a persistent ``ConversationShare`` row and a ``share``
+    notification for the recipient so the share is discoverable in the app.
+    """
+    conversation = _get_conversation(conversation_id)
+    data = request.get_json(silent=True) or {}
+    username = (data.get("username") or "").strip()
+    if not username:
+        return jsonify({"error": "A recipient username is required."}), 400
+
+    recipient = User.query.filter_by(username=username).first()
+    if recipient is None:
+        return jsonify({"error": "No user with that username exists."}), 404
+    if recipient.id == current_user.id:
+        return jsonify({"error": "You cannot share a conversation with yourself."}), 400
+    existing = ConversationShare.query.filter_by(
+        conversation_id=conversation.id, user_id=recipient.id
+    ).first()
+    if existing is not None:
+        return jsonify({"error": "This conversation is already shared with that user."}), 409
+
+    share = ConversationShare(
+        conversation_id=conversation.id,
+        user_id=recipient.id,
+        shared_by_id=current_user.id,
+    )
+    db.session.add(share)
+    notify(
+        recipient,
+        "share",
+        actor=current_user,
+        payload={
+            "title": conversation.title,
+            "conversation_id": conversation.id,
+        },
+        link=url_for("chat.index", conversation=conversation.id),
+    )
+    db.session.commit()
+    return jsonify(share.to_dict()), 201
+
+
+@bp.route("/conversations/<int:conversation_id>/shares/<int:user_id>", methods=["DELETE"])
+@login_required
+def unshare_conversation(conversation_id: int, user_id: int):
+    """Remove a previously created share (owner only)."""
+    conversation = _get_conversation(conversation_id)
+    share = ConversationShare.query.filter_by(
+        conversation_id=conversation.id, user_id=user_id
+    ).first_or_404()
+    db.session.delete(share)
+    db.session.commit()
+    return jsonify({"ok": True})
 
 
 @bp.route("/conversations/<int:conversation_id>/messages", methods=["POST"])

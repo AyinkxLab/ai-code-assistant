@@ -352,6 +352,12 @@
 
     document.getElementById("new-conversation").addEventListener("click", newConversation);
 
+    var params = new URLSearchParams(window.location.search);
+    var openId = params.get("conversation");
+    if (openId) {
+      loadConversation(openId);
+    }
+
     if (searchEl) {
       searchEl.addEventListener("input", function () {
         refreshList();
@@ -382,6 +388,21 @@
           body: JSON.stringify({ is_pinned: true }),
         }).then(function () {
           refreshList();
+        }).catch(function (error) {
+          flashError(error.message);
+        });
+      } else if (button.id === "share-conversation") {
+        var username = prompt("Share this conversation with username:", "");
+        if (username === null) return;
+        api("/chat/conversations/" + id + "/shares", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ username: username.trim() }),
+        }).then(function () {
+          var note = document.createElement("div");
+          note.className = "flash flash-success";
+          note.textContent = "Conversation shared.";
+          messagesEl.prepend(note);
         }).catch(function (error) {
           flashError(error.message);
         });

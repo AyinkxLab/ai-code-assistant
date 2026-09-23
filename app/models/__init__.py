@@ -6,6 +6,7 @@ can discover every table in the application.
 
 from app.models.activity_event import ActivityEvent
 from app.models.conversation import Conversation
+from app.models.conversation_share import ConversationShare
 from app.models.github_account import GithubAccount
 from app.models.invitation import WorkspaceInvitation
 from app.models.message import Message
@@ -32,6 +33,7 @@ __all__ = [
     "ActivityEvent",
     "CapabilityGrant",
     "Conversation",
+    "ConversationShare",
     "GithubAccount",
     "Message",
     "Notification",
