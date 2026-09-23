@@ -15,6 +15,7 @@ Security invariants enforced here:
 
 from __future__ import annotations
 
+import hashlib
 import io
 import re
 import tarfile
@@ -22,8 +23,8 @@ import zipfile
 from datetime import UTC, datetime
 
 from app.extensions import db
-from app.models import ProjectFile
-from app.models.project import STATUS_READY
+from app.models import Project, ProjectFile
+from app.models.project import SOURCE_GITHUB, STATUS_READY
 from app.services.github import GitHubError
 
 
@@ -161,6 +162,47 @@ def _to_file_row(path: str, raw: bytes, *, max_chars: int) -> dict:
 
 
 # --------------------------------------------------------------------------
+# Duplicate detection
+# --------------------------------------------------------------------------
+
+
+def archive_hash(raw: bytes) -> str:
+    """Return the SHA-256 hex digest of an archive payload."""
+    return hashlib.sha256(raw).hexdigest()
+
+
+def find_duplicate_archive(workspace_id: int, content_hash: str) -> Project | None:
+    """Return an existing archive import with the same content hash, if any.
+
+    Scoped to the workspace: the same archive imported into another workspace is
+    a separate project.
+    """
+    return (
+        Project.query.filter_by(workspace_id=workspace_id, content_hash=content_hash)
+        .order_by(Project.created_at)
+        .first()
+    )
+
+
+def find_duplicate_github(workspace_id: int, full_name: str, default_branch: str) -> Project | None:
+    """Return an existing GitHub import of the same repo + default branch.
+
+    ``owner/name`` is compared case-insensitively because GitHub identifiers are
+    case-insensitive.
+    """
+    return (
+        Project.query.filter(
+            Project.workspace_id == workspace_id,
+            Project.source == SOURCE_GITHUB,
+            db.func.lower(Project.source_url) == full_name.lower(),
+            Project.default_branch == default_branch,
+        )
+        .order_by(Project.created_at)
+        .first()
+    )
+
+
+# --------------------------------------------------------------------------
 # Archive extraction
 # --------------------------------------------------------------------------
 
@@ -266,16 +308,21 @@ def extract_archive(fileobj, filename: str) -> list[dict]:
 # --------------------------------------------------------------------------
 
 
-def import_github_repo(project, full_name: str, client) -> None:
+def import_github_repo(project, full_name: str, client, *, repo: dict | None = None) -> None:
     """Import a GitHub repository into ``project`` using an authenticated client.
 
     Stores bounded metadata + content for the repository's blob tree and marks
     the project ready on success. Raises :class:`GitHubError` for API-level
     failures, which the caller can surface as a failed project.
+
+    ``repo`` may be a repository payload already fetched by the caller (this
+    avoids a duplicate API call when the default branch was needed for duplicate
+    detection); when omitted it is fetched here.
     """
     from flask import current_app
 
-    repo = client.get_repository(full_name)
+    if repo is None:
+        repo = client.get_repository(full_name)
     default_branch = repo.get("default_branch") or "HEAD"
     tree = client.get_tree(full_name, default_branch, recursive=True)
 

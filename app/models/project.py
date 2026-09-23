@@ -41,6 +41,11 @@ class Project(db.Model):
     name = db.Column(db.String(200), nullable=False)
     source = db.Column(db.String(20), nullable=False, default=SOURCE_ARCHIVE)
     source_url = db.Column(db.String(500), nullable=True)
+    # Duplicate-import detection: a SHA-256 hex digest of an archive import, or
+    # the GitHub repository's default branch. Both are nullable because they are
+    # only meaningful for their respective source.
+    content_hash = db.Column(db.String(64), nullable=True, index=True)
+    default_branch = db.Column(db.String(255), nullable=True)
     status = db.Column(db.String(20), nullable=False, default=STATUS_INDEXING)
     error_message = db.Column(db.Text, nullable=True)
     file_count = db.Column(db.Integer, nullable=False, default=0)

@@ -38,6 +38,7 @@ API (JSON, all scoped to the current user)
     /workspaces/<id>/audit                           audit page
 """
 
+import io
 import json
 from collections import Counter
 from pathlib import Path
@@ -77,7 +78,14 @@ from app.services.github import (
     validate_full_name,
 )
 from app.services.health import coverage_estimate, detect_ci_files
-from app.services.importing import ProjectImportError, extract_archive, import_github_repo
+from app.services.importing import (
+    ProjectImportError,
+    archive_hash,
+    extract_archive,
+    find_duplicate_archive,
+    find_duplicate_github,
+    import_github_repo,
+)
 from app.services.invitations import cancel_pending_for_user
 from app.services.llm import LLMProviderError, get_provider
 from app.services.notifications import notify
@@ -464,10 +472,41 @@ def _import_scaffold(workspace: Workspace, data: dict):
     return _finish_project_import(workspace, project, SOURCE_SCAFFOLD)
 
 
+def _confirmed(data) -> bool:
+    """Return ``True`` when a request accepts an import despite a duplicate."""
+    value = data.get("confirm") if hasattr(data, "get") else None
+    if value is None:
+        return False
+    return str(value).strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _duplicate_response(existing: Project, match: str):
+    """Return ``409`` describing an existing matching project (nothing stored)."""
+    return (
+        jsonify(
+            {
+                "error": "A matching project already exists in this workspace.",
+                "duplicate": True,
+                "match": match,
+                "duplicate_of": existing.to_dict(),
+            }
+        ),
+        409,
+    )
+
+
 def _import_archive(workspace: Workspace):
     uploaded = request.files.get("file")
     if uploaded is None or not uploaded.filename:
         return jsonify({"error": "No file was uploaded."}), 400
+
+    raw = uploaded.stream.read()
+    digest = archive_hash(raw)
+
+    if not _confirmed(request.form):
+        duplicate = find_duplicate_archive(workspace.id, digest)
+        if duplicate is not None:
+            return _duplicate_response(duplicate, "archive")
 
     name = Path(uploaded.filename).stem.strip() or "Untitled project"
     project = Project(
@@ -475,12 +514,13 @@ def _import_archive(workspace: Workspace):
         user_id=current_user.id,
         name=name[:200],
         source=SOURCE_ARCHIVE,
+        content_hash=digest,
     )
     db.session.add(project)
     db.session.commit()
 
     try:
-        rows = extract_archive(uploaded.stream, uploaded.filename)
+        rows = extract_archive(io.BytesIO(raw), uploaded.filename)
     except ProjectImportError as exc:
         db.session.delete(project)
         db.session.commit()
@@ -507,19 +547,32 @@ def _import_github(workspace: Workspace):
     except GitHubInvalidError as exc:
         return jsonify({"error": str(exc)}), 400
 
+    try:
+        client = get_github_client()
+        repo_data = client.get_repository(full_name)
+    except GitHubError as exc:
+        return jsonify(github_error_payload(exc)), 502
+
+    default_branch = repo_data.get("default_branch") or "HEAD"
+
+    if not _confirmed(data):
+        duplicate = find_duplicate_github(workspace.id, full_name, default_branch)
+        if duplicate is not None:
+            return _duplicate_response(duplicate, "github")
+
     project = Project(
         workspace_id=workspace.id,
         user_id=current_user.id,
         name=full_name.split("/")[1][:200],
         source=SOURCE_GITHUB,
         source_url=full_name,
+        default_branch=default_branch,
     )
     db.session.add(project)
     db.session.commit()
 
     try:
-        client = get_github_client()
-        import_github_repo(project, full_name, client)
+        import_github_repo(project, full_name, client, repo=repo_data)
     except GitHubError as exc:
         db.session.delete(project)
         db.session.commit()
