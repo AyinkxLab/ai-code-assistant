@@ -1038,6 +1038,32 @@
       }
     });
 
+    // Export (#107): normal navigation download. When the server answers with
+    // JSON instead of a zip, surface the error message instead of saving it.
+    var exportLink = document.getElementById("export-project");
+    if (exportLink) {
+      exportLink.addEventListener("click", function (event) {
+        var response = null;
+        var check = fetch(exportLink.href, { headers: { Accept: "application/zip" } })
+          .then(function (res) {
+            response = res;
+            var type = res.headers.get("Content-Type") || "";
+            if (type.indexOf("application/json") === -1) return null;
+            return res.json();
+          })
+          .then(function (data) {
+            if (data && data.error) {
+              event.preventDefault();
+              flashError(data.error);
+            }
+          })
+          .catch(function () {
+            /* network hiccup: let the navigation proceed */
+          });
+        if (check && check.then) event.preventDefault();
+      });
+    }
+
     document.getElementById("delete-project").addEventListener("click", function () {
       if (!confirm("Delete this project and its indexed files?")) return;
       api("/workspaces/api/projects/" + PROJECT_ID, { method: "DELETE" })
