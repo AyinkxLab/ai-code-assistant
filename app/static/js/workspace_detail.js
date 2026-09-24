@@ -57,7 +57,49 @@
     return "/workspaces/" + WORKSPACE_ID + "/projects/" + project.id;
   }
 
+  function pollImportStatus(projectId, label) {
+    var status = document.getElementById("import-status");
+    status.hidden = false;
+    var attempts = 0;
+    var maxAttempts = 150; // ~5 minutes at a 2s interval
+    function tick() {
+      api("/workspaces/api/workspaces/" + WORKSPACE_ID + "/projects")
+        .then(function (projects) {
+          var project = projects.filter(function (p) { return p.id === projectId; })[0];
+          if (!project) {
+            status.textContent = "Import job not found.";
+            return;
+          }
+          if (project.status === "ready") {
+            finishImportSuccess(project, label);
+            return;
+          }
+          if (project.status === "failed") {
+            status.textContent = "Import failed: " + (project.error_message || "unknown error");
+            flash("Import failed for " + project.name + ".", "error");
+            return;
+          }
+          status.textContent = "Indexing " + project.name + "… " + (project.progress || 0) + "%";
+          attempts += 1;
+          if (attempts < maxAttempts) setTimeout(tick, 2000);
+        })
+        .catch(function (error) {
+          status.textContent = error.message;
+        });
+    }
+    tick();
+  }
+
   function handleImportSuccess(project, label) {
+    if (project && project.status === "indexing") {
+      flash("Import started for " + project.name + ". Indexing in the background…", "success");
+      pollImportStatus(project.id, label);
+      return;
+    }
+    finishImportSuccess(project, label);
+  }
+
+  function finishImportSuccess(project, label) {
     var stellar = project && project.stellar;
     var url = projectUrl(project);
     if (!stellar || !stellar.is_stellar) {

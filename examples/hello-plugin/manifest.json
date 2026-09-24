@@ -1,0 +1,9 @@
+{
+  "id": "hello-plugin",
+  "name": "Hello World Plugin",
+  "version": "0.1.0",
+  "description": "Minimal example plugin that logs every project.created event.",
+  "author": "AI Code Assistant contributors",
+  "entry_point": "plugin:HelloPlugin",
+  "capabilities": ["PROJECT_READ"]
+}

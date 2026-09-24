@@ -23,6 +23,23 @@
     {% if not conversations %}
       <p class="sidebar-empty">No conversations yet. Start chatting below!</p>
     {% endif %}
+
+    <section class="file-tree-panel">
+      <div class="sidebar-header">
+        <h2>Project files</h2>
+      </div>
+      <div id="project-file-tree" class="file-tree">
+        <p class="sidebar-empty">Loading files...</p>
+      </div>
+      <div id="project-file-viewer" class="file-viewer" hidden>
+        <div class="file-viewer-header">
+          <button id="project-file-back" class="btn btn-ghost btn-sm" type="button">&larr; Back</button>
+          <button id="project-file-ask" class="btn btn-primary btn-sm" type="button">Ask about this file</button>
+        </div>
+        <p id="project-file-meta" class="file-viewer-meta"></p>
+        <pre id="project-file-content" class="file-viewer-content"></pre>
+      </div>
+    </section>
   </aside>
 
   <section class="chat-main">
@@ -52,4 +69,5 @@
 
 {% block scripts %}
 <script src="{{ url_for('static', filename='js/chat.js') }}"></script>
+<script src="{{ url_for('static', filename='js/chat_files.js') }}"></script>
 {% endblock %}

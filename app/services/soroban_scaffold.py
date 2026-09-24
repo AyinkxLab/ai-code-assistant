@@ -22,6 +22,7 @@ from __future__ import annotations
 import re
 
 from app.services.importing import detect_language
+from app.services.stellar_config import generate_soroban_config
 
 #: Crate/package name used when none is supplied.
 DEFAULT_CRATE_NAME = "hello_world"
@@ -119,14 +120,12 @@ impl {contract_type} {{
 
 
 def _soroban_config() -> str:
-    return """# Generated scaffold — Soroban CLI testnet network configuration.
-# This file only describes the network for the Soroban CLI; it is never used at
-# contract runtime. Add your own keys/endpoints before any deployment and never
-# commit secrets.
-[network.testnet]
-rpc_url = "https://soroban-testnet.stellar.org"
-network_passphrase = "Test SDF Network ; September 2015"
-"""
+    """Return the scaffold's testnet network config from the shared generator.
+
+    Uses ``app.services.stellar_config`` so the scaffold and the standalone
+    config generator cannot drift (#183); the output stays testnet by default.
+    """
+    return generate_soroban_config("testnet")
 
 
 def _readme(crate_name: str) -> str:

@@ -516,6 +516,7 @@ All configuration is environment-driven (see `.env.example`):
 | `PROJECT_MAX_CONTEXT_CHARS` | `40000` | Max project context sent to the LLM  |
 | `PROJECT_SEARCH_MAX_RESULTS` | `100` | Max results returned by one search query |
 | `PROJECT_GITHUB_MAX_FILES` | `1000`   | Max file contents fetched per GitHub import |
+| `IMPORT_JOBS_ASYNC` | `1` | Run imports in a background worker (client polls `progress`) |
 | `PROJECT_SKIP_DIRS`    | `.git,node_modules,…` | Directory basenames skipped on import |
 | `PROJECT_SKIP_SECRET_FILES` | `.env,.pem,…` | File names/prefixes skipped on import |
 | `REVIEW_MAX_FILES`     | `40`        | Max changed files analyzed in one review |

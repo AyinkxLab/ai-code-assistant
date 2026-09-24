@@ -388,6 +388,15 @@
     if (network) {
       html += kvList([["Network hint", network]]);
     }
+    if (data && data.contract_entry_point) {
+      html +=
+        '<h4 class="metric-title">Contract entry point</h4>' +
+        '<p><a class="stellar-file-link" href="#" data-stellar-path="' +
+        esc(data.contract_entry_point) +
+        '">' +
+        esc(data.contract_entry_point) +
+        "</a></p>";
+    }
     if (data && data.evidence && data.evidence.length) {
       html += '<h4 class="metric-title">Evidence</h4><ul class="metric-list">';
       data.evidence.forEach(function (line) {

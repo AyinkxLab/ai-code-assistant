@@ -228,3 +228,38 @@ class TestJsonOutput:
         result = _runner(app).invoke(args=["stellar", "ledger-entry", "AAAABgAA", "--json"])
         assert result.exit_code == 0
         assert json.loads(result.output)["found"] is True
+
+
+class TestStellarConfigCLI:
+    def test_config_defaults_to_testnet(self, app):
+        result = _runner(app).invoke(args=["stellar", "config"])
+        assert result.exit_code == 0
+        assert "[network.testnet]" in result.output
+        assert "Test SDF Network ; September 2015" in result.output
+        assert "soroban-testnet.stellar.org" in result.output
+
+    def test_config_mainnet_json(self, app):
+        result = _runner(app).invoke(args=["stellar", "config", "--network", "mainnet", "--json"])
+        assert result.exit_code == 0
+        payload = json.loads(result.output)
+        assert payload["path"] == ".soroban/config.toml"
+        assert "[network.mainnet]" in payload["content"]
+        assert "Public Global Stellar Network ; September 2015" in payload["content"]
+
+    def test_config_unknown_network_is_validation_error(self, app):
+        result = _runner(app).invoke(args=["stellar", "config", "--network", "bogus"])
+        assert result.exit_code == 3
+
+    def test_config_refuses_overwrite_by_default(self, app):
+        result = _runner(app).invoke(
+            args=["stellar", "config", "--existing", ".soroban/config.toml"]
+        )
+        assert result.exit_code == 3
+        assert "already exists" in result.output
+
+    def test_config_overwrite_flag_allows_it(self, app):
+        result = _runner(app).invoke(
+            args=["stellar", "config", "--existing", ".soroban/config.toml", "--overwrite"]
+        )
+        assert result.exit_code == 0
+        assert "[network.testnet]" in result.output

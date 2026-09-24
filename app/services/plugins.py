@@ -15,7 +15,7 @@ import logging
 import re
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 from types import ModuleType
 from typing import Any
@@ -355,7 +355,7 @@ class Plugin:
             self.module = importlib.import_module(module_path)
             if not hasattr(self.module, class_name):
                 raise PluginLoadError(f"Class {class_name} not found in module {module_path}")
-            self.loaded_at = datetime.utcnow()
+            self.loaded_at = datetime.now(UTC)
             logger.info(f"Loaded plugin: {self.manifest.id}")
         except ImportError as e:
             raise PluginLoadError(f"Cannot import plugin module: {e}") from e

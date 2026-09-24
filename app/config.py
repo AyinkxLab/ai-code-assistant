@@ -116,6 +116,11 @@ class Config:
         ".env,.pem,.key,.p12,.pfx,id_rsa,id_ed25519,id_dsa,credentials,.htpasswd,"
         ".npmrc,.pypirc,secrets.yaml,secret.yaml,secret.yml",
     )
+    # Project import indexing (#89): run imports in an in-process background
+    # worker so the HTTP request returns immediately with the project in
+    # ``indexing`` status and the client polls ``progress``. Disabled in the
+    # test config for deterministic assertions.
+    IMPORT_JOBS_ASYNC = os.getenv("IMPORT_JOBS_ASYNC", "1") == "1"
 
     # AI reviews (Phase 6): caps that keep reviews bounded and predictable.
     # A review never sends more than REVIEW_MAX_CONTEXT_CHARS of repository text
@@ -210,6 +215,8 @@ class TestingConfig(Config):
     TESTING = True
     WTF_CSRF_ENABLED = False
     SQLALCHEMY_DATABASE_URI = os.getenv("TEST_DATABASE_URL", "sqlite:///:memory:")
+    # Run import jobs inline so tests can assert final status deterministically.
+    IMPORT_JOBS_ASYNC = False
     # Keep a single in-memory SQLite connection alive across the test run.
     SQLALCHEMY_ENGINE_OPTIONS: ClassVar[dict] = {
         "poolclass": StaticPool,
