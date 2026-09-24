@@ -86,6 +86,22 @@ class Config:
     PLUGIN_TRUST_POLICY = os.getenv("PLUGIN_TRUST_POLICY", "if-present")
     PLUGIN_TRUSTED_KEYS = _trusted_plugin_keys()
 
+    # Plugin outbound network policy (#193). Every plugin-triggered request must
+    # pass ``app.services.plugin_network``: it is https-only, denies
+    # private/loopback/link-local/reserved targets by default, and only reaches
+    # hosts on ``PLUGIN_NETWORK_ALLOWLIST`` (comma-separated; ``*`` allows any
+    # public host, ``*.example.com`` allows subdomains). An empty allowlist
+    # denies all plugin outbound requests (fail closed).
+    PLUGIN_NETWORK_ALLOWLIST = os.getenv("PLUGIN_NETWORK_ALLOWLIST", "")
+    PLUGIN_NETWORK_HTTPS_ONLY = os.getenv("PLUGIN_NETWORK_HTTPS_ONLY", "1") == "1"
+    PLUGIN_NETWORK_ALLOW_PRIVATE = os.getenv("PLUGIN_NETWORK_ALLOW_PRIVATE", "0") == "1"
+    PLUGIN_NETWORK_TIMEOUT = int(os.getenv("PLUGIN_NETWORK_TIMEOUT", "15"))
+    PLUGIN_NETWORK_MAX_BYTES = int(os.getenv("PLUGIN_NETWORK_MAX_BYTES", str(2 * 1024 * 1024)))
+    # When enabled, a hostname that cannot be resolved is rejected instead of
+    # tolerated (defense-in-depth for hostile DNS; off by default so the guard
+    # keeps working fully offline).
+    PLUGIN_NETWORK_STRICT_DNS = os.getenv("PLUGIN_NETWORK_STRICT_DNS", "0") == "1"
+
     # GitHub OAuth integration.
     GITHUB_CLIENT_ID = os.getenv("GITHUB_CLIENT_ID", "")
     GITHUB_CLIENT_SECRET = os.getenv("GITHUB_CLIENT_SECRET", "")

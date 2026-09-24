@@ -14,6 +14,9 @@ kept in sync as the plugin system grows.
   indexed files actually demonstrate.
 - **Configuration over user input.** Network endpoints come from environment
   configuration, never from user or project data.
+- **Outbound is opt-in.** Plugin network access is denied unless an operator
+  explicitly allowlists the target host; private and internal ranges are never
+  reachable by default.
 - **Read-only by construction.** The Stellar/Horizon/RPC surface never signs,
   simulates, or submits transactions, and never stores or handles keys.
 
@@ -33,6 +36,7 @@ kept in sync as the plugin system grows.
 | SSRF                           | `validate_endpoint_url`: https-only for public networks, loopback-only for custom networks; requests are restricted to the configured Horizon base URL and bounded by timeout + response-size cap. | Implemented |
 | Path traversal                  | Project file access already rejects traversal at import and in file/tree APIs; Stellar detection only reads `path`/`content` of already-indexed files. | Existing + verified |
 | Malicious plugin metadata       | Manifest validation rejects bad ids, versions, entry points, unknown capabilities, and empty capability lists. | Implemented |
+| Plugin outbound requests (SSRF) | `app.services.plugin_network` is the only sanctioned outbound path: https-only, denies private/loopback/link-local/reserved IP literals and obviously-private hostnames, denies hostnames that resolve to a private address (best effort), and only reaches hosts on `PLUGIN_NETWORK_ALLOWLIST`; an empty allowlist denies everything (fail closed). Requests never follow redirects and are timeout/size-bounded. | Implemented |
 | Plugin management authorization | The `plugins` API is workspace-scoped: members may view, only the owner (`manage_plugins`) may install/enable/disable/grant. Non-members get 404, non-owners get 403; the server derives authorization from trusted workspace membership, never from client-supplied ownership. | Implemented |
 | Plugin identity binding         | Installation binds the plugin to the id declared in the validated manifest; a conflicting entry point for an existing id is rejected (409). Install never loads or executes code and never auto-grants capabilities; grants are restricted to manifest-declared capabilities. | Implemented |
 | Event authorization             | Before a plugin handler runs, the dispatcher verifies the event type is supported, the plugin exists and is enabled, and for workspace-scoped events the plugin is installed and enabled in the event's workspace, the emitting user is authorized for the workspace, and the plugin holds the capability required by `EVENT_CAPABILITY_MAP` via an explicit `CapabilityGrant` for that workspace. Unknown/missing/disabled/unauthorized cases are denied (fail closed); denials are recorded, never delivered. | Implemented |
@@ -100,6 +104,11 @@ configuration (see "Known limitations / planned hardening").
   generic, detection failure never crashes, confidence is respected, context is
   bounded, and the GitHub routes preserve user-token authorization.
 - `tests/test_plugins_manifest.py` — malicious/invalid manifests rejected.
+- `tests/test_plugin_network.py` — the plugin outbound guard: allowlist
+  (exact/`*`/wildcard), non-https and malformed URLs, loopback/private/
+  link-local/reserved ranges, obviously-private hostnames, private DNS
+  resolution, the `allow_private`/`strict_dns` toggles, and the bounded
+  `guarded_request` helper (guard runs before any socket is opened).
 - `tests/test_capabilities.py` — capability grants are explicit, deduplicated,
   validated, and revoked correctly.
 - `tests/test_events.py` / `tests/test_event_wiring.py` — handler failures are
@@ -140,6 +149,13 @@ configuration (see "Known limitations / planned hardening").
   points, subscribing their handlers) is intentionally not wired to any
   install flow yet — plugins are subscribed in-process by code, and a future
   runtime must keep capability enforcement and review in front of execution.
+- Plugins have **no outbound network capability wired up yet**. The guard in
+  `app/services/plugin_network.py` (and its allowlist policy) is the required
+  path for any future plugin-triggered request; plugin code must call
+  `guarded_request` rather than `requests` directly. The DNS-level private-IP
+  check is best-effort (a resolution failure is tolerated unless
+  `PLUGIN_NETWORK_STRICT_DNS` is set), so operators should keep the allowlist
+  narrow.
 - Global events (`github.connected`, `github.disconnected`) carry no workspace
   context and are delivered to any enabled plugin that subscribes; capability
   grants are workspace-scoped, so a per-workspace grant check does not apply to
