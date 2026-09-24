@@ -9,6 +9,10 @@ what it deliberately does **not** do, and how contributors can extend it.
 > is decoded into a structured, bounded view; anything unsupported or malformed
 > is reported explicitly and never guessed at.
 
+For an end-to-end walkthrough of using the assistant on a Soroban project
+(import → detection → analysis → scaffold), see
+[docs/soroban-workflow.md](soroban-workflow.md).
+
 ## Why an RPC layer exists
 
 Horizon gives parsed account/transaction data, but Stellar RPC is the

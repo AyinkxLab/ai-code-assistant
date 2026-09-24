@@ -258,6 +258,10 @@ flask stellar health
 flask stellar contract C…
 ```
 
+For a step-by-step walkthrough of the whole developer flow (import a Soroban
+repository → see detection → run Stellar analysis → scaffold a contract), see
+[docs/soroban-workflow.md](soroban-workflow.md).
+
 ## Stellar-aware GitHub analysis (PR and issue)
 
 The existing GitHub PR and issue AI analyses are **detection-driven** and
