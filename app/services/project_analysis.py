@@ -24,6 +24,7 @@ from app.models.workspace_member import (
 from app.services.llm import LLMProviderError, get_provider
 from app.services.permissions import assert_content_access
 from app.services.stellar_detection import (
+    _is_config_file,
     detect_stellar_network,
     detect_stellar_project,
 )
@@ -46,6 +47,7 @@ ANALYSIS_KINDS = (
     "code_review",
     "stellar",
     "stellar_security",
+    "stellar_config",
 )
 
 _PROJECT_SYSTEM = (
@@ -692,6 +694,8 @@ Base everything on the files shown and mark [CONFIRMED] vs [SUGGESTION].
         return analyze_stellar_project(project)
     elif kind == "stellar_security":
         return analyze_stellar_security(project)
+    elif kind == "stellar_config":
+        return analyze_stellar_config(project)
     else:  # dependencies
         inventory = dependency_inventory(project)
         if inventory:
@@ -1067,6 +1071,108 @@ this schema and no other keys:
         "findings_count": len(findings),
         "structured": bool(findings),
         "persisted_count": persisted_count,
+    }
+
+
+def _stellar_config_files(files) -> list[ProjectFile]:
+    """Return the detected Stellar/Soroban configuration files (bounded).
+
+    A file is a configuration file when its basename is one of the known
+    ``stellar.toml``/``soroban.toml``/``stellar.json`` forms or it lives under a
+    ``.soroban`` directory. Only files with indexed content are returned.
+    """
+    selected: list[ProjectFile] = []
+    for file in files:
+        path = getattr(file, "path", "") or ""
+        if file.content is None:
+            continue
+        if _is_config_file(path) or ".soroban" in path.lower():
+            selected.append(file)
+    selected.sort(key=lambda f: f.path)
+    return selected[:MAX_CONTEXT_FILES]
+
+
+def analyze_stellar_config(project) -> dict:
+    """Review a detected project's Stellar configuration files for consistency.
+
+    Runs only for detected Stellar/Soroban projects (fail closed otherwise) and
+    is grounded strictly in the detected configuration files. The prompt asks
+    the model to flag internal inconsistencies and obvious misconfigurations
+    (e.g. a testnet passphrase with a mainnet RPC endpoint) and to mark
+    everything ``[SUGGESTION]`` unless the file directly proves the fact.
+    """
+    _assert_accessible(project)
+    kind = "stellar_config"
+
+    files = list(project.files.all())
+    signals = detect_stellar_project(files)
+    if not signals.is_stellar:
+        return _stellar_analysis_not_applicable(kind, signals.confidence)
+
+    network_hint = detect_stellar_network(files)
+    config_files = _stellar_config_files(files)
+    config_paths = [f.path for f in config_files]
+    if not config_files:
+        return {
+            "kind": kind,
+            "detected": True,
+            "confidence": signals.confidence,
+            "is_soroban": signals.is_soroban,
+            "network": network_hint,
+            "config_files": [],
+            "analysis": (
+                "This project is detected as Stellar/Soroban, but no Stellar "
+                "configuration files (stellar.toml, soroban.toml, or a .soroban "
+                "directory) were found in the indexed files, so a configuration "
+                "review is not possible. No configuration was invented."
+            ),
+        }
+
+    structure = project_structure(project)
+    blocks = _bounded_blocks(config_files, _budget())
+    network_line = f"Configured network hint (from files): {network_hint['network'] or 'unknown'}"
+    config_lines = "\n".join(f"- {path}" for path in config_paths)
+    prompt = f"""{_context_header(project)}
+
+Detected Stellar configuration files:
+{config_lines}
+
+{network_line}
+
+{stellar_analysis_context()}
+
+Structure (sample):
+{_clip(structure, 6000)}
+
+Configuration files under review:
+{blocks or "(no configuration file contents retrieved)"}
+
+Review ONLY the Stellar/Soroban configuration files shown above for internal
+consistency and obvious misconfigurations:
+1. Network consistency: the network name/passphrase, RPC/Horizon endpoints, and
+   any declared network must all refer to the same network. Flag a testnet
+   passphrase paired with a mainnet RPC endpoint (or vice versa).
+2. Obvious misconfigurations: mainnet endpoints in a testnet/dev config,
+   placeholder or example endpoints left in place, conflicting or duplicate
+   network definitions, and malformed or missing fields for the detected format.
+3. Credentials: flag hard-coded secret keys or credentials only when they are
+   directly visible in the files.
+
+Rules:
+- Ground every statement in the files shown above and cite the file path.
+- Mark everything [SUGGESTION] unless the file directly and unambiguously
+  proves the fact, in which case mark that fact [CONFIRMED].
+- Do not invent endpoints, networks, keys, or values that are not in the files.
+- Do not claim any live network, ledger, contract, or transaction state.
+"""
+    return {
+        "kind": kind,
+        "detected": True,
+        "confidence": signals.confidence,
+        "is_soroban": signals.is_soroban,
+        "network": network_hint,
+        "config_files": config_paths,
+        "analysis": _run(prompt),
     }
 
 
