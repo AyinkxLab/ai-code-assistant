@@ -40,6 +40,10 @@ class PluginNotFoundError(ValueError):
     """Raised when a plugin id does not exist in the database."""
 
 
+class PluginDependencyResolutionError(ValueError):
+    """Raised when a plugin cannot be enabled because dependencies are unsatisfied."""
+
+
 def list_plugins() -> list[Plugin]:
     """Return all registered plugins, ordered by id."""
     return Plugin.query.order_by(Plugin.id).all()
@@ -56,13 +60,50 @@ def get_plugin(plugin_id: str) -> Plugin:
 def set_plugin_enabled(plugin_id: str, enabled: bool) -> Plugin:
     """Enable or disable a plugin (operator scope) and persist the change.
 
-    Enabling never creates capability grants; disabling never revokes them
-    (per-workspace grants are revoked only through the workspace API).
+    Enabling resolves the plugin's declared dependencies first: registered
+    plugin dependencies must exist and be enabled, and Python package
+    dependencies must be installed at a satisfying version. When resolution
+    fails the plugin stays disabled and :class:`PluginDependencyResolutionError`
+    is raised. Enabling never creates capability grants; disabling never
+    revokes them (per-workspace grants are revoked only through the workspace
+    API).
     """
     plugin = get_plugin(plugin_id)
+    if enabled:
+        resolve_plugin_dependencies(plugin)
     plugin.enabled = bool(enabled)
     db.session.commit()
     return plugin
+
+
+def resolve_plugin_dependencies(plugin: Plugin) -> None:
+    """Resolve a persisted plugin's declared dependencies.
+
+    Raises :class:`PluginDependencyResolutionError` (never mutating the plugin)
+    when a required dependency is missing, disabled, version-incompatible, or
+    cyclic. Used by the enable path and available to the HTTP API so workspace
+    enable requests surface the same clear errors.
+    """
+    from app.services.plugin_deps import DependencyResolver, PluginDependencyError, PluginRef
+
+    def _ref(plugin_id: str) -> PluginRef | None:
+        row = db.session.get(Plugin, plugin_id)
+        if row is None:
+            return None
+        return PluginRef(
+            id=row.id,
+            version=row.version,
+            enabled=row.enabled,
+            dependencies=tuple(row.dependencies or ()),
+        )
+
+    resolver = DependencyResolver(_ref)
+    try:
+        resolver.resolve(_ref(plugin.id))
+    except PluginDependencyError as exc:
+        raise PluginDependencyResolutionError(
+            f"Cannot enable plugin {plugin.id}: {exc.message}"
+        ) from exc
 
 
 def _resolve_manifest_file(path: str) -> Path:
@@ -124,11 +165,13 @@ def install_from_local_dir(path: str) -> Plugin:
 
 __all__ = [
     "ManifestValidationError",
+    "PluginDependencyResolutionError",
     "PluginError",
     "PluginManifest",
     "PluginNotFoundError",
     "get_plugin",
     "install_from_local_dir",
     "list_plugins",
+    "resolve_plugin_dependencies",
     "set_plugin_enabled",
 ]
