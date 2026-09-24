@@ -146,14 +146,24 @@ Detection metadata is attached to every import response and exposed via
 
 ### Stellar-aware AI analysis (`app/services/project_analysis.py`)
 
-Two analysis kinds: **`stellar`** (project overview for a Stellar developer)
-and **`stellar_security`** (Soroban-aware security review). Both:
+Three analysis kinds: **`stellar`** (project overview for a Stellar developer),
+**`stellar_security`** (Soroban-aware security review), and **`stellar_config`**
+(a review of the detected Stellar configuration files). All three:
 
 - Run the same content-access gate as every other analysis (owner-only,
   fails closed).
 - Report honestly when the project is not Stellar.
 - Ground claims in the indexed files, mark `[CONFIRMED]` vs `[SUGGESTION]`,
   and include an honest live-RPC availability note.
+
+`stellar_config` reviews only the detected configuration files
+(`stellar.toml`, `soroban.toml`, `stellar-config.toml`, `stellar.json`,
+`soroban.json`, and `.soroban/` files) for **internal consistency** and obvious
+misconfigurations — e.g. a testnet passphrase paired with a mainnet RPC
+endpoint, placeholder endpoints, or conflicting network definitions. It is
+gated on detection (non-Stellar projects get the honest "not applicable"
+result), and it marks everything `[SUGGESTION]` unless a file directly proves
+the fact.
 
 #### Structured findings (`app/services/stellar_findings.py`)
 
