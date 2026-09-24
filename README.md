@@ -63,6 +63,8 @@ developer tooling. This project is built incrementally across phases:
   configuration, detection, inspection, and the Stellar-aware AI analysis.
 - [Soroban / Stellar RPC](docs/soroban.md) — the read-only RPC client, its
   methods, ledger-key encoding, and security model.
+- [Soroban workflow guide](docs/soroban-workflow.md) — end-to-end walkthrough:
+  import a Soroban repo, see detection, run analysis, and scaffold a contract.
 - [Architecture](docs/architecture.md) — how the application is layered and
   how the Stellar tooling fits in.
 - [Security model](docs/security.md) — threat review and controls for the
