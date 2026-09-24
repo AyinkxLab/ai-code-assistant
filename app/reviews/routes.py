@@ -25,7 +25,7 @@ from flask import jsonify, render_template, request
 from flask_login import current_user, login_required
 
 from app.extensions import db
-from app.models import Project, Review, ReviewConfig, ReviewFinding
+from app.models import Project, Review, ReviewConfig, ReviewFinding, Workspace
 from app.models.project import STATUS_READY
 from app.models.review import (
     PROJECT_REVIEW_KINDS,
@@ -35,14 +35,16 @@ from app.models.review import (
     STATUS_FAILED,
     STATUS_RUNNING,
 )
-from app.models.review_finding import SEVERITIES
+from app.models.review_finding import CATEGORIES_BY_KIND, SEVERITIES
 from app.reviews import bp
 from app.services import metrics as metrics_service
 from app.services import reviews as reviews_service
+from app.services.events import emit_event
 from app.services.github import (
     GitHubError,
     GitHubInvalidError,
     get_github_client,
+    github_error_payload,
     pull_request_payload,
     validate_full_name,
 )
@@ -228,7 +230,7 @@ def _run_pr_review(data: dict):
     try:
         full_name = validate_full_name(data.get("repo") or "")
     except GitHubInvalidError as exc:
-        return jsonify({"error": str(exc)}), 400
+        return jsonify(github_error_payload(exc)), 400
     try:
         number = int(data.get("pr_number"))
     except (TypeError, ValueError):
@@ -240,13 +242,13 @@ def _run_pr_review(data: dict):
     try:
         client = get_github_client()
     except GitHubError as exc:
-        return jsonify({"error": str(exc)}), 400
+        return jsonify(github_error_payload(exc)), 400
 
     try:
         pr_raw = client.get_pull_request(full_name, number)
         files = client.list_pull_request_files(full_name, number)
     except GitHubError as exc:
-        return jsonify({"error": str(exc)}), 502
+        return jsonify(github_error_payload(exc)), 502
 
     pr = pull_request_payload(pr_raw)
     config = _effective_config(project) if project else _config_payload(None)
@@ -271,6 +273,12 @@ def _run_pr_review(data: dict):
     except Exception as exc:
         result = {"summary": {}, "findings": [], "raw": "", "error": str(exc)}
     _save_result(review, result, config)
+    emit_event(
+        "review.completed",
+        data={"review_id": review.id, "kind": review.kind, "status": review.status},
+        workspace_id=project.workspace_id if project else None,
+        user_id=current_user.id,
+    )
     return jsonify(review.to_dict()), 201
 
 
@@ -302,6 +310,12 @@ def _run_project_review(data: dict):
     except Exception as exc:
         result = {"summary": {}, "findings": [], "raw": "", "error": str(exc)}
     _save_result(review, result, config)
+    emit_event(
+        "review.completed",
+        data={"review_id": review.id, "kind": review.kind, "status": review.status},
+        workspace_id=project.workspace_id,
+        user_id=current_user.id,
+    )
     return jsonify(review.to_dict()), 201
 
 
@@ -327,15 +341,24 @@ def _save_result(review: Review, result: dict, config: dict) -> None:
 @bp.route("/api/reviews/<int:review_id>", methods=["GET"])
 @login_required
 def api_review_detail(review_id: int):
-    return jsonify(_get_review(review_id).to_dict())
+    review = _get_review(review_id)
+    payload = review.to_dict()
+    # Expose the category vocabulary for this review kind so the detail page can
+    # offer a category filter (#118).
+    payload["categories"] = list(CATEGORIES_BY_KIND.get(review.kind, ("other",)))
+    return jsonify(payload)
 
 
 @bp.route("/api/reviews/<int:review_id>", methods=["DELETE"])
 @login_required
 def api_delete_review(review_id: int):
+    """Delete a review and its findings (owner only; findings cascade)."""
     review = _get_review(review_id)
+    workspace_id = review.project.workspace_id if review.project_id else None
+    data = {"review_id": review.id, "kind": review.kind, "source": review.source}
     db.session.delete(review)
     db.session.commit()
+    emit_event("review.deleted", data=data, workspace_id=workspace_id, user_id=current_user.id)
     return jsonify({"ok": True})
 
 
@@ -413,6 +436,13 @@ def api_update_config(project_id: int):
 @bp.route("/api/metrics", methods=["GET"])
 @login_required
 def api_metrics():
+    """Aggregate quality metrics per workspace, project, or the current user."""
+    workspace_id = request.args.get("workspace_id", type=int)
+    if workspace_id:
+        workspace = Workspace.query.filter_by(
+            id=workspace_id, user_id=current_user.id
+        ).first_or_404()
+        return jsonify(metrics_service.workspace_metrics(workspace))
     project_id = request.args.get("project_id", type=int)
     if project_id:
         project = _get_project(project_id)

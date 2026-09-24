@@ -1,4 +1,6 @@
-"""Tests for workspace API routes: CRUD, ownership isolation, and auth."""
+"""Tests for workspace API routes: CRUD, pinning, ownership isolation, and auth."""
+
+from datetime import UTC, datetime, timedelta
 
 from app.extensions import db
 from app.models import Workspace
@@ -78,6 +80,55 @@ class TestWorkspaceCRUD:
         workspace = _create_workspace(user.id)
         assert client.get("/workspaces/").status_code == 200
         assert client.get(f"/workspaces/{workspace.id}").status_code == 200
+
+
+class TestWorkspacePin:
+    def test_toggle_pin_persists(self, client, make_user, login):
+        user = make_user()
+        login()
+        workspace = _create_workspace(user.id, "Pinnable")
+        assert workspace.to_dict()["is_pinned"] is False
+
+        response = client.patch(
+            f"/workspaces/api/workspaces/{workspace.id}",
+            json={"is_pinned": True},
+        )
+        assert response.status_code == 200
+        assert response.get_json()["is_pinned"] is True
+        assert db.session.get(Workspace, workspace.id).is_pinned is True
+
+        # Toggling back off is persisted too.
+        toggled_off = client.patch(
+            f"/workspaces/api/workspaces/{workspace.id}", json={"is_pinned": False}
+        )
+        assert toggled_off.get_json()["is_pinned"] is False
+
+    def test_pinned_workspaces_sort_first_then_recent_activity(self, client, make_user, login):
+        user = make_user()
+        login()
+        base = datetime.now(UTC)
+        pinned_old = Workspace(
+            user_id=user.id, name="PinnedOld", is_pinned=True, updated_at=base - timedelta(days=3)
+        )
+        pinned_new = Workspace(
+            user_id=user.id, name="PinnedNew", is_pinned=True, updated_at=base - timedelta(hours=2)
+        )
+        plain_new = Workspace(user_id=user.id, name="PlainNew", updated_at=base)
+        plain_old = Workspace(user_id=user.id, name="PlainOld", updated_at=base - timedelta(days=1))
+        db.session.add_all([pinned_old, pinned_new, plain_new, plain_old])
+        db.session.commit()
+
+        names = [w["name"] for w in client.get("/workspaces/api/workspaces").get_json()]
+        assert names == ["PinnedNew", "PinnedOld", "PlainNew", "PlainOld"]
+
+    def test_dashboard_renders_pin_control(self, client, make_user, login):
+        user = make_user()
+        login()
+        workspace = _create_workspace(user.id, "Pinnable")
+        html = client.get("/workspaces/").get_data(as_text=True)
+        assert 'data-action="toggle-pin"' in html
+        assert f'data-id="{workspace.id}"' in html
+        assert 'data-pinned="false"' in html
 
 
 class TestOwnershipIsolation:

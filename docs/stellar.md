@@ -204,15 +204,22 @@ Display in the project developer panel is handled by the results-panel UI.
 ### CLI (`flask stellar …`)
 
 `flask stellar network`, `validate <address>`, `account <address>`, `health`,
-`contract <id>`, `ledger-entry <key>` — all read-only and scriptable:
+`contract <id>`, `ledger-entry <key>`, `config` — all read-only and scriptable:
 
 - Add `--json` to any command for a stable, parseable JSON document
-  (network info, validation result, account, health, contract, or ledger
-  entry). Human-readable output is the default and is unchanged.
+  (network info, validation result, account, health, contract, ledger entry, or
+  generated config). Human-readable output is the default and is unchanged.
+- `flask stellar config [--network <net>] [--path <path>] [--overwrite]
+  [--existing <path>]` generates a reviewable `.soroban/config.toml` for the
+  selected network (testnet/mainnet/futurenet/custom) from the app's validated
+  presets. It writes no files, emits no secrets, and refuses to overwrite a path
+  listed via `--existing` unless `--overwrite` is passed. The format is the same
+  one the scaffold and detector already understand, so the output round-trips
+  through detection.
 - Errors are printed to stderr and never leak stack traces; when `--json` is
   given the error is emitted as a JSON object with an `error` message.
 - Exit codes are documented: `0` success, `2` service error / not found /
-  RPC unreachable, `3` invalid input (address/contract/key/hash).
+  RPC unreachable, `3` invalid input (address/contract/key/hash/network).
 
 ## Endpoint safety
 

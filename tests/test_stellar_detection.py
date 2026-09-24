@@ -5,6 +5,7 @@ from types import SimpleNamespace
 from app.services.stellar_detection import (
     SOROBAN_CRATES,
     STELLAR_SDK_DEPENDENCIES,
+    contract_entry_point,
     detect_stellar_project,
     project_stellar_metadata,
 )
@@ -147,3 +148,50 @@ class TestMetadata:
         meta = project_stellar_metadata(FakeProject())
         assert meta["is_stellar"] is True
         assert "stellar.toml" in meta["network_files"]
+
+
+class TestContractEntryPoint:
+    def test_prefers_contracts_workspace_layout(self):
+        files = [
+            _file("src/lib.rs"),
+            _file("contracts/token/src/lib.rs"),
+            _file("contracts/amm/src/lib.rs"),
+        ]
+        assert contract_entry_point(files) == "contracts/amm/src/lib.rs"
+
+    def test_falls_back_to_top_level_lib(self):
+        files = [_file("src/main.rs"), _file("src/lib.rs")]
+        assert contract_entry_point(files) == "src/lib.rs"
+
+    def test_returns_none_without_lib(self):
+        assert contract_entry_point([_file("src/main.rs")]) is None
+
+    def test_accepts_path_strings(self):
+        assert contract_entry_point(["contracts/x/src/lib.rs"]) == "contracts/x/src/lib.rs"
+
+    def test_metadata_exposes_entry_point_for_soroban_workspace(self):
+        class FakeProject:
+            def __init__(self):
+                self.files = [
+                    SimpleNamespace(
+                        path="Cargo.toml",
+                        content="[dependencies]\nsoroban-sdk='21.0.0'\n",
+                    ),
+                    SimpleNamespace(
+                        path="contracts/token/src/lib.rs",
+                        content="use soroban_sdk::contract;\n",
+                    ),
+                ]
+
+        meta = project_stellar_metadata(FakeProject())
+        assert meta["is_soroban"] is True
+        assert meta["contract_entry_point"] == "contracts/token/src/lib.rs"
+
+    def test_metadata_omits_entry_point_for_non_soroban(self):
+        class FakeProject:
+            def __init__(self):
+                self.files = [SimpleNamespace(path="stellar.toml", content="[NETWORK_TESTNET]")]
+
+        meta = project_stellar_metadata(FakeProject())
+        assert meta["is_stellar"] is True
+        assert "contract_entry_point" not in meta

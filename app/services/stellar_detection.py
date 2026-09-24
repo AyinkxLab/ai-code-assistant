@@ -24,6 +24,7 @@ live data.
 
 from __future__ import annotations
 
+import re
 from collections.abc import Iterable
 from dataclasses import dataclass, field
 from typing import Any
@@ -96,6 +97,12 @@ _CLI_COMMAND_MARKERS = (
     "stellar-cli",
 )
 _CONTRACT_DIR_PREFIXES = ("contracts/", "src/contracts/", "contract/")
+#: Likely Rust contract entry points, most specific first (#205).
+_CONTRACT_ENTRY_PATTERNS = (
+    re.compile(r"^contracts/[^/]+/src/lib\.rs$"),
+    re.compile(r"^src/contracts/[^/]+/src/lib\.rs$"),
+)
+_CONTRACT_ENTRY_FALLBACK = "src/lib.rs"
 _MANIFEST_NAMES = {
     "cargo.toml",
     "package.json",
@@ -423,6 +430,27 @@ def detect_stellar_project(files: Iterable[Any]) -> StellarSignals:
     return signals
 
 
+def contract_entry_point(paths: Iterable[Any]) -> str | None:
+    """Return the likely Soroban contract entry point, or ``None``.
+
+    Prefers the first ``contracts/*/src/lib.rs`` (workspace layout), then
+    ``src/contracts/*/src/lib.rs``, and finally a top-level ``src/lib.rs``.
+    Accepts path strings or objects exposing a ``path`` attribute.
+    """
+    candidates: list[str] = []
+    for item in paths:
+        path = item if isinstance(item, str) else getattr(item, "path", "")
+        if path:
+            candidates.append(path)
+    for pattern in _CONTRACT_ENTRY_PATTERNS:
+        matches = sorted(path for path in candidates if pattern.match(path))
+        if matches:
+            return matches[0]
+    if _CONTRACT_ENTRY_FALLBACK in candidates:
+        return _CONTRACT_ENTRY_FALLBACK
+    return None
+
+
 def project_stellar_metadata(project) -> dict[str, Any]:
     """Return a dict of Stellar metadata for an indexed project (bounded)."""
     files = list(project.files.all()) if hasattr(project.files, "all") else list(project.files)
@@ -437,6 +465,10 @@ def project_stellar_metadata(project) -> dict[str, Any]:
                 or ".soroban" in (getattr(f, "path", "") or "").lower()
             )
         ][:20]
+    if signals.is_soroban:
+        entry = contract_entry_point(files)
+        if entry:
+            metadata["contract_entry_point"] = entry
     return metadata
 
 

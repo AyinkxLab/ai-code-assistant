@@ -1,0 +1,14 @@
+{
+  "id": "hello-world",
+  "name": "Hello World",
+  "version": "0.1.0",
+  "description": "Minimal example plugin that records project.created events.",
+  "author": "AI Code Assistant contributors",
+  "entry_point": "hello_world.plugin:HelloWorldPlugin",
+  "compatibility": ">=0.1.0",
+  "capabilities": ["PROJECT_READ"],
+  "permissions": ["read:project:files"],
+  "configuration": {
+    "greeting": "Hello from the hello-world plugin"
+  }
+}

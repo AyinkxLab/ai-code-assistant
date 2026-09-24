@@ -13,10 +13,11 @@
 
 <div id="workspace-grid" class="workspace-grid">
   {% for workspace in workspaces %}
-    <a class="workspace-card" href="{{ url_for('workspaces.detail', workspace_id=workspace.id) }}">
+    <a class="workspace-card{{ ' is-pinned' if workspace.is_pinned else '' }}" href="{{ url_for('workspaces.detail', workspace_id=workspace.id) }}" data-id="{{ workspace.id }}" data-pinned="{{ 'true' if workspace.is_pinned else 'false' }}">
       <div class="workspace-card-header">
         <h3 class="workspace-name">{{ workspace.name }}</h3>
         <span class="tag">{{ workspace.project_count }} project{{ '' if workspace.project_count == 1 else 's' }}</span>
+        <button class="workspace-pin{{ ' active' if workspace.is_pinned else '' }}" type="button" data-action="toggle-pin" title="{{ 'Unpin workspace' if workspace.is_pinned else 'Pin workspace' }}" aria-pressed="{{ 'true' if workspace.is_pinned else 'false' }}">{{ '★' if workspace.is_pinned else '☆' }}</button>
       </div>
       {% if workspace.description %}
         <p class="workspace-description">{{ workspace.description }}</p>

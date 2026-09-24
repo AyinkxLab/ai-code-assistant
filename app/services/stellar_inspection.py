@@ -19,6 +19,8 @@ unavailable RPC as authoritative data.
 
 from __future__ import annotations
 
+import base64
+import binascii
 from typing import Any
 
 from app.services.soroban_rpc import (
@@ -55,6 +57,31 @@ def _clip(value: str | None, limit: int = MAX_XDR_CHARS) -> str | None:
 def _decode_entry_xdr(raw_xdr: str | None) -> dict[str, Any]:
     """Decode an RPC entry's ``xdr`` (a ``LedgerEntryData``) without raising."""
     return decode_ledger_entry_data(raw_xdr or "")
+
+
+def _decode_manage_data_value(raw_value: str | None) -> str | None:
+    """Best-effort decode of a manage-data base64 value to readable text.
+
+    Horizon returns account ``data`` entries as base64-encoded bytes. Decode
+    only when the value is valid base64 and decodes to UTF-8 text; otherwise
+    return ``None`` so the caller keeps showing the raw value (never guessed
+    at). Binary or malformed values are left as-is.
+    """
+    if not isinstance(raw_value, str) or not raw_value.strip():
+        return None
+    try:
+        decoded = base64.b64decode(raw_value, validate=True)
+    except (ValueError, binascii.Error):
+        return None
+    if not decoded:
+        return None
+    try:
+        text = decoded.decode("utf-8")
+    except UnicodeDecodeError:
+        return None
+    if all(char.isprintable() or char in "\n\r\t" for char in text):
+        return text
+    return None
 
 
 # ---------------------------------------------------------------------------
@@ -113,6 +140,16 @@ def inspect_account(
     account = service.get_account(address)
     transactions = service.get_account_transactions(address, limit=20)
 
+    manage_data: list[dict[str, Any]] = []
+    for key, raw_value in (account.get("data") or {}).items():
+        manage_data.append(
+            {
+                "key": key,
+                "value": raw_value,
+                "decoded_text": _decode_manage_data_value(raw_value),
+            }
+        )
+
     ledger: dict[str, Any] = {}
     ledger_available = False
     if rpc is not None:
@@ -126,6 +163,7 @@ def inspect_account(
         "address": address,
         "network": service.config.to_dict(),
         "account": account,
+        "manage_data": manage_data,
         "transactions": transactions,
         "ledger_freshness": {
             "available": ledger_available,

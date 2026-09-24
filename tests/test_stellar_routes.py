@@ -97,8 +97,9 @@ class TestAccountEndpoint:
                     "balances": [],
                     "flags": {},
                     "signers": [],
-                    "data": {},
+                    "data": {"project": "YWk="},
                 },
+                "manage_data": [{"key": "project", "value": "YWk=", "decoded_text": "ai"}],
                 "ledger_freshness": {"available": False},
                 "transactions": {"records": [], "next": None},
             },
@@ -107,6 +108,40 @@ class TestAccountEndpoint:
         assert response.status_code == 200
         payload = response.get_json()
         assert payload["account"]["sequence"] == "1"
+        assert payload["transactions"]["records"] == []
+        assert payload["manage_data"][0]["decoded_text"] == "ai"
+
+    def test_empty_state_keeps_dashboard_sections_empty(
+        self, client, make_user, login, monkeypatch
+    ):
+        # Empty trustlines/signers/data/transactions must still yield a valid
+        # dashboard contract (the panel renders empty states).
+        make_user()
+        login()
+        monkeypatch.setattr(
+            "app.stellar.routes.inspect_account",
+            lambda address: {
+                "address": address,
+                "network": {"network": "testnet"},
+                "account": {
+                    "sequence": "1",
+                    "balances": [],
+                    "flags": {},
+                    "signers": [],
+                    "data": {},
+                },
+                "manage_data": [],
+                "ledger_freshness": {"available": False},
+                "transactions": {"records": [], "next": None},
+            },
+        )
+        response = client.get(f"/stellar/api/account?address={VALID_ADDRESS}")
+        assert response.status_code == 200
+        payload = response.get_json()
+        assert payload["account"]["balances"] == []
+        assert payload["account"]["flags"] == {}
+        assert payload["account"]["signers"] == []
+        assert payload["manage_data"] == []
         assert payload["transactions"]["records"] == []
 
 

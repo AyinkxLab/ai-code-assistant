@@ -21,7 +21,12 @@ from app.models.review import (
     STATUS_COMPLETED,
     STATUS_RUNNING,
 )
-from app.models.review_finding import CONFIDENCES, PR_CATEGORIES, SEVERITIES
+from app.models.review_finding import (
+    CONFIDENCES,
+    PR_CATEGORIES,
+    SEVERITIES,
+    confidence_label,
+)
 from app.models.workspace_member import ROLE_CONTRIBUTOR, ROLE_VIEWER, VALID_ROLES
 
 
@@ -139,6 +144,31 @@ class TestReviewFindingModel:
         assert "critical" in SEVERITIES
         assert "tests" in PR_CATEGORIES
         assert "suggestion" in CONFIDENCES
+
+    def test_finding_confidence_label(self, app):
+        assert confidence_label("confirmed") == "[CONFIRMED]"
+        assert confidence_label("potential") == "[SUGGESTION]"
+        assert confidence_label("suggestion") == "[SUGGESTION]"
+        assert confidence_label(None) == "[SUGGESTION]"
+
+        confirmed = ReviewFinding(
+            review_id=1,
+            severity="high",
+            category="bug",
+            explanation="e",
+            confidence="confirmed",
+        )
+        assert confirmed.confidence_label == "[CONFIRMED]"
+        assert confirmed.to_dict()["confidence_label"] == "[CONFIRMED]"
+
+        inferred = ReviewFinding(
+            review_id=1,
+            severity="low",
+            category="other",
+            explanation="e",
+            confidence="potential",
+        )
+        assert inferred.confidence_label == "[SUGGESTION]"
 
     def test_findings_cascade_with_review(self, app):
         user = _make_user()

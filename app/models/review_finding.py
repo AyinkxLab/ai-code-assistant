@@ -48,7 +48,10 @@ SECURITY_CATEGORIES = (
     "other",
 )
 TEST_CATEGORIES = (
+    "coverage-gap",
     "missing-tests",
+    "missing-assertion",
+    "flaky-test",
     "edge-case",
     "weak-coverage",
     "outdated-test",
@@ -57,6 +60,20 @@ TEST_CATEGORIES = (
 )
 
 CONFIDENCES = ("confirmed", "potential", "suggestion")
+
+# Human-facing label for each confidence level (#111): a finding the code proves
+# is [CONFIRMED]; anything inferred or uncertain is [SUGGESTION].
+CONFIDENCE_LABELS = {
+    "confirmed": "[CONFIRMED]",
+    "potential": "[SUGGESTION]",
+    "suggestion": "[SUGGESTION]",
+}
+
+
+def confidence_label(confidence: str | None) -> str:
+    """Return the ``[CONFIRMED]``/``[SUGGESTION]`` label for a confidence value."""
+    return CONFIDENCE_LABELS.get((confidence or "").strip().lower(), "[SUGGESTION]")
+
 
 CATEGORIES_BY_KIND = {
     "pr": PR_CATEGORIES,
@@ -89,6 +106,11 @@ class ReviewFinding(db.Model):
 
     review = db.relationship("Review", back_populates="findings")
 
+    @property
+    def confidence_label(self) -> str:
+        """The ``[CONFIRMED]``/``[SUGGESTION]`` label for this finding."""
+        return confidence_label(self.confidence)
+
     def to_dict(self) -> dict:
         """Serialize the finding for JSON API responses."""
         return {
@@ -101,6 +123,7 @@ class ReviewFinding(db.Model):
             "explanation": self.explanation,
             "recommendation": self.recommendation,
             "confidence": self.confidence,
+            "confidence_label": self.confidence_label,
             "addressed": bool(self.addressed),
             "created_at": self.created_at.isoformat() if self.created_at else None,
         }

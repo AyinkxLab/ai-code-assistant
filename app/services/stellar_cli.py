@@ -3,6 +3,7 @@
 Usage (inside an app context provided by Flask):
 
     flask stellar network [--json]
+    flask stellar config [--network <net>] [--path <path>] [--overwrite] [--json]
     flask stellar validate <address> [--json]
     flask stellar account <address> [--json]
     flask stellar health [--json]
@@ -98,6 +99,59 @@ def register_stellar_cli(app: Flask) -> None:
         click.echo(f"horizon: {info['horizon_url']}")
         click.echo(f"rpc: {info['rpc_url'] or '(none)'}")
         click.echo(f"timeout_seconds: {info['timeout_seconds']}")
+
+    @stellar_group.command("config")
+    @click.option(
+        "--network",
+        default=None,
+        callback=_configure_client,
+        help="Network to generate config for (testnet/mainnet/futurenet/custom).",
+    )
+    @click.option(
+        "--path",
+        "target_path",
+        default=".soroban/config.toml",
+        show_default=True,
+        help="Target path recorded in the generated row.",
+    )
+    @click.option(
+        "--overwrite",
+        is_flag=True,
+        default=False,
+        help="Allow replacing --path when it is listed as existing.",
+    )
+    @click.option(
+        "--existing",
+        "existing",
+        multiple=True,
+        help="Existing project path (repeatable) that must not be overwritten.",
+    )
+    @click.option("--json", "as_json", is_flag=True, help="Emit machine-readable JSON.")
+    def stellar_config(
+        network: str | None,
+        target_path: str,
+        overwrite: bool,
+        existing: tuple[str, ...],
+        as_json: bool,
+    ) -> None:
+        """Generate a read-only Soroban network config (no files are written)."""
+        from app.services.stellar import StellarError
+        from app.services.stellar_config import StellarConfigError, generate_config_file
+
+        try:
+            row = generate_config_file(
+                network,
+                existing_paths=list(existing),
+                target_path=target_path,
+                overwrite=overwrite,
+            )
+        except (StellarConfigError, StellarError) as exc:
+            _fail(str(exc), EXIT_VALIDATION, as_json=as_json)
+        if as_json:
+            _emit_json({"path": row["path"], "content": row["content"]})
+            return
+        click.echo(f"# {row['path']}")
+        click.echo(row["content"], nl=False)
 
     @stellar_group.command("validate")
     @click.argument("address")

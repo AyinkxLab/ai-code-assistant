@@ -149,8 +149,20 @@
     });
     var flags = account.flags || {};
     var signers = account.signers || [];
-    var dataEntries = account.data || {};
+    var dataEntries = Array.isArray(data.manage_data)
+      ? data.manage_data
+      : Object.keys(account.data || {}).map(function (key) {
+          return { key: key, value: account.data[key], decoded_text: undefined };
+        });
     var transactions = (data.transactions && data.transactions.records) || [];
+    var networkName = (data.network && data.network.network) || "";
+
+    if (networkName) {
+      html +=
+        '<p class="stellar-account-network"><span class="tag tag-confirmed">' +
+        esc(networkName) +
+        "</span></p>";
+    }
 
     html += kvList([
       ["Address", data.address || ""],
@@ -190,9 +202,19 @@
       html += "</tr></thead><tbody>";
       trustlines.forEach(function (balance) {
         var asset = balance.asset_code || balance.asset_type || "Unknown asset";
-        var authorization = balance.is_authorized === undefined
-          ? "not reported"
-          : balance.is_authorized ? "authorized" : "unauthorized";
+        var authorization;
+        if (balance.is_authorized === undefined) {
+          authorization = "not reported";
+        } else {
+          authorization = balance.is_authorized ? "authorized" : "unauthorized";
+          if (balance.is_authorized_to_maintain_liabilities !== undefined) {
+            authorization +=
+              " · " +
+              (balance.is_authorized_to_maintain_liabilities
+                ? "maintains liabilities"
+                : "no liabilities");
+          }
+        }
         html +=
           "<tr><td><code>" + esc(asset) + "</code><br><small>" +
           esc(balance.asset_issuer || "") + "</small></td><td>" +
@@ -226,10 +248,17 @@
     }
 
     html += '<h4 class="metric-title">Manage-data entries</h4>';
-    if (Object.keys(dataEntries).length) {
+    if (dataEntries.length) {
       html += '<ul class="metric-list">';
-      Object.keys(dataEntries).forEach(function (key) {
-        html += "<li><code>" + esc(key) + "</code> — " + esc(dataEntries[key]) + "</li>";
+      dataEntries.forEach(function (entry) {
+        var label = entry.key || "";
+        if (entry.decoded_text) {
+          html +=
+            "<li><code>" + esc(label) + "</code> — " + esc(entry.decoded_text) +
+            " <small>(base64: " + esc(entry.value) + ")</small></li>";
+        } else {
+          html += "<li><code>" + esc(label) + "</code> — " + esc(entry.value) + "</li>";
+        }
       });
       html += "</ul>";
     } else {
@@ -358,6 +387,15 @@
     var network = data && data.network && data.network.network;
     if (network) {
       html += kvList([["Network hint", network]]);
+    }
+    if (data && data.contract_entry_point) {
+      html +=
+        '<h4 class="metric-title">Contract entry point</h4>' +
+        '<p><a class="stellar-file-link" href="#" data-stellar-path="' +
+        esc(data.contract_entry_point) +
+        '">' +
+        esc(data.contract_entry_point) +
+        "</a></p>";
     }
     if (data && data.evidence && data.evidence.length) {
       html += '<h4 class="metric-title">Evidence</h4><ul class="metric-list">';

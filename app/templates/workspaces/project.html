@@ -53,13 +53,24 @@
     <div id="tab-search" class="project-tab" hidden>
       <div class="repo-toolbar">
         <input id="search-query" class="sidebar-search" type="search" placeholder="Search file names and contents...">
+        <select id="search-scope" class="prompt-filter" aria-label="Search scope">
+          <option value="all">Names + contents</option>
+          <option value="path">Names only</option>
+          <option value="content">Contents only</option>
+        </select>
+        <input id="search-language" class="sidebar-search" type="text" placeholder="Language (e.g. python)">
         <label class="checkbox"><input type="checkbox" id="search-case"> Case sensitive</label>
+        <label class="checkbox"><input type="checkbox" id="search-regex"> Regex</label>
         <button id="search-run" class="btn btn-primary btn-sm" type="button">Search</button>
       </div>
       <div id="search-results" class="search-results"><p class="sidebar-empty">Enter a query to search the project.</p></div>
     </div>
 
     <div id="tab-chat" class="project-tab" hidden>
+      <div id="review-summary" class="review-summary collab-panel">
+        <h3>Review threads</h3>
+        <p class="sidebar-empty">Loading review threads…</p>
+      </div>
       <div id="project-chat-messages" class="chat-messages project-chat-messages">
         <div class="chat-placeholder">
           <p>Ask questions about this project. The assistant retrieves a bounded slice of context before answering.</p>

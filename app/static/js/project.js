@@ -11,6 +11,7 @@
   var chatMessagesEl = document.getElementById("project-chat-messages");
   var chatInputEl = document.getElementById("project-chat-input");
   var chatSendBtn = document.getElementById("project-chat-send");
+  var reviewSummaryEl = document.getElementById("review-summary");
   var streaming = false;
   var chatLoaded = false;
 
@@ -141,7 +142,10 @@
     ["files", "search", "chat", "analysis", "stats", "stellar", "discussion"].forEach(function (key) {
       document.getElementById("tab-" + key).hidden = key !== name;
     });
-    if (name === "chat" && !chatLoaded) loadChatHistory();
+    if (name === "chat") {
+      if (!chatLoaded) loadChatHistory();
+      loadReviewSummary();
+    }
     if (name === "stats") loadStats();
     if (name === "stellar") loadStellar();
     if (name === "discussion") loadComments();
@@ -250,14 +254,24 @@
   function runSearch() {
     var query = document.getElementById("search-query").value.trim();
     var caseSensitive = document.getElementById("search-case").checked;
+    var regex = document.getElementById("search-regex").checked;
+    var scopeEl = document.getElementById("search-scope");
+    var languageEl = document.getElementById("search-language");
     var resultsEl = document.getElementById("search-results");
     if (!query) {
       resultsEl.innerHTML = '<p class="sidebar-empty">Enter a query to search the project.</p>';
       return;
     }
     resultsEl.innerHTML = '<p class="sidebar-empty">Searching...</p>';
-    var url = "/workspaces/api/projects/" + PROJECT_ID + "/search?q=" + encodeURIComponent(query);
-    if (caseSensitive) url += "&case=1";
+    var params = ["q=" + encodeURIComponent(query)];
+    if (caseSensitive) params.push("case=1");
+    if (regex) params.push("regex=1");
+    if (scopeEl && scopeEl.value && scopeEl.value !== "all") {
+      params.push("scope=" + encodeURIComponent(scopeEl.value));
+    }
+    var language = languageEl ? languageEl.value.trim() : "";
+    if (language) params.push("language=" + encodeURIComponent(language));
+    var url = "/workspaces/api/projects/" + PROJECT_ID + "/search?" + params.join("&");
     api(url)
       .then(function (data) {
         resultsEl.innerHTML = "";
@@ -286,7 +300,7 @@
 
   // ----------------------------------------------------------------- chat
 
-  function addChatMessage(role, content, asMarkdown) {
+  function addChatMessage(role, content, asMarkdown, messageId) {
     var el = document.createElement("div");
     el.className = "chat-message chat-" + role;
     var label = role === "user" ? "You" : "Assistant";
@@ -295,9 +309,25 @@
       '<div class="message-body">' +
       (role === "user" || !asMarkdown ? escapeHtml(content) : renderMarkdown(content)) +
       "</div>";
+    if (role === "assistant" && messageId != null) {
+      el.__reviewContent = content;
+      attachReviewFooter(el, messageId);
+    }
     chatMessagesEl.appendChild(el);
     scrollChat();
     return el;
+  }
+
+  function attachReviewFooter(messageEl, messageId) {
+    if (messageEl.querySelector(".message-review")) return;
+    messageEl.setAttribute("data-message-id", messageId);
+    var footer = document.createElement("div");
+    footer.className = "message-review";
+    footer.innerHTML =
+      '<button class="btn btn-ghost btn-sm message-review-toggle" type="button">' +
+      "Inline review comments</button>" +
+      '<div class="message-review-panel" hidden></div>';
+    messageEl.appendChild(footer);
   }
 
   function addTypingIndicator() {
@@ -315,7 +345,12 @@
       .then(function (messages) {
         chatMessagesEl.innerHTML = "";
         messages.forEach(function (message) {
-          addChatMessage(message.role, message.content, true);
+          addChatMessage(
+            message.role,
+            message.content,
+            true,
+            message.role === "assistant" ? message.id : null
+          );
         });
         if (!messages.length) {
           chatMessagesEl.innerHTML =
@@ -392,6 +427,10 @@
             flashError(payload.error);
           } else if (payload.type === "done") {
             streamBody.innerHTML = renderMarkdown(payload.message.content);
+            if (payload.message && payload.message.id != null) {
+              typing.__reviewContent = payload.message.content;
+              attachReviewFooter(typing, payload.message.id);
+            }
             scrollChat();
           }
         });
@@ -460,6 +499,27 @@
             html += "<li><code>" + escapeHtml(path) + "</code></li>";
           });
           html += "</ul>";
+        }
+        var coverage = data.coverage_estimate;
+        if (coverage) {
+          html += '<h3 class="metric-title">Coverage (estimated)</h3>';
+          html += '<p class="field-hint">' + escapeHtml(coverage.note) + "</p>";
+          html += '<div class="metric-grid">';
+          html += metric("Estimate", (coverage.ratio * 100).toFixed(1) + "%");
+          html += metric("Test files", coverage.test_file_count);
+          html += metric("Source files", coverage.source_file_count);
+          html += metric("Signal", coverage.label);
+          html += "</div>";
+        }
+        if (data.ci_files && data.ci_files.length) {
+          html += '<h3 class="metric-title">CI configuration</h3><ul class="metric-list">';
+          data.ci_files.forEach(function (path) {
+            html += "<li><code>" + escapeHtml(path) + "</code></li>";
+          });
+          html += "</ul>";
+        } else {
+          html += '<h3 class="metric-title">CI configuration</h3>';
+          html += '<p class="sidebar-empty">No CI configuration detected.</p>';
         }
         output.innerHTML = html;
       })
@@ -630,6 +690,264 @@
         btn.disabled = false;
       });
   }
+
+  // ------------------------------------------------- inline review comments
+
+  function countCodeBlocks(content) {
+    var matches = (content || "").match(/```/g);
+    return matches ? Math.floor(matches.length / 2) : 0;
+  }
+
+  function anchorText(comment) {
+    if (comment.block_index == null && comment.line_start == null) return "whole message";
+    var parts = [];
+    if (comment.block_index != null) parts.push("code block " + (comment.block_index + 1));
+    if (comment.line_start != null) {
+      parts.push(
+        "line " + comment.line_start +
+        (comment.line_end && comment.line_end !== comment.line_start ? "-" + comment.line_end : "")
+      );
+    }
+    return parts.join(" · ");
+  }
+
+  function reviewCommentUrl(messageId, commentId) {
+    var base =
+      "/workspaces/api/projects/" + PROJECT_ID + "/messages/" + messageId + "/review-comments";
+    return commentId == null ? base : base + "/" + commentId;
+  }
+
+  function metricPill(value, label) {
+    return (
+      '<div class="metric-card"><span class="metric-value">' + value +
+      '</span><span class="metric-label">' + label + "</span></div>"
+    );
+  }
+
+  function threadHtml(thread) {
+    var resolved = thread.resolved;
+    var html =
+      '<div class="review-thread' + (resolved ? " review-thread-resolved" : "") +
+      '" data-comment-id="' + thread.id + '">' +
+      '<div class="review-thread-head">' +
+      '<span class="review-anchor">' + escapeHtml(anchorText(thread)) + "</span>" +
+      '<span class="tag ' + (resolved ? "tag-confirmed" : "tag-suggestion") + '">' +
+      (resolved ? "resolved" : "open") + "</span>" +
+      '<button class="btn btn-ghost btn-sm review-resolve" type="button" data-resolved="' +
+      (resolved ? "0" : "1") + '">' + (resolved ? "Reopen" : "Resolve") + "</button>" +
+      '<button class="btn btn-ghost btn-sm review-delete" type="button">Delete</button>' +
+      "</div>" +
+      '<div class="review-comment">' + renderInline(thread.body) +
+      ' <span class="review-author">— ' + escapeHtml(thread.author_username || "unknown") +
+      "</span></div>";
+    (thread.replies || []).forEach(function (reply) {
+      html +=
+        '<div class="review-comment review-reply" data-comment-id="' + reply.id + '">' +
+        renderInline(reply.body) +
+        ' <span class="review-author">— ' + escapeHtml(reply.author_username || "unknown") +
+        '</span> <button class="btn btn-ghost btn-sm review-delete" type="button">Delete</button>' +
+        "</div>";
+    });
+    html +=
+      '<div class="review-reply-box">' +
+      '<input class="review-reply-input" type="text" maxlength="4000" placeholder="Reply...">' +
+      '<button class="btn btn-ghost btn-sm review-reply-btn" type="button">Reply</button>' +
+      "</div></div>";
+    return html;
+  }
+
+  function renderMessageReview(messageEl, messageId) {
+    var panel = messageEl.querySelector(".message-review-panel");
+    if (!panel) return;
+    var content = messageEl.__reviewContent || "";
+    api(reviewCommentUrl(messageId))
+      .then(function (data) {
+        var threads = data.items || [];
+        var html = "";
+        if (!threads.length) {
+          html += '<p class="sidebar-empty">No inline comments yet.</p>';
+        } else {
+          threads.forEach(function (thread) {
+            html += threadHtml(thread);
+          });
+        }
+        var blockCount = countCodeBlocks(content);
+        html +=
+          '<div class="review-composer">' +
+          '<textarea class="review-composer-input" rows="2" maxlength="4000" ' +
+          'placeholder="Add a review comment... @username to mention"></textarea>' +
+          '<div class="review-composer-controls">' +
+          '<select class="review-block-select"><option value="">Whole message</option>';
+        for (var i = 0; i < blockCount; i++) {
+          html += '<option value="' + i + '">Code block ' + (i + 1) + "</option>";
+        }
+        html +=
+          "</select>" +
+          '<input class="review-line-start" type="number" min="1" placeholder="start line">' +
+          '<input class="review-line-end" type="number" min="1" placeholder="end line">' +
+          '<button class="btn btn-primary btn-sm review-composer-btn" type="button">Comment</button>' +
+          "</div></div>";
+        panel.innerHTML = html;
+      })
+      .catch(function (error) {
+        panel.innerHTML = '<p class="sidebar-empty">' + escapeHtml(error.message) + "</p>";
+      });
+  }
+
+  function loadReviewSummary() {
+    if (!reviewSummaryEl) return;
+    api("/workspaces/api/projects/" + PROJECT_ID + "/review-summary")
+      .then(function (summary) {
+        if (!summary.total) {
+          reviewSummaryEl.innerHTML =
+            '<h3>Review threads</h3><p class="sidebar-empty">No inline review threads yet. ' +
+            "Open an assistant message to add one.</p>";
+          return;
+        }
+        var html = "<h3>Review threads</h3><div class='metric-grid'>" +
+          metricPill(summary.open, "open") +
+          metricPill(summary.resolved, "resolved") +
+          metricPill(summary.total, "total") +
+          "</div>";
+        summary.threads.forEach(function (thread) {
+          html +=
+            '<div class="review-summary-row">' +
+            '<span class="tag ' + (thread.resolved ? "tag-confirmed" : "tag-suggestion") + '">' +
+            (thread.resolved ? "resolved" : "open") + "</span> " +
+            '<a href="#" class="review-summary-jump" data-message-id="' + thread.message_id + '">' +
+            escapeHtml(anchorText(thread)) + "</a> " +
+            '<span class="review-author">' + escapeHtml(thread.author_username || "unknown") +
+            " &middot; " + (thread.reply_count || 0) +
+            " repl" + (thread.reply_count === 1 ? "y" : "ies") + "</span></div>";
+        });
+        reviewSummaryEl.innerHTML = html;
+      })
+      .catch(function () {
+        reviewSummaryEl.innerHTML =
+          '<h3>Review threads</h3><p class="sidebar-empty">Review threads unavailable.</p>';
+      });
+  }
+
+  function reloadMessageReview(messageEl) {
+    renderMessageReview(messageEl, messageEl.getAttribute("data-message-id"));
+  }
+
+  document.addEventListener("click", function (event) {
+    var toggle = event.target.closest(".message-review-toggle");
+    if (toggle) {
+      var messageEl = toggle.closest(".chat-message");
+      var panel = toggle.closest(".message-review").querySelector(".message-review-panel");
+      if (panel.hidden) {
+        panel.hidden = false;
+        renderMessageReview(messageEl, messageEl.getAttribute("data-message-id"));
+      } else {
+        panel.hidden = true;
+      }
+      return;
+    }
+
+    var composerBtn = event.target.closest(".review-composer-btn");
+    if (composerBtn) {
+      var panelC = composerBtn.closest(".message-review-panel");
+      var msgEl = composerBtn.closest(".chat-message");
+      var input = panelC.querySelector(".review-composer-input");
+      var body = input.value.trim();
+      if (!body) {
+        input.focus();
+        return;
+      }
+      var payload = { body: body };
+      var blockSel = panelC.querySelector(".review-block-select");
+      if (blockSel && blockSel.value !== "") payload.block_index = parseInt(blockSel.value, 10);
+      var lineStart = panelC.querySelector(".review-line-start");
+      var lineEnd = panelC.querySelector(".review-line-end");
+      if (lineStart && lineStart.value) payload.line_start = parseInt(lineStart.value, 10);
+      if (lineEnd && lineEnd.value) payload.line_end = parseInt(lineEnd.value, 10);
+      composerBtn.disabled = true;
+      api(reviewCommentUrl(msgEl.getAttribute("data-message-id")), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      }).then(function () {
+        reloadMessageReview(msgEl);
+        loadReviewSummary();
+      }).catch(function (error) {
+        flashError(error.message);
+        composerBtn.disabled = false;
+      });
+      return;
+    }
+
+    var replyBtn = event.target.closest(".review-reply-btn");
+    if (replyBtn) {
+      var thread = replyBtn.closest(".review-thread");
+      var msgEl2 = replyBtn.closest(".chat-message");
+      var replyInput = thread.querySelector(".review-reply-input");
+      var replyBody = replyInput.value.trim();
+      if (!replyBody) {
+        replyInput.focus();
+        return;
+      }
+      replyBtn.disabled = true;
+      api(reviewCommentUrl(msgEl2.getAttribute("data-message-id")), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          body: replyBody,
+          parent_id: parseInt(thread.getAttribute("data-comment-id"), 10),
+        }),
+      }).then(function () {
+        reloadMessageReview(msgEl2);
+        loadReviewSummary();
+      }).catch(function (error) {
+        flashError(error.message);
+        replyBtn.disabled = false;
+      });
+      return;
+    }
+
+    var resolveBtn = event.target.closest(".review-resolve");
+    if (resolveBtn) {
+      var threadR = resolveBtn.closest(".review-thread");
+      var msgEl3 = resolveBtn.closest(".chat-message");
+      api(reviewCommentUrl(msgEl3.getAttribute("data-message-id"), threadR.getAttribute("data-comment-id")), {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ resolved: resolveBtn.getAttribute("data-resolved") === "1" }),
+      }).then(function () {
+        reloadMessageReview(msgEl3);
+        loadReviewSummary();
+      }).catch(function (error) {
+        flashError(error.message);
+      });
+      return;
+    }
+
+    var deleteBtn = event.target.closest(".review-delete");
+    if (deleteBtn) {
+      var target = deleteBtn.closest("[data-comment-id]");
+      var msgEl4 = deleteBtn.closest(".chat-message");
+      if (!window.confirm("Delete this review comment?")) return;
+      api(reviewCommentUrl(msgEl4.getAttribute("data-message-id"), target.getAttribute("data-comment-id")), {
+        method: "DELETE",
+      }).then(function () {
+        reloadMessageReview(msgEl4);
+        loadReviewSummary();
+      }).catch(function (error) {
+        flashError(error.message);
+      });
+      return;
+    }
+
+    var jump = event.target.closest(".review-summary-jump");
+    if (jump) {
+      event.preventDefault();
+      var targetMsg = chatMessagesEl.querySelector(
+        '.chat-message[data-message-id="' + jump.getAttribute("data-message-id") + '"]'
+      );
+      if (targetMsg) targetMsg.scrollIntoView({ behavior: "smooth", block: "center" });
+    }
+  });
 
   // ----------------------------------------------------------------- init
 

@@ -172,6 +172,7 @@ class TestInspectAccount:
                         "balance": "3.0000000",
                         "limit": "10.0000000",
                         "is_authorized": True,
+                        "is_authorized_to_maintain_liabilities": True,
                     },
                 ],
             },
@@ -190,8 +191,32 @@ class TestInspectAccount:
             )
         assert result["account"]["flags"]["auth_required"] is True
         assert result["account"]["balances"][1]["limit"] == "10.0000000"
+        assert result["account"]["balances"][1]["is_authorized_to_maintain_liabilities"] is True
         assert result["account"]["data"]["project"] == "YWk="
         assert result["transactions"]["records"][0]["ledger"] == 20
+        assert result["manage_data"] == [{"key": "project", "value": "YWk=", "decoded_text": "ai"}]
+
+    def test_manage_data_undecodable_value_stays_raw(self, app):
+        account_response = _FakeResponse(
+            200,
+            {
+                "account_id": VALID_ADDRESS,
+                "sequence": "1",
+                "data": {"bytes": "/////w=="},
+            },
+        )
+        transactions_response = _FakeResponse(200, {"_embedded": {"records": []}})
+        with app.app_context():
+            result = inspect_account(
+                VALID_ADDRESS,
+                service=StellarService(
+                    session=_QueueSession([account_response, transactions_response])
+                ),
+                rpc=_StubRpc(),
+            )
+        assert result["manage_data"] == [
+            {"key": "bytes", "value": "/////w==", "decoded_text": None}
+        ]
 
     def test_success_includes_empty_transactions(self, app):
         session = _QueueSession(

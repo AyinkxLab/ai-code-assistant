@@ -22,6 +22,9 @@ class Workspace(db.Model):
     )
     name = db.Column(db.String(200), nullable=False)
     description = db.Column(db.Text, nullable=True)
+    # Pinned workspaces sort to the top of the dashboard (then by recent
+    # activity). The flag is per workspace and toggled from the dashboard.
+    is_pinned = db.Column(db.Boolean, nullable=False, default=False)
     created_at = db.Column(
         db.DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC)
     )
@@ -63,6 +66,7 @@ class Workspace(db.Model):
             "id": self.id,
             "name": self.name,
             "description": self.description,
+            "is_pinned": bool(self.is_pinned),
             "project_count": len(self.projects),
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "updated_at": self.updated_at.isoformat() if self.updated_at else None,

@@ -419,6 +419,80 @@ Response `200`: `{"ok": true}`.
 
 ---
 
+## Inline review comments (#52)
+
+Inline review threads attach to a specific assistant message in a project chat,
+optionally anchored to a fenced code block (0-based `block_index`) and/or a
+`line_start`/`line_end` range within the message. Anchors store only positions —
+never raw source content. Threads allow one level of replies and support a
+resolve/unresolve toggle. All routes use `resolve_project_collab` (owner or
+active member), and content is scoped to the message's project.
+
+Permissions: any member with the `comment` capability may create comments and
+replies; a thread root may be **resolved** by its author or the workspace owner;
+a comment may be **deleted** by its author or the workspace owner.
+
+### List threads for a message — #52
+
+`GET /workspaces/api/projects/<project_id>/messages/<message_id>/review-comments`
+— **owner or active member**
+
+Response `200`: `{"message_id": 12, "items": [<thread>, ...]}` where each thread
+is a comment object plus a `replies` array (oldest first).
+
+### Create thread / reply — #52
+
+`POST /workspaces/api/projects/<project_id>/messages/<message_id>/review-comments`
+— **owner or active member** (`comment`)
+
+Request:
+
+```json
+{"body": "This block drops the error. @bob please confirm.",
+ "block_index": 0, "line_start": 3, "line_end": 5,
+ "parent_id": null}
+```
+
+- `body` required (stripped), max `REVIEW_COMMENT_MAX_LENGTH` chars.
+- The message must be an assistant message (`400` otherwise).
+- `block_index` must reference an existing fenced block in the message; line
+  bounds must be positive and ordered (`400` otherwise).
+- `parent_id` (optional) must be a root comment on the same message; replies are
+  one level deep only.
+- `@username` mentions notify the mentioned active members (never the author).
+
+Response `201` with the comment (see ``ReviewComment.to_dict`` fields:
+`id`, `project_id`, `message_id`, `author_id`, `author_username`, `parent_id`,
+`body`, `block_index`, `line_start`, `line_end`, `resolved`, `resolved_by`,
+`resolved_by_username`, `resolved_at`, `created_at`).
+
+### Resolve / unresolve — #52
+
+`PATCH /workspaces/api/projects/<project_id>/messages/<message_id>/review-comments/<comment_id>`
+— **thread author or workspace owner**
+
+Request: `{"resolved": true}`. Only a thread root can be resolved (`400` for a
+reply); anyone else gets `403`. Resolving records `resolved_by`/`resolved_at`.
+
+### Delete comment — #52
+
+`DELETE /workspaces/api/projects/<project_id>/messages/<message_id>/review-comments/<comment_id>`
+— **the author or the workspace owner** (`403` otherwise; deleting a root
+cascades to its replies)
+
+Response `200`: `{"ok": true}`.
+
+### Review summary — #52
+
+`GET /workspaces/api/projects/<project_id>/review-summary` — **owner or active
+member**
+
+Response `200`: `{"open": 2, "resolved": 1, "total": 3, "threads": [...]}` where
+each thread carries its anchor, author, `resolved` state, and `reply_count`. This
+drives the review summary panel on the chat tab.
+
+---
+
 ## Collaboration settings
 
 ### Get settings — Phase 7

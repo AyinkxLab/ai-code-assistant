@@ -39,10 +39,13 @@ class GitHubError(RuntimeError):
 
     kind = "github_error"
 
-    def __init__(self, message: str, *, kind: str | None = None) -> None:
+    def __init__(self, message: str, *, kind: str | None = None, detail: str | None = None) -> None:
         super().__init__(message)
         if kind is not None:
             self.kind = kind
+        # Server-side-only detail (e.g. GitHub's raw response message). Never
+        # surfaced to the client; logged instead. See ``github_error_payload``.
+        self.detail = detail
 
 
 class GitHubNotConnectedError(GitHubError):
@@ -73,8 +76,38 @@ class GitHubInvalidError(GitHubError):
     kind = "validation"
 
 
+#: Stable, sanitized messages shown to end users, keyed by error ``kind``.
+#: GitHub's raw response bodies are never surfaced: they can contain URLs,
+#: headers, rate-limit data, or implementation details. Those are kept on
+#: ``GitHubError.detail`` for server-side logging only.
+ERROR_MESSAGES = {
+    "not_connected": "Connect your GitHub account to use this feature.",
+    "auth": "Your GitHub connection is no longer valid. Reconnect your account.",
+    "permission": "GitHub denied access to this resource.",
+    "not_found": "The requested GitHub resource was not found.",
+    "rate_limit": "GitHub API rate limit reached. Please try again later.",
+    "network": "Could not reach the GitHub API. Please try again.",
+    "validation": "The GitHub request was invalid.",
+    "github_error": "The GitHub request failed. Please try again.",
+}
+
+
+def github_error_message(exc: GitHubError) -> str:
+    """Return the stable user-facing message for ``exc``'s kind."""
+    return ERROR_MESSAGES.get(exc.kind, ERROR_MESSAGES["github_error"])
+
+
+def github_error_payload(exc: GitHubError) -> dict:
+    """Build a sanitized JSON error payload for a :class:`GitHubError`.
+
+    Route handlers must use this instead of ``str(exc)`` so no raw GitHub
+    message (or token/header material) is ever echoed to the client.
+    """
+    return {"error": github_error_message(exc), "kind": exc.kind}
+
+
 def _parse_error_body(response: requests.Response) -> str:
-    """Extract a short human-readable message from an error response."""
+    """Extract a short human-readable message for server-side logging only."""
     try:
         data = response.json()
     except ValueError:
@@ -129,7 +162,9 @@ class GitHubClient:
                 if attempt < self.max_retries - 1:
                     time.sleep(2**attempt)
                     continue
-                raise GitHubNetworkError(f"Could not reach the GitHub API: {exc}") from exc
+                raise GitHubNetworkError(
+                    "Could not reach the GitHub API. Please try again.", detail=str(exc)
+                ) from exc
 
             if response.status_code == 404:
                 raise GitHubNotFoundError("The requested GitHub resource was not found.")
@@ -146,7 +181,9 @@ class GitHubClient:
                     raise GitHubRateLimitError(
                         f"GitHub API rate limit reached. Retry in about {wait} seconds."
                     )
-                raise GitHubPermissionError(f"GitHub denied access: {_parse_error_body(response)}")
+                detail = _parse_error_body(response)
+                logger.warning("GitHub permission error on %s: %s", path, detail)
+                raise GitHubPermissionError("GitHub denied access to this resource.", detail=detail)
 
             if response.status_code >= 500:
                 last_exc = GitHubError(f"GitHub API returned {response.status_code}.")
@@ -158,9 +195,11 @@ class GitHubClient:
                 ) from last_exc
 
             if response.status_code >= 400:
-                raise GitHubError(
-                    f"GitHub API error ({response.status_code}): {_parse_error_body(response)}"
+                detail = _parse_error_body(response)
+                logger.warning(
+                    "GitHub API error on %s (%s): %s", path, response.status_code, detail
                 )
+                raise GitHubError("The GitHub request failed. Please try again.", detail=detail)
 
             if response.status_code == 204 or not response.content:
                 return {}
@@ -170,7 +209,9 @@ class GitHubClient:
             except ValueError as exc:
                 raise GitHubError("GitHub API returned an unexpected response.") from exc
 
-        raise GitHubNetworkError(f"GitHub request failed after retries: {last_exc}")
+        raise GitHubNetworkError(
+            "Could not reach the GitHub API. Please try again.", detail=str(last_exc)
+        )
 
     def _get(self, path: str, *, params: dict | None = None) -> dict | list:
         return self._request("GET", path, params=params)
@@ -503,5 +544,8 @@ def get_github_client(user=None) -> GitHubClient:
     try:
         token = decrypt_secret(account.access_token_encrypted)
     except ValueError as exc:
-        raise GitHubAuthError(str(exc)) from exc
+        raise GitHubAuthError(
+            "Your GitHub connection is no longer valid. Reconnect your account.",
+            detail=str(exc),
+        ) from exc
     return GitHubClient(token)

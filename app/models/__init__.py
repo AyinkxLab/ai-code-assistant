@@ -5,6 +5,7 @@ can discover every table in the application.
 """
 
 from app.models.activity_event import ActivityEvent
+from app.models.api_key import ApiKey
 from app.models.conversation import Conversation
 from app.models.github_account import GithubAccount
 from app.models.invitation import WorkspaceInvitation
@@ -20,6 +21,7 @@ from app.models.project_message import ProjectMessage
 from app.models.prompt import Prompt
 from app.models.prompt_version import PromptVersion
 from app.models.review import Review
+from app.models.review_comment import ReviewComment
 from app.models.review_config import ReviewConfig
 from app.models.review_finding import ReviewFinding
 from app.models.stellar_security_finding import StellarSecurityFinding
@@ -30,6 +32,7 @@ from app.models.workspace_settings import WorkspaceSettings
 
 __all__ = [
     "ActivityEvent",
+    "ApiKey",
     "CapabilityGrant",
     "Conversation",
     "GithubAccount",
@@ -46,6 +49,7 @@ __all__ = [
     "Prompt",
     "PromptVersion",
     "Review",
+    "ReviewComment",
     "ReviewConfig",
     "ReviewFinding",
     "StellarSecurityFinding",

@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+
+{% block title %}API keys - {{ config.APP_NAME }}{% endblock %}
+
+{% block content %}
+<div class="github-header">
+  <div>
+    <h1>LLM provider API keys</h1>
+    <p class="repo-meta">Bring your own provider keys. Keys are encrypted at rest (AES-256-GCM) and are only ever shown redacted.</p>
+  </div>
+</div>
+
+<div class="prompt-editor">
+  <div class="repo-toolbar">
+    <select id="key-provider" class="prompt-filter" aria-label="Provider">
+      <option value="openai">OpenAI</option>
+      <option value="anthropic">Anthropic</option>
+      <option value="google">Google</option>
+      <option value="azure">Azure</option>
+      <option value="openrouter">OpenRouter</option>
+      <option value="custom">Custom</option>
+    </select>
+    <input id="key-label" class="field-input" type="text" maxlength="100" placeholder="Label (optional)">
+    <input id="key-secret" class="field-input" type="password" autocomplete="off" placeholder="API key">
+    <button id="add-key" class="btn btn-primary" type="button">Add key</button>
+  </div>
+  <p class="field-hint">The key is encrypted immediately, stored only as ciphertext, and never displayed again.</p>
+</div>
+
+<div id="key-list" class="issue-list"><p class="sidebar-empty">Loading keys...</p></div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/github.js') }}"></script>
+<script src="{{ url_for('static', filename='js/keys.js') }}"></script>
+{% endblock %}

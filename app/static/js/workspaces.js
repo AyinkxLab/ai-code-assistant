@@ -81,5 +81,58 @@
     nameEl.addEventListener("keydown", function (event) {
       if (event.key === "Enter") createWorkspace();
     });
+
+    var grid = document.getElementById("workspace-grid");
+
+    function updatePinButton(card, pinned) {
+      var button = card.querySelector('[data-action="toggle-pin"]');
+      if (!button) return;
+      button.classList.toggle("active", pinned);
+      button.setAttribute("aria-pressed", pinned ? "true" : "false");
+      button.title = pinned ? "Unpin workspace" : "Pin workspace";
+      button.textContent = pinned ? "★" : "☆";
+    }
+
+    function reorderGrid() {
+      if (!grid) return;
+      api("/workspaces/api/workspaces")
+        .then(function (workspaces) {
+          workspaces.forEach(function (workspace) {
+            var card = grid.querySelector('.workspace-card[data-id="' + workspace.id + '"]');
+            if (!card) return;
+            card.dataset.pinned = workspace.is_pinned ? "true" : "false";
+            card.classList.toggle("is-pinned", workspace.is_pinned);
+            updatePinButton(card, workspace.is_pinned);
+            grid.appendChild(card);
+          });
+        })
+        .catch(function (error) {
+          flashError(error.message);
+        });
+    }
+
+    function togglePin(card) {
+      var pinned = card.dataset.pinned === "true";
+      api("/workspaces/api/workspaces/" + card.dataset.id, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ is_pinned: !pinned }),
+      })
+        .then(reorderGrid)
+        .catch(function (error) {
+          flashError(error.message);
+        });
+    }
+
+    if (grid) {
+      grid.addEventListener("click", function (event) {
+        var button = event.target.closest('[data-action="toggle-pin"]');
+        if (!button) return;
+        event.preventDefault();
+        event.stopPropagation();
+        var card = button.closest(".workspace-card");
+        if (card) togglePin(card);
+      });
+    }
   });
 })();

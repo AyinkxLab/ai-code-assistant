@@ -39,11 +39,20 @@ API (JSON, all scoped to the current user)
     /workspaces/<id>/audit                           audit page
 """
 
+import io
 import json
 from collections import Counter
 from pathlib import Path
 
-from flask import Response, jsonify, render_template, request, stream_with_context, url_for
+from flask import (
+    Response,
+    current_app,
+    jsonify,
+    render_template,
+    request,
+    stream_with_context,
+    url_for,
+)
 from flask_login import current_user, login_required
 
 from app.extensions import db
@@ -77,15 +86,23 @@ from app.services.github import (
     GitHubError,
     GitHubInvalidError,
     get_github_client,
+    github_error_payload,
     validate_full_name,
 )
-from app.services.importing import ProjectImportError, extract_archive, import_github_repo
+from app.services.health import coverage_estimate, detect_ci_files
+from app.services.import_jobs import submit_import_job
+from app.services.importing import (
+    ProjectImportError,
+    extract_archive,
+    import_github_repo,
+    store_project_files,
+)
 from app.services.invitations import cancel_pending_for_user
 from app.services.llm import LLMProviderError, get_provider
 from app.services.notifications import notify
 from app.services.permissions import resolve_workspace
 from app.services.ratelimit import per_user_limit
-from app.services.search import search_project
+from app.services.search import SearchQueryError, search_project
 from app.services.stellar_detection import project_stellar_metadata
 from app.workspaces import bp
 
@@ -142,7 +159,7 @@ def _validate_project_path(path: str) -> str:
 def index():
     """Workspace list page."""
     workspaces = Workspace.query.filter_by(user_id=current_user.id).order_by(
-        Workspace.updated_at.desc()
+        Workspace.is_pinned.desc(), Workspace.updated_at.desc()
     )
     return render_template("workspaces/index.html", workspaces=workspaces)
 
@@ -175,7 +192,7 @@ def project_explorer(workspace_id: int, project_id: int):
 @login_required
 def api_list_workspaces():
     workspaces = Workspace.query.filter_by(user_id=current_user.id).order_by(
-        Workspace.updated_at.desc()
+        Workspace.is_pinned.desc(), Workspace.updated_at.desc()
     )
     return jsonify([w.to_dict() for w in workspaces])
 
@@ -209,6 +226,8 @@ def api_update_workspace(workspace_id: int):
         workspace.name = name[:200]
     if "description" in data:
         workspace.description = (data.get("description") or "").strip()[:2000] or None
+    if "is_pinned" in data:
+        workspace.is_pinned = bool(data["is_pinned"])
     db.session.commit()
     return jsonify(workspace.to_dict())
 
@@ -399,12 +418,15 @@ def api_import_project(workspace_id: int):
     return _import_github(workspace)
 
 
-def _finish_project_import(workspace: Workspace, project: Project, source: str):
-    """Record activity/events for a completed import and return its JSON body."""
+def _record_import_side_effects(workspace: Workspace, project: Project, source: str, user):
+    """Record activity/events for a completed import (no request context needed).
+
+    Shared by the synchronous path and the background worker.
+    """
     record_activity(
         workspace.id,
         EVENT_PROJECT_IMPORTED,
-        actor=current_user,
+        actor=user,
         target=project,
         metadata={"source": source, "file_count": project.file_count},
     )
@@ -413,7 +435,7 @@ def _finish_project_import(workspace: Workspace, project: Project, source: str):
         "project.created",
         data={"project_id": project.id, "name": project.name, "source": source},
         workspace_id=workspace.id,
-        user_id=current_user.id,
+        user_id=user.id,
     )
     stellar_meta = project_stellar_metadata(project)
     if stellar_meta.get("is_stellar"):
@@ -426,11 +448,49 @@ def _finish_project_import(workspace: Workspace, project: Project, source: str):
                 "network_hints": stellar_meta.get("network_hints") or [],
             },
             workspace_id=workspace.id,
-            user_id=current_user.id,
+            user_id=user.id,
         )
+    return stellar_meta
+
+
+def _finish_project_import(workspace: Workspace, project: Project, source: str):
+    """Record activity/events for a completed import and return its JSON body."""
+    project.progress = 100
+    stellar_meta = _record_import_side_effects(workspace, project, source, current_user)
     response = project.to_dict()
     response["stellar"] = stellar_meta
     return jsonify(response), 201
+
+
+def _archive_import_job(raw: bytes, filename: str, workspace_id: int):
+    """Build the background worker task for an uploaded archive."""
+
+    def job(project: Project, user, set_progress):
+        set_progress(10)
+        rows = extract_archive(io.BytesIO(raw), filename)
+        if not rows:
+            raise ProjectImportError("The archive contained no importable files.")
+        set_progress(60)
+        store_project_files(project, rows)
+        set_progress(95)
+        workspace = db.session.get(Workspace, workspace_id)
+        _record_import_side_effects(workspace, project, SOURCE_ARCHIVE, user)
+
+    return job
+
+
+def _github_import_job(full_name: str, workspace_id: int):
+    """Build the background worker task for a GitHub import."""
+
+    def job(project: Project, user, set_progress):
+        set_progress(10)
+        client = get_github_client(user)
+        import_github_repo(project, full_name, client)
+        set_progress(90)
+        workspace = db.session.get(Workspace, workspace_id)
+        _record_import_side_effects(workspace, project, SOURCE_GITHUB, user)
+
+    return job
 
 
 def _import_scaffold(workspace: Workspace, data: dict):
@@ -470,6 +530,28 @@ def _import_archive(workspace: Workspace):
         return jsonify({"error": "No file was uploaded."}), 400
 
     name = Path(uploaded.filename).stem.strip() or "Untitled project"
+
+    if current_app.config.get("IMPORT_JOBS_ASYNC", True):
+        # Read the upload into memory during the request (the stream is closed
+        # when the request ends), then index it in the background worker.
+        raw = uploaded.read()
+        project = Project(
+            workspace_id=workspace.id,
+            user_id=current_user.id,
+            name=name[:200],
+            source=SOURCE_ARCHIVE,
+            status=STATUS_INDEXING,
+            progress=0,
+        )
+        db.session.add(project)
+        db.session.commit()
+        submit_import_job(
+            current_app._get_current_object(),
+            project.id,
+            _archive_import_job(raw, uploaded.filename, workspace.id),
+        )
+        return jsonify(project.to_dict()), 201
+
     project = Project(
         workspace_id=workspace.id,
         user_id=current_user.id,
@@ -491,8 +573,6 @@ def _import_archive(workspace: Workspace):
         db.session.commit()
         return jsonify({"error": "The archive contained no importable files."}), 400
 
-    from app.services.importing import store_project_files
-
     store_project_files(project, rows)
     return _finish_project_import(workspace, project, SOURCE_ARCHIVE)
 
@@ -507,6 +587,25 @@ def _import_github(workspace: Workspace):
     except GitHubInvalidError as exc:
         return jsonify({"error": str(exc)}), 400
 
+    if current_app.config.get("IMPORT_JOBS_ASYNC", True):
+        project = Project(
+            workspace_id=workspace.id,
+            user_id=current_user.id,
+            name=full_name.split("/")[1][:200],
+            source=SOURCE_GITHUB,
+            source_url=full_name,
+            status=STATUS_INDEXING,
+            progress=0,
+        )
+        db.session.add(project)
+        db.session.commit()
+        submit_import_job(
+            current_app._get_current_object(),
+            project.id,
+            _github_import_job(full_name, workspace.id),
+        )
+        return jsonify(project.to_dict()), 201
+
     project = Project(
         workspace_id=workspace.id,
         user_id=current_user.id,
@@ -520,7 +619,11 @@ def _import_github(workspace: Workspace):
     try:
         client = get_github_client()
         import_github_repo(project, full_name, client)
-    except (GitHubError, ProjectImportError) as exc:
+    except GitHubError as exc:
+        db.session.delete(project)
+        db.session.commit()
+        return jsonify(github_error_payload(exc)), 502
+    except ProjectImportError as exc:
         db.session.delete(project)
         db.session.commit()
         return jsonify({"error": str(exc)}), 502
@@ -673,8 +776,24 @@ def api_project_search(project_id: int):
     if not query:
         return jsonify({"error": "A search query is required."}), 400
     case_sensitive = request.args.get("case", "0") == "1"
+    regex = request.args.get("regex", "0") == "1"
+    scope = request.args.get("scope", "all").strip().lower()
+    if scope not in ("all", "path", "content"):
+        return jsonify({"error": "Invalid scope."}), 400
+    language = request.args.get("language", "").strip() or None
     limit = request.args.get("limit", type=int)
-    result = search_project(project.id, query, case_sensitive=case_sensitive, limit=limit)
+    try:
+        result = search_project(
+            project.id,
+            query,
+            case_sensitive=case_sensitive,
+            limit=limit,
+            language=language,
+            scope=scope,
+            regex=regex,
+        )
+    except SearchQueryError as exc:
+        return jsonify({"error": str(exc)}), 400
     return jsonify(result)
 
 
@@ -694,6 +813,9 @@ def api_project_stats(project_id: int):
     test_files = [f for f in files if _is_test_path(f.path)]
     doc_files = [f for f in files if f.path.rsplit(".", 1)[-1].lower() in ("md", "rst", "txt")]
     inventory = project_analysis.dependency_inventory(project)
+    paths = [f.path for f in files]
+    ci_files = detect_ci_files(paths)
+    coverage = coverage_estimate(paths)
 
     duration = None
     if project.indexed_at and project.created_at:
@@ -711,6 +833,8 @@ def api_project_stats(project_id: int):
             "dependency_count": len(inventory),
             "manifest_files": sorted({item["file"] for item in inventory}),
             "index_duration_seconds": duration,
+            "ci_files": ci_files,
+            "coverage_estimate": coverage,
         }
     )
 

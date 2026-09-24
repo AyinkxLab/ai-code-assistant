@@ -312,6 +312,12 @@ outside the workspace they belong to (non-members receive 404).
 
 ## Writing a plugin
 
+> **New to plugins?** Start with the step-by-step
+> [Plugin developer guide](plugin-developer-guide.md). It walks through the
+> layout, manifest, plugin class, install/enable, explicit capability grants,
+> the local verify loop, and common pitfalls, using the runnable
+> [`examples/plugins/hello_world`](../examples/plugins/hello_world) example.
+
 ```python
 # plugins/stellar_tools/plugin.py
 class StellarPlugin:
@@ -328,6 +334,35 @@ class StellarPlugin:
 
 The `entry_point` value names `module.path:ClassName`. The plugin class may be
 instantiated with `app` and `manifest` kwargs (see `Plugin.get_instance`).
+
+## Example plugin
+
+A minimal, runnable example lives at
+[`examples/hello-plugin/`](../examples/hello-plugin):
+
+- `manifest.json` — a valid manifest (id `hello-plugin`, capability
+  `PROJECT_READ`, `entry_point` `plugin:HelloPlugin`).
+- `plugin.py` — `HelloPlugin`, which subscribes to `project.created`, logs
+  each event, and records it in `received`.
+
+Run it from the repository root. Both the repository root (so `app` resolves)
+and the example directory (so the `entry_point` resolves) must be importable:
+
+```bash
+# Windows (PowerShell)
+$env:PYTHONPATH = ".;examples/hello-plugin"
+python examples/hello-plugin/plugin.py
+
+# Linux / macOS
+PYTHONPATH=.:examples/hello-plugin python examples/hello-plugin/plugin.py
+```
+
+It registers through the real `PluginRegistry`, subscribes to
+`project.created` via the shared `EventDispatcher`, and prints how many events
+it recorded. Subscribing never requires a capability grant; grants are enforced
+only when the host dispatches a live event (see [Security](#security)). The
+manifest schema and the load/register flow are covered by
+`tests/test_hello_plugin_example.py`.
 
 ## Security
 
@@ -347,9 +382,12 @@ tracked under the **Phase 8 - Plugins & Extensions** milestone (label
 `phase-8`), for example:
 
 - Dependency resolution and version compatibility checks.
-- A plugin development guide and an example plugin.
+- Plugin packaging/distribution and a marketplace.
 - CLI commands for plugin management.
 - A capability audit trail (implemented).
+- A plugin development guide and an example plugin (implemented — see
+  [plugin-developer-guide.md](plugin-developer-guide.md) and
+  [`examples/plugins/hello_world`](../examples/plugins/hello_world)).
 
 ## Testing
 

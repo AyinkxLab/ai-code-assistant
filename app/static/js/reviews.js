@@ -53,32 +53,70 @@
 
   // ----- Quality dashboard strip ----------------------------------------
 
+  function metricCard(value, label) {
+    return (
+      "<div class='metric-card'>" +
+      "<span class='metric-value'>" + value + "</span>" +
+      "<span class='metric-label'>" + label + "</span>" +
+      "</div>"
+    );
+  }
+
+  function breakdown(title, counts, limit) {
+    var keys = Object.keys(counts || {});
+    if (!keys.length) return "";
+    var html = "<h3 class='metric-title'>" + GH.escapeHtml(title) + "</h3><ul class='metric-list'>";
+    keys.slice(0, limit || keys.length).forEach(function (key) {
+      html += "<li><code>" + GH.escapeHtml(key) + "</code> — " + counts[key] + "</li>";
+    });
+    return html + "</ul>";
+  }
+
+  function trendSection(trend) {
+    if (!trend || !trend.length) return "";
+    var max = 0;
+    trend.forEach(function (point) { max = Math.max(max, point.total || 0); });
+    max = max || 1;
+    var html = "<h3 class='metric-title'>Findings addressed over time</h3>" +
+      "<p class='repo-meta'>Open vs addressed findings for each of the last " +
+      trend.length + " review" + (trend.length === 1 ? "" : "s") + ".</p>" +
+      "<ul class='trend-list'>";
+    trend.forEach(function (point) {
+      var openPct = Math.round(((point.open || 0) / max) * 100);
+      var donePct = Math.round(((point.addressed || 0) / max) * 100);
+      html += "<li class='trend-row'>" +
+        "<span class='trend-date'>" + GH.escapeHtml(GH.relativeDate(point.created_at)) + "</span>" +
+        "<span class='trend-bar' title='" + (point.open || 0) + " open / " +
+        (point.addressed || 0) + " addressed'>" +
+        "<span class='trend-open' style='width:" + openPct + "%'></span>" +
+        "<span class='trend-done' style='width:" + donePct + "%'></span>" +
+        "</span>" +
+        "<span class='trend-counts'>" + (point.open || 0) + " open &middot; " +
+        (point.addressed || 0) + " addressed</span>" +
+        "</li>";
+    });
+    return html + "</ul>";
+  }
+
   function renderMetrics(metrics, container) {
     if (!container) return;
     var findings = metrics.findings || {};
-    var parts = [
-      "<div class='metric-card'>",
-      "<span class='metric-value'>" + metrics.total_reviews + "</span>",
-      "<span class='metric-label'>reviews</span>",
-      "</div>",
-      "<div class='metric-card'>",
-      "<span class='metric-value'>" + (findings.total || 0) + "</span>",
-      "<span class='metric-label'>findings</span>",
-      "</div>",
-      "<div class='metric-card'>",
-      "<span class='metric-value'>" + (findings.high_risk || 0) + "</span>",
-      "<span class='metric-label'>high risk</span>",
-      "</div>",
-      "<div class='metric-card'>",
-      "<span class='metric-value'>" + (findings.unaddressed_high_risk || 0) + "</span>",
-      "<span class='metric-label'>open high risk</span>",
-      "</div>",
-      "<div class='metric-card'>",
-      "<span class='metric-value'>" + (findings.confirmed || 0) + "</span>",
-      "<span class='metric-label'>confirmed</span>",
-      "</div>",
-    ];
-    container.innerHTML = "<div class='metric-grid'>" + parts.join("") + "</div>";
+    var html = "<div class='metric-grid'>" +
+      metricCard(metrics.total_reviews || 0, "reviews") +
+      metricCard(findings.total || 0, "findings") +
+      metricCard(findings.high_risk || 0, "high risk") +
+      metricCard(findings.unaddressed_high_risk || 0, "open high risk") +
+      metricCard(findings.addressed || 0, "addressed") +
+      metricCard(metrics.reviews_last_7_days || 0, "reviews / 7d") +
+      "</div>";
+    html += trendSection(metrics.findings_trend);
+    html += breakdown("Findings by severity", findings.by_severity);
+    html += breakdown("Findings by category", findings.by_category, 10);
+    if (metrics.last_review_at) {
+      html += "<p class='repo-meta'>Last review " + GH.relativeDate(metrics.last_review_at) +
+        " &middot; " + (metrics.reviews_last_30_days || 0) + " in the last 30 days</p>";
+    }
+    container.innerHTML = html;
   }
 
   function loadMetrics(container) {
@@ -131,13 +169,27 @@
 
   function findingsUrl(base) {
     var severity = document.getElementById("finding-severity");
+    var category = document.getElementById("finding-category");
     var confidence = document.getElementById("finding-confidence");
     var addressed = document.getElementById("finding-addressed");
     var params = [];
     if (severity && severity.value) params.push("severity=" + encodeURIComponent(severity.value));
+    if (category && category.value) params.push("category=" + encodeURIComponent(category.value));
     if (confidence && confidence.value) params.push("confidence=" + encodeURIComponent(confidence.value));
     if (addressed && addressed.value !== "") params.push("addressed=" + encodeURIComponent(addressed.value));
     return base + (params.length ? "?" + params.join("&") : "");
+  }
+
+  function populateCategories(categories) {
+    var select = document.getElementById("finding-category");
+    if (!select) return;
+    select.innerHTML = '<option value="">All categories</option>';
+    (categories || []).forEach(function (category) {
+      var option = document.createElement("option");
+      option.value = category;
+      option.textContent = category;
+      select.appendChild(option);
+    });
   }
 
   function summarySection(title, items) {
@@ -151,23 +203,29 @@
     );
   }
 
+  function confidenceTag(finding) {
+    var confirmed = finding.confidence === "confirmed";
+    var label = finding.confidence_label || (confirmed ? "[CONFIRMED]" : "[SUGGESTION]");
+    return (
+      '<span class="tag ' + (confirmed ? "tag-confirmed" : "tag-suggestion") + '">' +
+      GH.escapeHtml(label) + "</span>"
+    );
+  }
+
   function findingCard(finding) {
     var location = finding.file ? GH.escapeHtml(finding.file) : "(whole repo)";
     if (finding.line != null) location += ":" + finding.line;
-    var addressed = finding.addressed
-      ? '<span class="tag tag-confirmed">addressed</span>'
-      : '<span class="tag tag-suggestion">open</span>';
     return (
       '<div class="finding-card">' +
       '<div class="finding-header">' +
       badge(finding.severity) +
+      " " + confidenceTag(finding) +
       " " + GH.escapeHtml(finding.category) +
       " <span class='finding-location'>" + location + "</span>" +
       '<button class="btn btn-ghost btn-sm finding-toggle" data-id="' + finding.id +
       '" data-addressed="' + (finding.addressed ? "0" : "1") + '" type="button">' +
       (finding.addressed ? "Reopen" : "Mark addressed") + "</button>" +
       "</div>" +
-      "<p class='finding-confidence'>confidence: " + GH.escapeHtml(finding.confidence) + "</p>" +
       "<p>" + GH.renderMarkdownish(finding.explanation) + "</p>" +
       (finding.recommendation
         ? "<p class='finding-recommendation'><strong>Recommendation:</strong> " +
@@ -233,6 +291,7 @@
         summarySection("Files affected", summary.files_affected) +
         (review.status === "failed" ? '<p class="sidebar-empty">This review did not complete.</p>' : "") +
         "</div>";
+      populateCategories(review.categories);
       loadFindings(id);
     }).catch(function (error) {
       container.innerHTML = '<p class="sidebar-empty">Could not load review.</p>';
@@ -246,6 +305,7 @@
     if (!document.getElementById("review-detail")) return;
     loadDetail();
     document.getElementById("finding-severity").addEventListener("change", function () { loadFindings(id); });
+    document.getElementById("finding-category").addEventListener("change", function () { loadFindings(id); });
     document.getElementById("finding-confidence").addEventListener("change", function () { loadFindings(id); });
     document.getElementById("finding-addressed").addEventListener("change", function () { loadFindings(id); });
     document.addEventListener("click", function (event) {

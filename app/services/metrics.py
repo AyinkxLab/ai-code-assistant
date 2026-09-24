@@ -41,6 +41,37 @@ def _finding_metrics(findings: list) -> dict:
     }
 
 
+def _findings_trend(reviews: list, findings: list) -> list[dict]:
+    """Per-review open vs addressed finding counts, oldest first.
+
+    Each point is ``{"review_id", "created_at", "kind", "open", "addressed",
+    "total"}`` so the quality dashboard can show how findings are being
+    addressed over time. Counts come only from persisted ``ReviewFinding`` rows;
+    nothing is inferred.
+    """
+    counts = {r.id: {"open": 0, "addressed": 0} for r in reviews}
+    for finding in findings:
+        bucket = counts.get(finding.review_id)
+        if bucket is None:
+            continue
+        bucket["addressed" if finding.addressed else "open"] += 1
+    ordered = sorted(reviews, key=lambda r: (r.created_at or datetime.min, r.id))
+    trend = []
+    for review in ordered:
+        bucket = counts[review.id]
+        trend.append(
+            {
+                "review_id": review.id,
+                "created_at": review.created_at.isoformat() if review.created_at else None,
+                "kind": review.kind,
+                "open": bucket["open"],
+                "addressed": bucket["addressed"],
+                "total": bucket["open"] + bucket["addressed"],
+            }
+        )
+    return trend
+
+
 def review_metrics(reviews: list, findings: list) -> dict:
     """Compute dashboard metrics from already-fetched reviews and findings."""
     seven_days = _recent(7)
@@ -65,6 +96,7 @@ def review_metrics(reviews: list, findings: list) -> dict:
         kind = kind_by_review.get(finding.review_id, "unknown")
         by_kind[kind] = by_kind.get(kind, 0) + 1
     metrics["findings"]["by_kind"] = by_kind
+    metrics["findings_trend"] = _findings_trend(reviews, findings)
     return metrics
 
 
@@ -84,7 +116,7 @@ def project_metrics(project) -> dict:
 def workspace_metrics(workspace) -> dict:
     """Aggregated metrics across every project in a workspace."""
     reviews = (
-        Review.query.join("project")
+        Review.query.join(Review.project)
         .filter_by(workspace_id=workspace.id)
         .order_by(Review.created_at)
         .all()

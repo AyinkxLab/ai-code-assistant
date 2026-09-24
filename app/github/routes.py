@@ -35,13 +35,14 @@ from flask_login import current_user, login_required
 from app.extensions import db
 from app.github import bp
 from app.models import GithubAccount
-from app.services import analysis
+from app.services import analysis, ratelimit
 from app.services.github import (
     GITHUB_AUTHORIZE_URL,
     GITHUB_TOKEN_URL,
     GitHubClient,
     GitHubError,
     get_github_client,
+    github_error_payload,
     issue_payload,
     pull_request_payload,
     repo_payload,
@@ -82,18 +83,26 @@ def connect():
 @login_required
 def callback():
     """Exchange the authorization code for a token and store the connection."""
+    key = _callback_limit_key()
+    blocked, retry_after = _callback_blocked()
+    if blocked:
+        return _throttled_response(retry_after)
+
     error = request.args.get("error")
     if error:
+        ratelimit.record(key)
         flash(f"GitHub authorization failed: {error}", "error")
         return redirect(url_for("github.index"))
 
     state = request.args.get("state")
     if state != _get_state():
+        ratelimit.record(key)
         flash("GitHub authorization failed: state mismatch.", "error")
         return redirect(url_for("github.index"))
 
     code = request.args.get("code")
     if not code:
+        ratelimit.record(key)
         flash("GitHub authorization failed: missing code.", "error")
         return redirect(url_for("github.index"))
 
@@ -114,6 +123,7 @@ def callback():
     except ValueError:
         token_data = {}
     if response.status_code >= 400 or "access_token" not in token_data:
+        ratelimit.record(key)
         message = token_data.get("error_description") or token_data.get("error") or response.text
         flash(f"GitHub authorization failed: {message}", "error")
         return redirect(url_for("github.index"))
@@ -123,6 +133,7 @@ def callback():
     try:
         user = client.get_user()
     except GitHubError as exc:
+        ratelimit.record(key)
         flash(f"Could not verify your GitHub account: {exc}", "error")
         return redirect(url_for("github.index"))
 
@@ -144,6 +155,10 @@ def callback():
         data={"github_username": account.github_username},
         user_id=current_user.id,
     )
+
+    # A successful connection proves the user's own state, so clear any
+    # accumulated failure hits: legitimate connects are never throttled.
+    ratelimit.clear(key)
 
     flash(f"Connected to GitHub as @{account.github_username}.", "success")
     return redirect(url_for("github.index"))
@@ -192,6 +207,37 @@ def _get_state() -> str | None:
     from flask import session
 
     return session.pop(_STATE_SESSION_KEY, None)
+
+
+def _callback_limit_key() -> str:
+    """Build the OAuth callback limiter key for the current user and client IP."""
+    return ratelimit.client_key(f"github_oauth:{current_user.get_id()}")
+
+
+def _callback_blocked() -> tuple[bool, int]:
+    """Return ``(blocked, retry_after)`` for repeated callback failures.
+
+    Only failed callback attempts are recorded (see ``callback``), so a user who
+    connects successfully is never affected; the limit exists purely to blunt
+    brute-force ``state`` probing.
+    """
+    max_hits = current_app.config.get("RATE_LIMIT_OAUTH_CALLBACK_MAX", 10)
+    window = current_app.config.get("RATE_LIMIT_OAUTH_CALLBACK_WINDOW", 300)
+    key = _callback_limit_key()
+    if ratelimit.count(key, window=window) >= max_hits:
+        return True, ratelimit.retry_after(key, window=window)
+    return False, 0
+
+
+def _throttled_response(retry_after: int):
+    """Return a ``429`` response (with ``Retry-After``) for a throttled callback."""
+    response = current_app.response_class(
+        "Too many failed GitHub authorization attempts. Please try again later.",
+        status=429,
+        mimetype="text/plain",
+    )
+    response.headers["Retry-After"] = str(retry_after)
+    return response
 
 
 # --------------------------------------------------------------------------
@@ -298,13 +344,13 @@ def api_repos():
     try:
         client = _client()
     except GitHubError as exc:
-        return jsonify({"error": str(exc), "kind": exc.kind}), 403
+        return jsonify(github_error_payload(exc)), 403
 
     query = request.args.get("q", "").strip().lower()
     try:
         repos = client.list_repositories()
     except GitHubError as exc:
-        return jsonify({"error": str(exc), "kind": exc.kind}), 502
+        return jsonify(github_error_payload(exc)), 502
 
     if query:
         repos = [r for r in repos if _repo_matches_query(r, query)]
@@ -320,7 +366,7 @@ def api_repo_detail(owner: str, repo: str):
         client = _client()
         data = client.get_repository(validate_full_name(f"{owner}/{repo}"))
     except GitHubError as exc:
-        return jsonify({"error": str(exc), "kind": exc.kind}), 404
+        return jsonify(github_error_payload(exc)), 404
     payload = repo_payload(data)
     payload["readme"] = client.get_readme(data.get("full_name", f"{owner}/{repo}"))
     return jsonify(payload)
@@ -335,7 +381,7 @@ def api_branches(owner: str, repo: str):
         client = _client()
         data = client.list_branches(full_name)
     except GitHubError as exc:
-        return jsonify({"error": str(exc), "kind": exc.kind}), 502
+        return jsonify(github_error_payload(exc)), 502
     return jsonify(
         [
             {
@@ -358,7 +404,7 @@ def api_tree(owner: str, repo: str):
         client = _client()
         tree = client.get_tree(full_name, ref, recursive=True)
     except GitHubError as exc:
-        return jsonify({"error": str(exc), "kind": exc.kind}), 502
+        return jsonify(github_error_payload(exc)), 502
 
     entries = []
     for entry in tree.get("tree", []):
@@ -390,7 +436,7 @@ def api_contents(owner: str, repo: str):
         client = _client()
         data = client.get_contents(full_name, path, ref=ref)
     except GitHubError as exc:
-        return jsonify({"error": str(exc), "kind": exc.kind}), 502
+        return jsonify(github_error_payload(exc)), 502
 
     if isinstance(data, dict):
         # A single file: return decoded text.
@@ -398,7 +444,7 @@ def api_contents(owner: str, repo: str):
         try:
             text = client.get_file_text(full_name, file_path, ref=ref)
         except GitHubError as exc:
-            return jsonify({"error": str(exc), "kind": exc.kind}), 422
+            return jsonify(github_error_payload(exc)), 422
         return jsonify(
             {
                 "type": "file",
@@ -439,7 +485,7 @@ def api_commits(owner: str, repo: str):
         client = _client()
         data = client.list_commits(full_name, ref=ref, path=path)
     except GitHubError as exc:
-        return jsonify({"error": str(exc), "kind": exc.kind}), 502
+        return jsonify(github_error_payload(exc)), 502
 
     items = []
     for commit in data:
@@ -467,7 +513,7 @@ def api_commit_detail(owner: str, repo: str, sha: str):
         client = _client()
         commit = client.get_commit(full_name, sha)
     except GitHubError as exc:
-        return jsonify({"error": str(exc), "kind": exc.kind}), 404
+        return jsonify(github_error_payload(exc)), 404
 
     commit_data = commit.get("commit") or {}
     author = commit_data.get("author") or {}
@@ -510,7 +556,7 @@ def api_issues(owner: str, repo: str):
         client = _client()
         data = client.list_issues(full_name, state=state)
     except GitHubError as exc:
-        return jsonify({"error": str(exc), "kind": exc.kind}), 502
+        return jsonify(github_error_payload(exc)), 502
     return jsonify([issue_payload(i) for i in data])
 
 
@@ -524,7 +570,7 @@ def api_issue_detail(owner: str, repo: str, number: int):
         client = _client()
         data = client.get_issue(full_name, number)
     except GitHubError as exc:
-        return jsonify({"error": str(exc), "kind": exc.kind}), 404
+        return jsonify(github_error_payload(exc)), 404
 
     payload = issue_payload(data)
     if analyze:
@@ -551,7 +597,7 @@ def api_pulls(owner: str, repo: str):
         client = _client()
         data = client.list_pull_requests(full_name, state=state)
     except GitHubError as exc:
-        return jsonify({"error": str(exc), "kind": exc.kind}), 502
+        return jsonify(github_error_payload(exc)), 502
     return jsonify([pull_request_payload(pr) for pr in data])
 
 
@@ -566,7 +612,7 @@ def api_pull_detail(owner: str, repo: str, number: int):
         pr = client.get_pull_request(full_name, number)
         files = client.list_pull_request_files(full_name, number)
     except GitHubError as exc:
-        return jsonify({"error": str(exc), "kind": exc.kind}), 404
+        return jsonify(github_error_payload(exc)), 404
 
     payload = pull_request_payload(pr)
     payload["files"] = [
@@ -603,7 +649,7 @@ def api_analyze_repo(owner: str, repo: str):
         readme = client.get_readme(full_name, ref=default_branch)
         tree = client.get_tree(full_name, default_branch, recursive=True)
     except GitHubError as exc:
-        return jsonify({"error": str(exc), "kind": exc.kind}), 502
+        return jsonify(github_error_payload(exc)), 502
 
     file_list = [
         entry.get("path", "") for entry in tree.get("tree", []) if entry.get("type") == "blob"
@@ -627,7 +673,7 @@ def api_analyze_file(owner: str, repo: str):
         client = _client()
         text = client.get_file_text(full_name, path, ref=ref)
     except GitHubError as exc:
-        return jsonify({"error": str(exc), "kind": exc.kind}), 502
+        return jsonify(github_error_payload(exc)), 502
 
     language = (path.rsplit(".", 1)[-1] if "." in path else "") or "text"
     return jsonify(analysis.analyze_file(path, language, text, question=question))

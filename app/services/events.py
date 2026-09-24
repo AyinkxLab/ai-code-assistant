@@ -62,6 +62,7 @@ SUPPORTED_EVENTS = {
     # Review events
     "review.created": "Code review started",
     "review.completed": "Code review finished",
+    "review.deleted": "Code review deleted",
     "review.finding.added": "Review finding added",
     # Workspace events
     "workspace.created": "Workspace created",
@@ -92,6 +93,7 @@ EVENT_CAPABILITY_MAP: dict[str, Capability] = {
     # Review events
     "review.created": Capability.REVIEW_READ,
     "review.completed": Capability.REVIEW_READ,
+    "review.deleted": Capability.REVIEW_READ,
     "review.finding.added": Capability.REVIEW_READ,
     # Workspace events
     "workspace.created": Capability.WORKSPACE_READ,

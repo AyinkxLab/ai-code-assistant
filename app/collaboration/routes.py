@@ -34,6 +34,8 @@ from app.models import (
     Notification,
     NotificationPreference,
     ProjectComment,
+    ProjectMessage,
+    ReviewComment,
     User,
     Workspace,
     WorkspaceInvitation,
@@ -59,10 +61,12 @@ from app.models.invitation import (
 )
 from app.models.notification_preference import PREFERENCE_TYPES
 from app.models.project_comment import COMMENT_MAX_LENGTH
+from app.models.review_comment import REVIEW_COMMENT_MAX_LENGTH
 from app.models.workspace_member import MEMBER_ROLES, ROLE_OWNER, STATUS_ACTIVE
 from app.models.workspace_settings import validate_member_role
 from app.services import email as email_service
 from app.services import ratelimit
+from app.services import review_comments as review_comments_service
 from app.services.activity import record_activity
 from app.services.invitations import (
     cancel_pending_for_user,
@@ -861,6 +865,175 @@ def api_delete_comment(project_id: int, comment_id: int):
     db.session.delete(comment)
     db.session.commit()
     return jsonify({"ok": True})
+
+
+# --------------------------------------------------------------------------
+# API: inline review comments (#52)
+# --------------------------------------------------------------------------
+
+
+def _project_message(project, message_id: int) -> ProjectMessage:
+    return ProjectMessage.query.filter_by(id=message_id, project_id=project.id).first_or_404()
+
+
+def _review_thread(comment: ReviewComment) -> dict:
+    payload = comment.to_dict()
+    payload["replies"] = [reply.to_dict() for reply in comment.replies]
+    return payload
+
+
+@bp.route(
+    "/api/projects/<int:project_id>/messages/<int:message_id>/review-comments",
+    methods=["GET"],
+)
+@login_required
+def api_list_review_comments(project_id: int, message_id: int):
+    """List inline review threads anchored to an assistant message."""
+    project = resolve_project_collab(project_id)
+    message = _project_message(project, message_id)
+    roots = (
+        ReviewComment.query.filter_by(message_id=message.id, parent_id=None)
+        .order_by(ReviewComment.created_at.asc(), ReviewComment.id.asc())
+        .all()
+    )
+    return jsonify({"message_id": message.id, "items": [_review_thread(root) for root in roots]})
+
+
+@bp.route(
+    "/api/projects/<int:project_id>/messages/<int:message_id>/review-comments",
+    methods=["POST"],
+)
+@login_required
+def api_create_review_comment(project_id: int, message_id: int):
+    """Create an inline comment, optionally anchored to a code block/line range."""
+    project = resolve_project_collab(project_id)
+    workspace_id = project.workspace_id
+    if not can("comment", workspace_id):
+        abort(403)
+    message = _project_message(project, message_id)
+    if message.role != "assistant":
+        return (
+            jsonify({"error": "Inline comments can only be attached to assistant messages."}),
+            400,
+        )
+
+    data = request.get_json(silent=True) or {}
+    body = (data.get("body") or "").strip()
+    if not body:
+        return jsonify({"error": "Comment body is required."}), 400
+    if len(body) > REVIEW_COMMENT_MAX_LENGTH:
+        return (
+            jsonify({"error": f"Comments are limited to {REVIEW_COMMENT_MAX_LENGTH} characters."}),
+            400,
+        )
+
+    anchor, error = review_comments_service.validate_anchor(data, message.content)
+    if error:
+        return jsonify({"error": error}), 400
+
+    comment = ReviewComment(
+        project_id=project.id,
+        message_id=message.id,
+        author_id=current_user.id,
+        body=body,
+        **anchor,
+    )
+    parent_id = data.get("parent_id")
+    if parent_id is not None:
+        parent = ReviewComment.query.filter_by(id=parent_id, message_id=message.id).first()
+        if parent is None:
+            return jsonify({"error": "Parent comment not found on this message."}), 400
+        if parent.parent_id is not None:
+            return jsonify({"error": "Replies can only be one level deep."}), 400
+        comment.parent_id = parent.id
+
+    db.session.add(comment)
+    db.session.flush()
+
+    workspace = db.session.get(Workspace, workspace_id)
+    for mentioned in extract_mentions(body, workspace_id):
+        if mentioned.id == current_user.id:
+            continue
+        notify(
+            mentioned,
+            "mention",
+            actor=current_user,
+            workspace=workspace,
+            project=project,
+            payload={
+                "title": f"{current_user.username} mentioned you in {project.name}",
+                "project": project.name,
+            },
+            link=url_for(
+                "workspaces.project_explorer",
+                workspace_id=workspace_id,
+                project_id=project.id,
+            ),
+        )
+    db.session.commit()
+    return jsonify(comment.to_dict()), 201
+
+
+@bp.route(
+    "/api/projects/<int:project_id>/messages/<int:message_id>/review-comments/<int:comment_id>",
+    methods=["PATCH"],
+)
+@login_required
+def api_update_review_comment(project_id: int, message_id: int, comment_id: int):
+    """Resolve or unresolve a review thread (author or workspace owner)."""
+    project = resolve_project_collab(project_id)
+    comment = ReviewComment.query.filter_by(
+        id=comment_id, project_id=project.id, message_id=message_id
+    ).first_or_404()
+    data = request.get_json(silent=True) or {}
+    if "resolved" in data:
+        if comment.parent_id is not None:
+            return jsonify({"error": "Only a thread root can be resolved."}), 400
+        if not review_comments_service.can_resolve(comment, project):
+            return (
+                jsonify(
+                    {"error": "Only the author or the workspace owner can resolve this thread."}
+                ),
+                403,
+            )
+        comment.resolved = bool(data["resolved"])
+        if comment.resolved:
+            comment.resolved_by = current_user.id
+            comment.resolved_at = datetime.now(UTC)
+        else:
+            comment.resolved_by = None
+            comment.resolved_at = None
+    db.session.commit()
+    return jsonify(comment.to_dict())
+
+
+@bp.route(
+    "/api/projects/<int:project_id>/messages/<int:message_id>/review-comments/<int:comment_id>",
+    methods=["DELETE"],
+)
+@login_required
+def api_delete_review_comment(project_id: int, message_id: int, comment_id: int):
+    """Delete an inline comment as its author or the workspace owner."""
+    project = resolve_project_collab(project_id)
+    comment = ReviewComment.query.filter_by(
+        id=comment_id, project_id=project.id, message_id=message_id
+    ).first_or_404()
+    if not review_comments_service.can_delete(comment, project):
+        return (
+            jsonify({"error": "Only the author or the workspace owner can delete this comment."}),
+            403,
+        )
+    db.session.delete(comment)
+    db.session.commit()
+    return jsonify({"ok": True})
+
+
+@bp.route("/api/projects/<int:project_id>/review-summary", methods=["GET"])
+@login_required
+def api_review_summary(project_id: int):
+    """Open/resolved inline review threads for the conversation summary panel."""
+    project = resolve_project_collab(project_id)
+    return jsonify(review_comments_service.conversation_review_summary(project))
 
 
 # --------------------------------------------------------------------------

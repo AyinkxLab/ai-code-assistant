@@ -8,8 +8,13 @@ from sqlalchemy import func
 
 from app.chat import bp
 from app.extensions import db
-from app.models import Conversation, Message
+from app.models import Conversation, Message, ProjectFile, Workspace
+from app.models.project import STATUS_READY
 from app.services.llm import LLMProviderError, get_provider
+
+#: Cap on files returned per project in the chat file tree (keeps the payload
+#: bounded for large imports); ``truncated`` signals the client when it applies.
+MAX_TREE_FILES = 500
 
 
 def _get_conversation(conversation_id: int) -> Conversation:
@@ -182,3 +187,66 @@ def stream_message(conversation_id: int):
         yield f"data: {json.dumps({'type': 'done', 'message': message.to_dict()})}\n\n"
 
     return Response(generate(), mimetype="text/event-stream")
+
+
+# --------------------------------------------------------------------------
+# API: project file tree (for the chat sidebar)
+# --------------------------------------------------------------------------
+
+
+@bp.route("/api/project-files")
+@login_required
+def api_project_files():
+    """Return the current user's workspaces/projects/files for the chat tree.
+
+    Grouped by workspace, then project, so the chat sidebar can render a
+    collapsible tree. File content is fetched separately (owner-scoped) via the
+    workspace file endpoint when a file is opened.
+    """
+    workspaces = (
+        Workspace.query.filter_by(user_id=current_user.id).order_by(Workspace.name.asc()).all()
+    )
+
+    result = []
+    for workspace in workspaces:
+        projects = []
+        for project in workspace.projects:
+            if project.status != STATUS_READY:
+                projects.append(
+                    {
+                        "id": project.id,
+                        "name": project.name,
+                        "status": project.status,
+                        "truncated": False,
+                        "files": [],
+                    }
+                )
+                continue
+
+            rows = (
+                ProjectFile.query.filter_by(project_id=project.id)
+                .order_by(ProjectFile.path.asc())
+                .limit(MAX_TREE_FILES + 1)
+                .all()
+            )
+            truncated = len(rows) > MAX_TREE_FILES
+            files = []
+            for file in rows[:MAX_TREE_FILES]:
+                payload = file.to_dict()
+                payload["project_id"] = project.id
+                payload["created_at"] = file.created_at.isoformat() if file.created_at else None
+                files.append(payload)
+
+            projects.append(
+                {
+                    "id": project.id,
+                    "name": project.name,
+                    "status": project.status,
+                    "truncated": truncated,
+                    "files": files,
+                }
+            )
+
+        result.append({"id": workspace.id, "name": workspace.name, "projects": projects})
+
+    return jsonify(result)
