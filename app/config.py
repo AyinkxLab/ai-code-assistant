@@ -85,6 +85,11 @@ class Config:
     LLM_RETRY_BASE_DELAY = float(os.getenv("LLM_RETRY_BASE_DELAY", "0.5"))
     LLM_RETRY_MAX_DELAY = float(os.getenv("LLM_RETRY_MAX_DELAY", "8.0"))
 
+    # Chat image attachments (issue #49): only png/jpeg/webp are accepted and
+    # each image and the number per message are bounded.
+    CHAT_IMAGE_MAX_BYTES = int(os.getenv("CHAT_IMAGE_MAX_BYTES", str(5 * 1024 * 1024)))
+    CHAT_IMAGE_MAX_PER_MESSAGE = int(os.getenv("CHAT_IMAGE_MAX_PER_MESSAGE", "4"))
+
     # Prompt library (Phase 3): version history. Every prompt save is recorded
     # as a version; when a prompt is deleted its history is retained for this
     # many days before being purged.

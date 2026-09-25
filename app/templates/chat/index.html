@@ -97,11 +97,14 @@
     </details>
 
     <div class="chat-composer">
+      <div id="chat-image-preview" class="chat-image-preview" aria-live="polite"></div>
       <textarea id="chat-input" rows="3" placeholder="Ask for code, explanations, or help..."></textarea>
+      <input id="chat-image-input" type="file" accept="image/png,image/jpeg,image/webp" multiple hidden>
       <div class="composer-actions">
+        <button id="chat-attach-image" class="btn btn-ghost btn-sm" type="button">+ Image</button>
         <button id="send-message" class="btn btn-primary" type="button">Send</button>
       </div>
-      <p class="chat-hint">The assistant streams its reply. Markdown and code blocks are supported.</p>
+      <p class="chat-hint">The assistant streams its reply. Markdown and code blocks are supported. Attach up to 4 png/jpeg/webp images.</p>
     </div>
   </section>
 </div>

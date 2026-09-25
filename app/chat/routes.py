@@ -1,14 +1,33 @@
 """Chat routes: UI page, conversation CRUD, sharing, and SSE streaming."""
 
+import base64
 import json
 
-from flask import Response, abort, jsonify, render_template, request, stream_with_context, url_for
+from flask import (
+    Response,
+    abort,
+    current_app,
+    jsonify,
+    render_template,
+    request,
+    stream_with_context,
+    url_for,
+)
 from flask_login import current_user, login_required
 from sqlalchemy import func
 
 from app.chat import bp
 from app.extensions import db
-from app.models import Conversation, ConversationShare, Message, ProjectFile, User, Workspace
+from app.models import (
+    Conversation,
+    ConversationShare,
+    Message,
+    MessageAttachment,
+    ProjectFile,
+    User,
+    Workspace,
+)
+from app.models.message_attachment import ALLOWED_IMAGE_TYPES
 from app.models.project import STATUS_READY
 from app.services.llm import LLMProviderError, provider_status
 from app.services.notifications import notify
@@ -70,12 +89,57 @@ def _shared_conversation_ids() -> list[int]:
     return [row[0] for row in rows]
 
 
-def _conversation_messages(history: list[dict], content: str, conversation) -> list[dict]:
-    """Build the outgoing message list, honoring the conversation's system prompt."""
-    messages = [*history, {"role": "user", "content": content}]
+def _message_images(message) -> list[dict]:
+    """Return base64 image payloads for a message's attachments (issue #49)."""
+    return [
+        {
+            "content_type": attachment.content_type,
+            "data": base64.b64encode(attachment.data).decode("ascii"),
+        }
+        for attachment in message.attachments
+    ]
+
+
+def _conversation_messages(conversation) -> list[dict]:
+    """Build the outgoing message list, honoring system prompt and images."""
+    messages: list[dict] = []
     if conversation.system_prompt:
-        messages.insert(0, {"role": "system", "content": conversation.system_prompt})
+        messages.append({"role": "system", "content": conversation.system_prompt})
+    for message in conversation.messages:
+        item: dict = {"role": message.role, "content": message.content}
+        images = _message_images(message)
+        if images:
+            item["images"] = images
+        messages.append(item)
     return messages
+
+
+def _link_attachments(conversation, message, attachment_ids) -> str | None:
+    """Attach uploaded images to ``message``, returning an error string or None.
+
+    Only images uploaded against this conversation and not yet linked to a
+    message may be attached, so another user's (or conversation's) upload can
+    never be pulled in.
+    """
+    if not attachment_ids:
+        return None
+    if not isinstance(attachment_ids, list):
+        return "Attachment ids must be a list."
+    limit = int(current_app.config.get("CHAT_IMAGE_MAX_PER_MESSAGE", 4))
+    if len(attachment_ids) > limit:
+        return f"At most {limit} images can be attached to one message."
+    for raw_id in attachment_ids:
+        try:
+            attachment_id = int(raw_id)
+        except (TypeError, ValueError):
+            return "Invalid attachment id."
+        attachment = MessageAttachment.query.filter_by(
+            id=attachment_id, conversation_id=conversation.id, message_id=None
+        ).first()
+        if attachment is None:
+            return "Attachment not found."
+        message.attachments.append(attachment)
+    return None
 
 
 def _generation_kwargs(conversation) -> dict:
@@ -304,6 +368,63 @@ def unshare_conversation(conversation_id: int, user_id: int):
     return jsonify({"ok": True})
 
 
+@bp.route("/conversations/<int:conversation_id>/attachments", methods=["POST"])
+@login_required
+def upload_attachment(conversation_id: int):
+    """Upload an image to attach to a later message (issue #49).
+
+    The image is validated (png/jpeg/webp, within the size cap) and stored
+    against the conversation; the returned id is passed as ``attachment_ids``
+    when sending the message.
+    """
+    conversation = _get_conversation(conversation_id)
+    upload = request.files.get("image")
+    if upload is None or not (upload.filename or "").strip():
+        return jsonify({"error": "An image file is required."}), 400
+    content_type = (upload.mimetype or "").lower()
+    if content_type not in ALLOWED_IMAGE_TYPES:
+        return jsonify({"error": "Only PNG, JPEG, or WebP images are supported."}), 400
+    max_bytes = int(current_app.config.get("CHAT_IMAGE_MAX_BYTES", 5 * 1024 * 1024))
+    data = upload.read(max_bytes + 1)
+    if not data:
+        return jsonify({"error": "The uploaded image was empty."}), 400
+    if len(data) > max_bytes:
+        return jsonify({"error": "This image is too large."}), 400
+
+    attachment = MessageAttachment(
+        conversation_id=conversation.id,
+        filename=(upload.filename or "image")[:255],
+        content_type=content_type,
+        size=len(data),
+        data=data,
+    )
+    db.session.add(attachment)
+    db.session.commit()
+    return jsonify(attachment.to_dict()), 201
+
+
+@bp.route("/attachments/<int:attachment_id>")
+@login_required
+def get_attachment(attachment_id: int):
+    """Serve an attachment's bytes inline to its owner."""
+    attachment = (
+        MessageAttachment.query.join(
+            Conversation, MessageAttachment.conversation_id == Conversation.id
+        )
+        .filter(MessageAttachment.id == attachment_id, Conversation.user_id == current_user.id)
+        .first_or_404()
+    )
+    filename = (attachment.filename or "image").replace('"', "")
+    return Response(
+        attachment.data,
+        mimetype=attachment.content_type,
+        headers={
+            "Cache-Control": "private, max-age=0, no-store",
+            "Content-Disposition": f'inline; filename="{filename}"',
+        },
+    )
+
+
 @bp.route("/conversations/<int:conversation_id>/messages", methods=["POST"])
 @login_required
 def send_message(conversation_id: int):
@@ -315,16 +436,24 @@ def send_message(conversation_id: int):
     conversation = _get_conversation(conversation_id)
     data = request.get_json(silent=True) or {}
     content = (data.get("content") or "").strip()
+    attachment_ids = data.get("attachment_ids") or []
+    if not content and not attachment_ids:
+        return jsonify({"error": "Message content or an image is required."}), 400
     if not content:
-        return jsonify({"error": "Message content is required."}), 400
+        content = "(image attached)"
 
     status = provider_status(current_user)
     if not status["configured"]:
         return jsonify(_provider_not_configured_payload(status)), 503
 
-    history = [{"role": m.role, "content": m.content} for m in conversation.messages]
-    conversation.messages.append(Message(role="user", content=content))
-    messages = _conversation_messages(history, content, conversation)
+    user_message = Message(role="user", content=content)
+    conversation.messages.append(user_message)
+    error = _link_attachments(conversation, user_message, attachment_ids)
+    if error:
+        db.session.rollback()
+        return jsonify({"error": error}), 400
+
+    messages = _conversation_messages(conversation)
 
     try:
         provider = RetryingProvider(build_provider(current_user, conversation.provider))
@@ -352,17 +481,24 @@ def stream_message(conversation_id: int):
     conversation = _get_conversation(conversation_id)
     data = request.get_json(silent=True) or {}
     content = (data.get("content") or "").strip()
+    attachment_ids = data.get("attachment_ids") or []
+    if not content and not attachment_ids:
+        return jsonify({"error": "Message content or an image is required."}), 400
     if not content:
-        return jsonify({"error": "Message content is required."}), 400
+        content = "(image attached)"
 
     status = provider_status(current_user)
     if not status["configured"]:
         return jsonify(_provider_not_configured_payload(status)), 503
 
-    history = [{"role": m.role, "content": m.content} for m in conversation.messages]
-    conversation.messages.append(Message(role="user", content=content))
+    user_message = Message(role="user", content=content)
+    conversation.messages.append(user_message)
+    error = _link_attachments(conversation, user_message, attachment_ids)
+    if error:
+        db.session.rollback()
+        return jsonify({"error": error}), 400
     db.session.commit()
-    messages = _conversation_messages(history, content, conversation)
+    messages = _conversation_messages(conversation)
     generation = _generation_kwargs(conversation)
 
     def persist_assistant(reply: str):

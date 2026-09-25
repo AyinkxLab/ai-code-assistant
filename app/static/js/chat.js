@@ -16,6 +16,11 @@
   var currentController = null;
   var cancelRequested = false;
   var onboardingEl = document.getElementById("provider-onboarding");
+  var imageInput = document.getElementById("chat-image-input");
+  var attachBtn = document.getElementById("chat-attach-image");
+  var previewEl = document.getElementById("chat-image-preview");
+  var pendingAttachments = [];
+  var MAX_ATTACHMENTS = 4;
   var providerEl = document.getElementById("chat-provider");
   var modelEl = document.getElementById("chat-model");
   var tempEl = document.getElementById("chat-temperature");
@@ -54,7 +59,22 @@
     return escapeHtml(text).replace(/\n/g, "<br>\n");
   }
 
-  function addMessage(role, content) {
+  function renderAttachments(attachments) {
+    if (!attachments || !attachments.length) return "";
+    return attachments
+      .map(function (attachment) {
+        return (
+          '<img class="chat-attachment-image" src="' +
+          escapeHtml(attachment.url) +
+          '" alt="' +
+          escapeHtml(attachment.filename || "attachment") +
+          '" loading="lazy">'
+        );
+      })
+      .join("");
+  }
+
+  function addMessage(role, content, attachments) {
     var el = document.createElement("div");
     el.className = "chat-message chat-" + role;
     var label = role === "user" ? "You" : "Assistant";
@@ -63,7 +83,8 @@
       escapeHtml(label) +
       '</div><div class="message-body">' +
       (role === "user" ? escapeHtml(content) : renderMarkdown(content)) +
-      "</div>";
+      "</div>" +
+      renderAttachments(attachments);
     el.innerHTML = body;
     messagesEl.appendChild(el);
     scrollToBottom();
@@ -122,7 +143,7 @@
     return api("/chat/conversations/" + id)
       .then(function (data) {
         data.messages.forEach(function (message) {
-          addMessage(message.role, message.content);
+          addMessage(message.role, message.content, message.attachments);
         });
         if (data.messages.length === 0) {
           messagesEl.innerHTML =
@@ -172,36 +193,102 @@
     currentController.abort();
   }
 
+  async function ensureConversation() {
+    if (currentId !== null) return currentId;
+    var created = await api("/chat/conversations", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(collectSettings()),
+    });
+    addListItem(created);
+    currentId = created.id;
+    actionsEl.hidden = false;
+    return currentId;
+  }
+
+  function renderPendingAttachments() {
+    if (!previewEl) return;
+    previewEl.innerHTML = "";
+    pendingAttachments.forEach(function (attachment, index) {
+      var chip = document.createElement("span");
+      chip.className = "chat-image-chip";
+      var img = document.createElement("img");
+      img.src = attachment.url;
+      img.alt = attachment.filename || "attachment";
+      var remove = document.createElement("button");
+      remove.type = "button";
+      remove.className = "chat-image-remove";
+      remove.setAttribute("aria-label", "Remove attached image");
+      remove.textContent = "\u00d7";
+      remove.addEventListener("click", function () {
+        pendingAttachments.splice(index, 1);
+        renderPendingAttachments();
+      });
+      chip.appendChild(img);
+      chip.appendChild(remove);
+      previewEl.appendChild(chip);
+    });
+  }
+
+  async function uploadImage(file) {
+    if (pendingAttachments.length >= MAX_ATTACHMENTS) {
+      flashError("At most " + MAX_ATTACHMENTS + " images can be attached.");
+      return;
+    }
+    try {
+      var id = await ensureConversation();
+      var form = new FormData();
+      form.append("image", file);
+      var response = await fetch("/chat/conversations/" + id + "/attachments", {
+        method: "POST",
+        headers: { "X-CSRFToken": getCsrf() },
+        body: form,
+      });
+      var data = null;
+      try {
+        data = await response.json();
+      } catch (e) {
+        data = null;
+      }
+      if (!response.ok) {
+        throw new Error(
+          data && data.error ? data.error : "Upload failed (" + response.status + ")."
+        );
+      }
+      pendingAttachments.push(data);
+      renderPendingAttachments();
+    } catch (error) {
+      flashError(error.message);
+    }
+  }
+
   async function startStream() {
     var content = inputEl.value.trim();
-    if (!content || streaming) return;
+    if ((!content && pendingAttachments.length === 0) || streaming) return;
     if (onboardingEl && !onboardingEl.hidden) {
       flashError("Add a provider API key before sending a message.");
       onboardingEl.scrollIntoView({ behavior: "smooth", block: "center" });
       return;
     }
-    if (currentId === null) {
-      try {
-        var created = await api("/chat/conversations", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(collectSettings()),
-        });
-        addListItem(created);
-        currentId = created.id;
-        actionsEl.hidden = false;
-      } catch (error) {
-        flashError(error.message);
-        return;
-      }
+    try {
+      await ensureConversation();
+    } catch (error) {
+      flashError(error.message);
+      return;
     }
 
+    var attachments = pendingAttachments.slice();
+    var attachmentIds = attachments.map(function (attachment) {
+      return attachment.id;
+    });
     inputEl.value = "";
+    pendingAttachments = [];
+    renderPendingAttachments();
     streaming = true;
     cancelRequested = false;
     currentController = new AbortController();
     setComposerState("streaming");
-    addMessage("user", content);
+    addMessage("user", content || "(image attached)", attachments);
 
     var typing = addTypingIndicator();
     var bodyEl = typing.querySelector(".typing-indicator");
@@ -213,7 +300,7 @@
           "Content-Type": "application/json",
           "X-CSRFToken": getCsrf(),
         },
-        body: JSON.stringify({ content: content }),
+        body: JSON.stringify({ content: content, attachment_ids: attachmentIds }),
         signal: currentController.signal,
       });
 
@@ -266,7 +353,9 @@
             flashError(payload.error);
           } else if (payload.type === "done") {
             if (payload.message) {
-              streamBody.innerHTML = renderMarkdown(payload.message.content);
+              streamBody.innerHTML =
+                renderMarkdown(payload.message.content) +
+                renderAttachments(payload.message.attachments);
               highlightCode(streamBody);
             }
             scrollToBottom();
@@ -524,6 +613,16 @@
         startStream();
       }
     });
+
+    if (attachBtn && imageInput) {
+      attachBtn.addEventListener("click", function () {
+        imageInput.click();
+      });
+      imageInput.addEventListener("change", function () {
+        Array.prototype.slice.call(imageInput.files || []).forEach(uploadImage);
+        imageInput.value = "";
+      });
+    }
     inputEl.addEventListener("keydown", function (event) {
       if (event.key === "Enter" && !event.shiftKey) {
         event.preventDefault();

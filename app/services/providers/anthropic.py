@@ -24,7 +24,7 @@ from app.services.providers.base import (
     ProviderResponse,
     ProviderResponseError,
     ProviderUnavailableError,
-    normalize_messages,
+    prepare_messages,
 )
 
 TIMEOUT_SECONDS = 60
@@ -37,6 +37,7 @@ class AnthropicProvider(LLMProvider):
     name = "anthropic"
     models = DEFAULT_MODELS
     requires_key = True
+    supports_vision = True
 
     def __init__(
         self,
@@ -74,9 +75,25 @@ class AnthropicProvider(LLMProvider):
     def _split_system(self, messages: Iterable[Any]) -> tuple[str, list[dict]]:
         system_parts: list[str] = []
         chat: list[dict] = []
-        for message in normalize_messages(messages):
+        for message in prepare_messages(messages, supports_vision=self.supports_vision):
             if message["role"] == "system":
                 system_parts.append(message["content"])
+                continue
+            images = message.pop("images", [])
+            if images:
+                blocks: list[dict] = [
+                    {
+                        "type": "image",
+                        "source": {
+                            "type": "base64",
+                            "media_type": image["content_type"],
+                            "data": image["data"],
+                        },
+                    }
+                    for image in images
+                ]
+                blocks.append({"type": "text", "text": message["content"]})
+                chat.append({"role": message["role"], "content": blocks})
             else:
                 chat.append(message)
         return "\n\n".join(system_parts), chat
