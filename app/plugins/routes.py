@@ -252,6 +252,19 @@ def api_enable_plugin(workspace_id: int, plugin_id: str):
     if installation is None:
         return jsonify({"error": "Plugin is not installed in this workspace."}), 404
     if not installation.enabled:
+        # Resolve declared dependencies before enabling. The workspace
+        # installation must not become enabled when a required dependency is
+        # missing, disabled, incompatible, or cyclic.
+        from app.services.plugin_ops import (
+            PluginDependencyResolutionError,
+            resolve_plugin_dependencies,
+        )
+
+        try:
+            resolve_plugin_dependencies(installation.plugin)
+        except PluginDependencyResolutionError as exc:
+            db.session.rollback()
+            return jsonify({"error": str(exc)}), 400
         installation.enabled = True
         record_plugin_audit(
             workspace_id,
