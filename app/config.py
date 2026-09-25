@@ -110,6 +110,9 @@ class Config:
     GITHUB_SCOPES = os.getenv("GITHUB_SCOPES", "read:user repo")
     GITHUB_REQUEST_TIMEOUT = int(os.getenv("GITHUB_REQUEST_TIMEOUT", "30"))
     GITHUB_MAX_CONTEXT_CHARS = int(os.getenv("GITHUB_MAX_CONTEXT_CHARS", "40000"))
+    # Remaining core API quota at or below this value triggers the low-quota
+    # warning on the GitHub dashboard (issue #77).
+    GITHUB_LOW_QUOTA_THRESHOLD = int(os.getenv("GITHUB_LOW_QUOTA_THRESHOLD", "100"))
 
     # Project workspaces (Phase 5): limits that protect the server from being
     # overwhelmed by large or malicious project imports. Archives are validated

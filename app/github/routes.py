@@ -193,11 +193,47 @@ def disconnect():
 @bp.route("/api/status")
 @login_required
 def status():
-    """Return whether the current user has a GitHub connection."""
+    """Return GitHub connection status plus the remaining API quota.
+
+    When the user is connected, a best-effort ``rate_limit`` summary is
+    included so the dashboard can warn before the core API budget runs out.
+    Only non-sensitive numeric fields are exposed — never the token or any
+    response headers (issue #77).
+    """
     account = GithubAccount.query.filter_by(user_id=current_user.id).first()
-    return jsonify(
-        {"connected": account is not None, "account": account.to_dict() if account else None}
-    )
+    payload: dict = {
+        "connected": account is not None,
+        "account": account.to_dict() if account else None,
+    }
+    if account is not None:
+        payload["rate_limit"] = _rate_limit_summary()
+    return jsonify(payload)
+
+
+def _rate_limit_summary() -> dict:
+    """Best-effort GitHub core rate-limit summary for the dashboard.
+
+    Never fails the status request: if the budget cannot be read the payload
+    reports ``available: false``. ``low`` is true when the remaining quota is
+    at or below ``GITHUB_LOW_QUOTA_THRESHOLD``.
+    """
+    try:
+        budget = _client().get_rate_limit()
+    except GitHubError:
+        budget = None
+    if not budget:
+        return {"available": False}
+    threshold = current_app.config.get("GITHUB_LOW_QUOTA_THRESHOLD", 100)
+    remaining = budget.get("remaining")
+    return {
+        "available": True,
+        "limit": budget.get("limit"),
+        "remaining": remaining,
+        "reset": budget.get("reset"),
+        "used": budget.get("used"),
+        "threshold": threshold,
+        "low": remaining is not None and remaining <= threshold,
+    }
 
 
 # --------------------------------------------------------------------------

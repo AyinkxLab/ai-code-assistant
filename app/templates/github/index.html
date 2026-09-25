@@ -23,6 +23,8 @@
     </div>
   </div>
 
+  <div id="github-rate-limit" class="github-rate-limit" role="status" aria-live="polite" hidden></div>
+
   <div class="github-features">
     <div class="feature-grid">
       <a class="feature-card" href="{{ url_for('github.repos') }}">
@@ -41,5 +43,35 @@
     <a class="btn btn-primary" href="{{ url_for('github.connect') }}">Connect GitHub</a>
     <p class="github-hint">You will be redirected to GitHub to authorize access. Your token is encrypted before it is stored and is never exposed in the browser.</p>
   </div>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+{% if account %}
+<script src="{{ url_for('static', filename='js/github.js') }}"></script>
+<script>
+  (function () {
+    "use strict";
+    var box = document.getElementById("github-rate-limit");
+    if (!box || !window.GitHub) return;
+    window.GitHub.api("/github/api/status")
+      .then(function (data) {
+        var rl = data && data.rate_limit;
+        if (!rl || !rl.available || !rl.low) return;
+        var remaining = rl.remaining;
+        var limit = rl.limit;
+        var message = "Low GitHub API quota: " + remaining + " of " + limit +
+          " requests remaining.";
+        if (rl.reset) {
+          message += " Resets " + new Date(rl.reset * 1000).toLocaleString() + ".";
+        }
+        box.textContent = message;
+        box.hidden = false;
+      })
+      .catch(function () {
+        // Quota display is informational; never break the dashboard on error.
+      });
+  })();
+</script>
 {% endif %}
 {% endblock %}
