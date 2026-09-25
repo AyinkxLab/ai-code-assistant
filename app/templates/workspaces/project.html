@@ -40,6 +40,7 @@
       <button class="repo-tab" data-tab="chat" type="button">AI Chat</button>
       <button class="repo-tab" data-tab="analysis" type="button">Analysis</button>
       <button class="repo-tab" data-tab="stats" type="button">Stats</button>
+      <button class="repo-tab" data-tab="reviews" type="button">Reviews</button>
       <button class="repo-tab" data-tab="stellar" type="button">Stellar</button>
       <button class="repo-tab" data-tab="discussion" type="button">Discussion</button>
     </div>
@@ -116,6 +117,16 @@
 
     <div id="tab-stats" class="project-tab" hidden>
       <div id="stats-output" class="analysis-output"><p class="sidebar-empty">Loading project health...</p></div>
+    </div>
+
+    <div id="tab-reviews" class="project-tab" hidden>
+      <div class="repo-toolbar">
+        <a class="btn btn-primary btn-sm" href="{{ url_for('reviews.project_page', project_id=project.id) }}">Open review runner</a>
+        <a class="btn btn-ghost btn-sm" href="{{ url_for('reviews.index') }}">All reviews</a>
+      </div>
+      <div id="project-reviews" class="issue-list" aria-live="polite">
+        <p class="sidebar-empty">Loading recent reviews...</p>
+      </div>
     </div>
 
     <div id="tab-stellar" class="project-tab" hidden>
