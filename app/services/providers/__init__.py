@@ -28,6 +28,7 @@ from app.services.providers.openai import OpenAIProvider
 from app.services.providers.registry import (
     available_providers,
     get_provider,
+    provider_status,
     register_provider,
     resolve_provider_name,
     unregister_provider,
@@ -52,6 +53,7 @@ __all__ = [
     "UnknownProviderError",
     "available_providers",
     "get_provider",
+    "provider_status",
     "register_provider",
     "resolve_provider_name",
     "unregister_provider",

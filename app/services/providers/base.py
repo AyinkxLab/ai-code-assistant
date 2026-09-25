@@ -106,6 +106,10 @@ class LLMProvider(ABC):
 
     name: ClassVar[str] = "base"
     models: ClassVar[tuple[str, ...]] = ()
+    #: Whether the provider needs a credential (environment variable or a
+    #: user-stored key) before it can serve requests. Keyless providers such as
+    #: the mock provider leave this ``False``; real providers set it ``True``.
+    requires_key: ClassVar[bool] = False
 
     @abstractmethod
     def chat(

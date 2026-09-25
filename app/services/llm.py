@@ -23,6 +23,7 @@ from app.services.providers import (
     UnknownProviderError,
     available_providers,
     get_provider,
+    provider_status,
     register_provider,
 )
 
@@ -45,5 +46,6 @@ __all__ = [
     "UnknownProviderError",
     "available_providers",
     "get_provider",
+    "provider_status",
     "register_provider",
 ]
