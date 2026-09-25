@@ -69,6 +69,7 @@
 {% endblock %}
 
 {% block scripts %}
+<script src="{{ url_for('static', filename='js/chat_markdown.js') }}"></script>
 <script src="{{ url_for('static', filename='js/chat.js') }}"></script>
 <script src="{{ url_for('static', filename='js/chat_files.js') }}"></script>
 {% endblock %}
