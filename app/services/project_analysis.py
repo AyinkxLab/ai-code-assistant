@@ -35,6 +35,8 @@ except ImportError:  # pragma: no cover - runtime fallback
     tomllib = None  # type: ignore[assignment]
 
 MAX_CONTEXT_FILES = 10
+MAX_HISTORY_MESSAGES = 12
+MAX_HISTORY_PATHS = 3
 ANALYSIS_KINDS = (
     "architecture",
     "bugs",
@@ -264,10 +266,12 @@ def build_messages(
     """Build the provider message list for a project chat request.
 
     Includes bounded recent history, the project structure summary, and only
-    the retrieved (bounded) file context for ``question``.
+    the retrieved (bounded) file context for ``question``. Files discussed in
+    recent history are folded into retrieval so follow-ups resolve context.
     """
     _assert_accessible(project)
-    context = build_context(project, question, attachments=attachments)
+    pinned = _pinned_paths(project, attachments, history)
+    context = build_context(project, question, attachments=pinned)
     structure = project_structure(project)
     user_prompt = (
         f"{_context_header(project)}\n\n"
@@ -281,7 +285,7 @@ def build_messages(
         "inferences or trade-offs."
     )
     messages = [{"role": "system", "content": _PROJECT_SYSTEM}]
-    messages.extend({"role": m.role, "content": m.content} for m in history[-12:])
+    messages.extend({"role": m.role, "content": m.content} for m in history[-MAX_HISTORY_MESSAGES:])
     messages.append({"role": "user", "content": user_prompt})
     return messages
 
@@ -333,6 +337,45 @@ def project_structure(project) -> str:
 def _mentioned_paths(question: str, paths: set[str]) -> list[str]:
     mentions = re.findall(r"@([A-Za-z0-9_./-]+)", question or "")
     return [mention for mention in mentions if mention in paths]
+
+
+_PATH_TOKEN_RE = re.compile(r"[A-Za-z0-9_][A-Za-z0-9_./-]*\.[A-Za-z0-9]+")
+
+
+def _history_paths(project, history, *, limit: int = MAX_HISTORY_PATHS) -> list[str]:
+    """Paths of project files discussed in recent conversation history.
+
+    Follow-up questions often refer back to a file ("explain that file", "and
+    its tests") without re-mentioning it. Only paths that still exist in the
+    current project snapshot are returned, so retrieval stays grounded in the
+    present files even if the project was re-indexed mid-session.
+    """
+    if not history or limit <= 0:
+        return []
+    known = {file.path for file in project.files.all() if file.content is not None}
+    if not known:
+        return []
+    found: list[str] = []
+    for message in history[-MAX_HISTORY_MESSAGES:]:
+        if isinstance(message, dict):
+            content = message.get("content")
+        else:
+            content = getattr(message, "content", None)
+        if not content:
+            continue
+        for token in _PATH_TOKEN_RE.findall(content):
+            if token in known and token not in found:
+                found.append(token)
+    return found[-limit:]
+
+
+def _pinned_paths(project, attachments, history) -> list[str]:
+    """Explicit attachment paths plus paths carried over from history."""
+    pinned = list(attachments or [])
+    for path in _history_paths(project, history or []):
+        if path not in pinned:
+            pinned.append(path)
+    return pinned
 
 
 def build_context(
@@ -607,11 +650,23 @@ def dependency_inventory(project) -> list[dict]:
 # --------------------------------------------------------------------------
 
 
-def chat_with_project(project, question: str, attachments: list[str] | None = None) -> dict:
-    """Answer ``question`` about ``project`` using bounded retrieved context."""
+def chat_with_project(
+    project,
+    question: str,
+    attachments: list[str] | None = None,
+    history: list | None = None,
+) -> dict:
+    """Answer ``question`` about ``project`` using bounded retrieved context.
+
+    ``history`` is the bounded prior conversation for this chat session. It is
+    folded into retrieval so a follow-up resolves files discussed earlier
+    without having to re-mention them.
+    """
     _assert_accessible(project)
-    context = build_context(project, question, attachments=attachments)
-    messages = build_messages(project, question, [], attachments=attachments)
+    history = history or []
+    pinned = _pinned_paths(project, attachments, history)
+    context = build_context(project, question, attachments=pinned)
+    messages = build_messages(project, question, history, attachments=pinned)
     return {
         "context_paths": context["paths"],
         "analysis": _complete(messages),
