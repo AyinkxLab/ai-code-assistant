@@ -25,6 +25,7 @@ from cryptography.exceptions import InvalidSignature
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 
 from app.services.plugin_compat import is_valid_compatibility
+from app.services.plugin_deps import PluginRef
 
 logger = logging.getLogger(__name__)
 
@@ -183,6 +184,12 @@ class ManifestValidationError(PluginError):
 
 class PluginRegistrationError(PluginError):
     """Plugin registration failed."""
+
+    pass
+
+
+class PluginDependencyResolutionError(PluginError):
+    """Plugin enable refused because a required dependency is unsatisfied."""
 
     pass
 
@@ -617,20 +624,57 @@ class PluginRegistry:
     def enable(self, plugin_id: str) -> None:
         """Enable plugin and run its optional ``on_enable`` hook.
 
+        All declared dependencies (PEP 508 requirement strings) are resolved
+        before the plugin becomes enabled: registered plugin dependencies must
+        exist and be enabled, and Python package dependencies must be installed
+        at a satisfying version. A failure refuses the enable and leaves the
+        plugin disabled.
+
         Args:
             plugin_id: Plugin identifier
 
         Raises:
             PluginRegistrationError: If plugin not found
+            PluginDependencyResolutionError: If required dependencies cannot
+                be satisfied
         """
         plugin = self.get(plugin_id)
         if not plugin:
             raise PluginRegistrationError(f"Plugin not found: {plugin_id}")
         if plugin.enabled:
             return
+
+        from app.services.plugin_deps import (
+            DependencyResolver,
+            PluginDependencyError,
+        )
+
+        resolver = DependencyResolver(self._plugin_ref)
+        try:
+            resolver.resolve(self._to_ref(plugin))
+        except PluginDependencyError as exc:
+            raise PluginDependencyResolutionError(
+                f"Cannot enable plugin {plugin_id}: {exc.message}"
+            ) from exc
+
         plugin.enabled = True
         self._run_hook(plugin, "on_enable")
         logger.info(f"Enabled plugin: {plugin_id}")
+
+    @staticmethod
+    def _to_ref(plugin: "Plugin") -> "PluginRef":
+        """Adapt a registry :class:`Plugin` to the resolver's :class:`PluginRef`."""
+        return PluginRef(
+            id=plugin.manifest.id,
+            version=plugin.manifest.version,
+            enabled=plugin.enabled,
+            dependencies=tuple(plugin.manifest.dependencies or ()),
+        )
+
+    def _plugin_ref(self, plugin_id: str) -> "PluginRef | None":
+        """Look up a registered plugin as a :class:`PluginRef` (for resolution)."""
+        plugin = self.get(plugin_id)
+        return None if plugin is None else self._to_ref(plugin)
 
     def disable(self, plugin_id: str) -> None:
         """Disable plugin and run its optional ``on_disable`` hook.

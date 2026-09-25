@@ -36,11 +36,26 @@ def resolve_provider_name(name: str | None = None) -> str:
     return (name or os.getenv("LLM_PROVIDER") or "mock").strip().lower()
 
 
+def _current_user_or_none():
+    """Return the logged-in user when there is an active request context (#30)."""
+    try:
+        from flask_login import current_user
+    except Exception:  # pragma: no cover - flask_login always present in the app
+        return None
+    try:
+        if getattr(current_user, "is_authenticated", False):
+            return current_user
+    except Exception:  # no request context
+        return None
+    return None
+
+
 def _stored_api_key(user, provider_name: str) -> str | None:
-    """Return the user's active stored key for ``provider_name``, or ``None``.
+    """Decrypt the user's active stored key for ``provider_name``, or ``None``.
 
     Imports are lazy so the registry stays free of model/app imports at module
-    load time (avoids circular imports during app startup).
+    load time (avoids circular imports during app startup). Decryption lives
+    here — the provider service layer — and the plaintext never leaves it.
     """
     if user is None:
         return None
@@ -60,17 +75,18 @@ def _stored_api_key(user, provider_name: str) -> str | None:
         return None
     try:
         return decrypt_for_use(key)
-    except Exception:  # pragma: no cover - defensive
+    except Exception:  # pragma: no cover - rotated secret / tampered row
         return None
 
 
 def get_provider(name: str | None = None, *, user=None) -> LLMProvider:
     """Instantiate the provider selected by ``name`` (or ``LLM_PROVIDER``).
 
-    When ``user`` is supplied and the provider requires a key that is absent
-    from the environment, the user's active stored key for that provider is
-    injected (issue #25), so a key added through the API-key UI unlocks chat
-    without a restart.
+    When the provider requires a key that the environment does not supply, the
+    signed-in user's stored (encrypted) key is decrypted and injected here, in
+    the provider service layer, so a key added through the API-key UI unlocks
+    chat without a restart (issues #25, #30). ``user`` may be passed explicitly;
+    otherwise the current request's logged-in user is used when available.
 
     Raises :class:`UnknownProviderError` when the provider is not registered.
     """
@@ -83,8 +99,13 @@ def get_provider(name: str | None = None, *, user=None) -> LLMProvider:
             provider=resolved,
         )
     provider = factory()
-    if getattr(provider, "requires_key", False) and not getattr(provider, "api_key", ""):
-        stored = _stored_api_key(user, resolved)
+    resolved_user = user if user is not None else _current_user_or_none()
+    if (
+        resolved_user is not None
+        and getattr(provider, "requires_key", False)
+        and not getattr(provider, "api_key", "")
+    ):
+        stored = _stored_api_key(resolved_user, resolved)
         if stored:
             try:
                 provider = factory(api_key=stored)

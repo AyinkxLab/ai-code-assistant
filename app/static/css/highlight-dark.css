@@ -1,0 +1,76 @@
+/* highlight.js theme tuned to the app's dark palette (issue #44).
+   Uses the CSS custom properties declared in style.css where available. */
+
+.hljs {
+  display: block;
+  overflow-x: auto;
+  color: var(--text, #e6edf3);
+  background: transparent;
+}
+
+.hljs-comment,
+.hljs-quote {
+  color: var(--text-muted, #8b949e);
+  font-style: italic;
+}
+
+.hljs-keyword,
+.hljs-selector-tag,
+.hljs-literal,
+.hljs-type,
+.hljs-doctag {
+  color: #ff7b72;
+}
+
+.hljs-string,
+.hljs-attr,
+.hljs-template-tag,
+.hljs-addition {
+  color: #a5d6ff;
+}
+
+.hljs-number,
+.hljs-symbol,
+.hljs-bullet,
+.hljs-variable,
+.hljs-template-variable {
+  color: #79c0ff;
+}
+
+.hljs-title,
+.hljs-section,
+.hljs-name,
+.hljs-selector-id,
+.hljs-selector-class {
+  color: #d2a8ff;
+}
+
+.hljs-built_in,
+.hljs-builtin-name,
+.hljs-attribute {
+  color: #ffa657;
+}
+
+.hljs-meta,
+.hljs-deletion {
+  color: #ffa198;
+}
+
+.hljs-function .hljs-title,
+.hljs-title.function_ {
+  color: #d2a8ff;
+}
+
+.hljs-emphasis {
+  font-style: italic;
+}
+
+.hljs-strong {
+  font-weight: 700;
+}
+
+pre.code-view code.hljs,
+.chat-messages pre code.hljs {
+  padding: 0;
+  background: transparent;
+}

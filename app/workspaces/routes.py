@@ -94,8 +94,11 @@ from app.services.health import coverage_estimate, detect_ci_files
 from app.services.import_jobs import submit_import_job
 from app.services.importing import (
     ProjectImportError,
+    archive_hash,
     build_manifest_rows,
     extract_archive,
+    find_duplicate_archive,
+    find_duplicate_github,
     import_github_repo,
     store_project_files,
 )
@@ -109,6 +112,12 @@ from app.services.stellar_detection import project_stellar_metadata
 from app.workspaces import bp
 
 MAX_TREE_ENTRIES = 1000
+
+# Workspace dashboard (issue #85): search and pagination keep the list bounded.
+# These mirror the collaboration list convention (``page``/``per_page`` with a
+# hard cap) so the API is consistent across the app.
+WORKSPACES_PER_PAGE_DEFAULT = 20
+WORKSPACES_PER_PAGE_MAX = 100
 
 
 # --------------------------------------------------------------------------
@@ -164,6 +173,36 @@ def _validate_project_path(path: str) -> str:
 
 
 # --------------------------------------------------------------------------
+# Workspace dashboard: search + pagination helpers (issue #85)
+# --------------------------------------------------------------------------
+
+
+def _workspace_search() -> str:
+    """Return the trimmed search term filtering workspaces by name/description."""
+    return (request.args.get("q") or "").strip()[:200]
+
+
+def _workspace_per_page() -> int:
+    """Return the requested page size, clamped to the configured maximum."""
+    value = request.args.get("per_page", type=int) or WORKSPACES_PER_PAGE_DEFAULT
+    return max(1, min(value, WORKSPACES_PER_PAGE_MAX))
+
+
+def _workspace_page() -> int:
+    """Return the requested 1-based page number."""
+    return max(request.args.get("page", type=int) or 1, 1)
+
+
+def _workspace_query(search: str):
+    """Build the ordered, owner-scoped workspace query for ``search``."""
+    query = Workspace.query.filter_by(user_id=current_user.id)
+    if search:
+        like = f"%{search}%"
+        query = query.filter(db.or_(Workspace.name.ilike(like), Workspace.description.ilike(like)))
+    return query.order_by(Workspace.is_pinned.desc(), Workspace.updated_at.desc())
+
+
+# --------------------------------------------------------------------------
 # Pages
 # --------------------------------------------------------------------------
 
@@ -171,11 +210,23 @@ def _validate_project_path(path: str) -> str:
 @bp.route("/")
 @login_required
 def index():
-    """Workspace list page."""
-    workspaces = Workspace.query.filter_by(user_id=current_user.id).order_by(
-        Workspace.is_pinned.desc(), Workspace.updated_at.desc()
+    """Workspace list page (searchable and paginated, issue #85)."""
+    search = _workspace_search()
+    page = _workspace_page()
+    per_page = _workspace_per_page()
+    query = _workspace_query(search)
+    total = query.count()
+    workspaces = query.offset((page - 1) * per_page).limit(per_page).all()
+    total_pages = max(1, (total + per_page - 1) // per_page)
+    return render_template(
+        "workspaces/index.html",
+        workspaces=workspaces,
+        search=search,
+        page=page,
+        per_page=per_page,
+        total=total,
+        total_pages=total_pages,
     )
-    return render_template("workspaces/index.html", workspaces=workspaces)
 
 
 @bp.route("/<int:workspace_id>")
@@ -205,10 +256,25 @@ def project_explorer(workspace_id: int, project_id: int):
 @bp.route("/api/workspaces", methods=["GET"])
 @login_required
 def api_list_workspaces():
-    workspaces = Workspace.query.filter_by(user_id=current_user.id).order_by(
-        Workspace.is_pinned.desc(), Workspace.updated_at.desc()
+    """Return a page of the current user's workspaces (issue #85).
+
+    Supports ``q`` (name/description search), ``page`` and ``per_page``. The
+    response is the standard list envelope ``{items, total, page, per_page}``.
+    """
+    search = _workspace_search()
+    page = _workspace_page()
+    per_page = _workspace_per_page()
+    query = _workspace_query(search)
+    total = query.count()
+    workspaces = query.offset((page - 1) * per_page).limit(per_page).all()
+    return jsonify(
+        {
+            "items": [w.to_dict() for w in workspaces],
+            "total": total,
+            "page": page,
+            "per_page": per_page,
+        }
     )
-    return jsonify([w.to_dict() for w in workspaces])
 
 
 @bp.route("/api/workspaces", methods=["POST"])
@@ -541,6 +607,29 @@ def _import_scaffold(workspace: Workspace, data: dict):
     return _finish_project_import(workspace, project, SOURCE_SCAFFOLD)
 
 
+def _confirmed(data) -> bool:
+    """Return ``True`` when a request accepts an import despite a duplicate."""
+    value = data.get("confirm") if hasattr(data, "get") else None
+    if value is None:
+        return False
+    return str(value).strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _duplicate_response(existing: Project, match: str):
+    """Return ``409`` describing an existing matching project (nothing stored)."""
+    return (
+        jsonify(
+            {
+                "error": "A matching project already exists in this workspace.",
+                "duplicate": True,
+                "match": match,
+                "duplicate_of": existing.to_dict(),
+            }
+        ),
+        409,
+    )
+
+
 def _import_manifest(workspace: Workspace, data: dict):
     """Import files dragged from the OS (a single file or a folder manifest).
 
@@ -578,12 +667,19 @@ def _import_archive(workspace: Workspace):
     if uploaded is None or not uploaded.filename:
         return jsonify({"error": "No file was uploaded."}), 400
 
+    raw = uploaded.stream.read()
+    digest = archive_hash(raw)
+
+    if not _confirmed(request.form):
+        duplicate = find_duplicate_archive(workspace.id, digest)
+        if duplicate is not None:
+            return _duplicate_response(duplicate, "archive")
+
     name = Path(uploaded.filename).stem.strip() or "Untitled project"
 
     if current_app.config.get("IMPORT_JOBS_ASYNC", True):
-        # Read the upload into memory during the request (the stream is closed
-        # when the request ends), then index it in the background worker.
-        raw = uploaded.read()
+        # The upload was read into memory above (the stream is closed when the
+        # request ends), then indexed in the background worker.
         project = Project(
             workspace_id=workspace.id,
             user_id=current_user.id,
@@ -606,12 +702,13 @@ def _import_archive(workspace: Workspace):
         user_id=current_user.id,
         name=name[:200],
         source=SOURCE_ARCHIVE,
+        content_hash=digest,
     )
     db.session.add(project)
     db.session.commit()
 
     try:
-        rows = extract_archive(uploaded.stream, uploaded.filename)
+        rows = extract_archive(io.BytesIO(raw), uploaded.filename)
     except ProjectImportError as exc:
         db.session.delete(project)
         db.session.commit()
@@ -635,6 +732,19 @@ def _import_github(workspace: Workspace):
         full_name = validate_full_name(repo)
     except GitHubInvalidError as exc:
         return jsonify({"error": str(exc)}), 400
+
+    try:
+        client = get_github_client()
+        repo_data = client.get_repository(full_name)
+    except GitHubError as exc:
+        return jsonify(github_error_payload(exc)), 502
+
+    default_branch = repo_data.get("default_branch") or "HEAD"
+
+    if not _confirmed(data):
+        duplicate = find_duplicate_github(workspace.id, full_name, default_branch)
+        if duplicate is not None:
+            return _duplicate_response(duplicate, "github")
 
     if current_app.config.get("IMPORT_JOBS_ASYNC", True):
         project = Project(
@@ -661,13 +771,13 @@ def _import_github(workspace: Workspace):
         name=full_name.split("/")[1][:200],
         source=SOURCE_GITHUB,
         source_url=full_name,
+        default_branch=default_branch,
     )
     db.session.add(project)
     db.session.commit()
 
     try:
-        client = get_github_client()
-        import_github_repo(project, full_name, client)
+        import_github_repo(project, full_name, client, repo=repo_data)
     except GitHubError as exc:
         db.session.delete(project)
         db.session.commit()
@@ -741,6 +851,71 @@ def api_export_project(project_id: int):
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["Cache-Control"] = "no-store"
     return response
+
+
+@bp.route("/api/projects/<int:project_id>/refresh", methods=["POST"])
+@login_required
+def api_refresh_project(project_id: int):
+    """Re-import a ready project from its original source (#88).
+
+    GitHub projects are re-fetched and scaffold projects regenerated; either way
+    ``store_project_files`` swaps the stored file set atomically (delete +
+    insert + stats recompute in one transaction), so search and chat context
+    immediately reflect the refreshed snapshot.
+
+    Archive projects cannot be refreshed because the original upload is not
+    retained on the server; they are rejected with a clear message so the user
+    knows to re-import instead.
+    """
+    project = _get_project(project_id)
+    if project.status == STATUS_INDEXING:
+        return jsonify({"error": "This project is still indexing. Try again later."}), 409
+
+    if project.source == SOURCE_GITHUB:
+        if not project.source_url:
+            return jsonify({"error": "This project has no GitHub source to refresh from."}), 409
+        try:
+            client = get_github_client()
+            import_github_repo(project, project.source_url, client)
+        except GitHubError as exc:
+            return jsonify(github_error_payload(exc)), 502
+        except ProjectImportError as exc:
+            return jsonify({"error": str(exc)}), 502
+    elif project.source == SOURCE_SCAFFOLD:
+        from app.services.soroban_scaffold import (
+            ScaffoldError,
+            normalize_crate_name,
+            soroban_scaffold_rows,
+        )
+
+        try:
+            crate_name = normalize_crate_name(project.name)
+        except ScaffoldError as exc:
+            return jsonify({"error": str(exc)}), 400
+        store_project_files(project, soroban_scaffold_rows(crate_name))
+    elif project.source == SOURCE_ARCHIVE:
+        return (
+            jsonify(
+                {
+                    "error": (
+                        "Archive projects cannot be refreshed automatically because the "
+                        "original upload is not kept. Re-import the archive to update it."
+                    )
+                }
+            ),
+            409,
+        )
+    else:
+        return jsonify({"error": "This project's source does not support refresh."}), 400
+
+    db.session.refresh(project)
+    emit_event(
+        "project.refreshed",
+        data={"project_id": project.id, "file_count": project.file_count},
+        workspace_id=project.workspace_id,
+        user_id=current_user.id,
+    )
+    return jsonify(project.to_dict())
 
 
 # --------------------------------------------------------------------------

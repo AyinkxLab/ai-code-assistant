@@ -118,12 +118,18 @@ def register_plugins_cli(app: Flask) -> None:
     @click.option("--json", "as_json", is_flag=True, help="Emit machine-readable JSON.")
     def enable_plugin(plugin_id: str, as_json: bool) -> int:
         """Enable a plugin (operator scope)."""
-        from app.services.plugin_ops import PluginNotFoundError, set_plugin_enabled
+        from app.services.plugin_ops import (
+            PluginDependencyResolutionError,
+            PluginNotFoundError,
+            set_plugin_enabled,
+        )
 
         try:
             plugin = set_plugin_enabled(plugin_id, True)
         except PluginNotFoundError as exc:
             _fail(str(exc), code=EXIT_NOT_FOUND, as_json=as_json)
+        except PluginDependencyResolutionError as exc:
+            _fail(str(exc), code=EXIT_ERROR, as_json=as_json)
         if as_json:
             _write_json({"id": plugin.id, "enabled": plugin.enabled})
         else:

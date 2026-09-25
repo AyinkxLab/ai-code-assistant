@@ -10,8 +10,17 @@ from app.chat import bp
 from app.extensions import db
 from app.models import Conversation, ConversationShare, Message, ProjectFile, User, Workspace
 from app.models.project import STATUS_READY
-from app.services.llm import LLMProviderError, get_provider, provider_status
+from app.services.llm import LLMProviderError, provider_status
 from app.services.notifications import notify
+from app.services.provider_config import (
+    DEFAULT_TEMPERATURE,
+    ProviderSettingsError,
+    apply_settings,
+    build_provider,
+    provider_options,
+)
+from app.services.providers.registry import resolve_provider_name
+from app.services.providers.retry import RetryingProvider
 
 #: Machine-readable code returned when the configured provider has no key.
 PROVIDER_NOT_CONFIGURED_CODE = "provider_not_configured"
@@ -59,6 +68,22 @@ def _shared_conversation_ids() -> list[int]:
         .all()
     )
     return [row[0] for row in rows]
+
+
+def _conversation_messages(history: list[dict], content: str, conversation) -> list[dict]:
+    """Build the outgoing message list, honoring the conversation's system prompt."""
+    messages = [*history, {"role": "user", "content": content}]
+    if conversation.system_prompt:
+        messages.insert(0, {"role": "system", "content": conversation.system_prompt})
+    return messages
+
+
+def _generation_kwargs(conversation) -> dict:
+    """Return the ``model``/``params`` passed to the provider for a conversation."""
+    params = {}
+    if conversation.temperature is not None:
+        params["temperature"] = conversation.temperature
+    return {"model": conversation.model, "params": params or None}
 
 
 #: Cap on files returned per project in the chat file tree (keeps the payload
@@ -118,6 +143,10 @@ def create_conversation():
     data = request.get_json(silent=True) or {}
     title = (data.get("title") or "New conversation").strip()[:200]
     conversation = Conversation(user_id=current_user.id, title=title or "New conversation")
+    try:
+        apply_settings(conversation, data, current_user)
+    except ProviderSettingsError as exc:
+        return jsonify({"error": str(exc)}), 400
     db.session.add(conversation)
     db.session.commit()
     return jsonify(conversation.to_dict()), 201
@@ -149,6 +178,37 @@ def update_conversation(conversation_id: int):
         conversation.is_pinned = bool(data["is_pinned"])
     db.session.commit()
     return jsonify(conversation.to_dict())
+
+
+@bp.route("/conversations/<int:conversation_id>/settings", methods=["PATCH"])
+@login_required
+def update_conversation_settings(conversation_id: int):
+    """Persist the conversation's provider/model/temperature/system prompt.
+
+    Settings apply to subsequent messages, so a new conversation is not needed
+    to change them.
+    """
+    conversation = _get_conversation(conversation_id)
+    data = request.get_json(silent=True) or {}
+    try:
+        apply_settings(conversation, data, current_user)
+    except ProviderSettingsError as exc:
+        return jsonify({"error": str(exc)}), 400
+    db.session.commit()
+    return jsonify(conversation.to_dict())
+
+
+@bp.route("/api/options")
+@login_required
+def api_options():
+    """Return the providers/models the current user can select (issue #12)."""
+    return jsonify(
+        {
+            "providers": provider_options(current_user),
+            "default_provider": resolve_provider_name(),
+            "default_temperature": DEFAULT_TEMPERATURE,
+        }
+    )
 
 
 @bp.route("/conversations/<int:conversation_id>", methods=["DELETE"])
@@ -264,10 +324,11 @@ def send_message(conversation_id: int):
 
     history = [{"role": m.role, "content": m.content} for m in conversation.messages]
     conversation.messages.append(Message(role="user", content=content))
+    messages = _conversation_messages(history, content, conversation)
 
     try:
-        provider = get_provider(user=current_user)
-        reply = provider.complete([*history, {"role": "user", "content": content}])
+        provider = RetryingProvider(build_provider(current_user, conversation.provider))
+        reply = provider.chat(messages, **_generation_kwargs(conversation)).content
     except LLMProviderError as exc:
         db.session.rollback()
         return jsonify({"error": str(exc)}), 502
@@ -301,22 +362,24 @@ def stream_message(conversation_id: int):
     history = [{"role": m.role, "content": m.content} for m in conversation.messages]
     conversation.messages.append(Message(role="user", content=content))
     db.session.commit()
-
-    provider = get_provider(user=current_user)
+    messages = _conversation_messages(history, content, conversation)
+    generation = _generation_kwargs(conversation)
 
     def generate():
         try:
-            for chunk in provider.stream([*history, {"role": "user", "content": content}]):
+            provider = RetryingProvider(build_provider(current_user, conversation.provider))
+            for chunk in provider.stream(messages, **generation):
                 yield f"data: {json.dumps({'type': 'token', 'content': chunk})}\n\n"
         except LLMProviderError as exc:
             yield f"data: {json.dumps({'type': 'error', 'error': str(exc)})}\n\n"
             return
 
         # Persist the complete reply built from the streamed chunks is not
-        # possible inside the generator without buffering; instead the mock
-        # provider's complete() is used for a canonical response.
+        # possible inside the generator without buffering; a canonical
+        # chat() call is used so the stored reply is deterministic.
         try:
-            reply = provider.complete([*history, {"role": "user", "content": content}])
+            provider = RetryingProvider(build_provider(current_user, conversation.provider))
+            reply = provider.chat(messages, **generation).content
         except LLMProviderError as exc:
             yield f"data: {json.dumps({'type': 'error', 'error': str(exc)})}\n\n"
             return

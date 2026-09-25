@@ -33,6 +33,11 @@ from app.services.providers.registry import (
     resolve_provider_name,
     unregister_provider,
 )
+from app.services.providers.retry import (
+    RetryingProvider,
+    get_retrying_provider,
+    is_transient_error,
+)
 
 register_provider(OpenAIProvider.name, OpenAIProvider)
 register_provider(AnthropicProvider.name, AnthropicProvider)
@@ -50,9 +55,12 @@ __all__ = [
     "ProviderResponse",
     "ProviderResponseError",
     "ProviderUnavailableError",
+    "RetryingProvider",
     "UnknownProviderError",
     "available_providers",
     "get_provider",
+    "get_retrying_provider",
+    "is_transient_error",
     "provider_status",
     "register_provider",
     "resolve_provider_name",

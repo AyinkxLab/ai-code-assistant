@@ -73,6 +73,29 @@
     </div>
     {% endif %}
 
+    <details id="chat-settings" class="chat-settings">
+      <summary>Model &amp; generation settings</summary>
+      <div class="chat-settings-body">
+        <div class="settings-field">
+          <label class="field-hint" for="chat-provider">Provider</label>
+          <select id="chat-provider" class="field-input"></select>
+        </div>
+        <div class="settings-field">
+          <label class="field-hint" for="chat-model">Model</label>
+          <select id="chat-model" class="field-input"></select>
+        </div>
+        <div class="settings-field">
+          <label class="field-hint" for="chat-temperature">Temperature: <span id="chat-temperature-value">0.7</span></label>
+          <input id="chat-temperature" type="range" min="0" max="2" step="0.1" value="0.7">
+        </div>
+        <div class="settings-field">
+          <label class="field-hint" for="chat-system-prompt">System prompt override (optional)</label>
+          <textarea id="chat-system-prompt" class="field-input" rows="2" maxlength="4000" placeholder="For example: answer with concise TypeScript examples."></textarea>
+        </div>
+        <p class="chat-hint" id="chat-settings-hint">Providers without a key are disabled. <a href="{{ url_for('keys.index') }}">Manage API keys</a>.</p>
+      </div>
+    </details>
+
     <div class="chat-composer">
       <textarea id="chat-input" rows="3" placeholder="Ask for code, explanations, or help..."></textarea>
       <div class="composer-actions">

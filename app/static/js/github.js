@@ -83,6 +83,41 @@
       }, 6000);
     },
 
+    // Render Prev/Next controls for a paginated GitHub list endpoint.
+    // `meta` is the {page, per_page, has_prev, has_next, total_pages} envelope
+    // returned by the issues/pulls APIs; `onPage(pageNumber)` is invoked when
+    // the user navigates. Preserves the current filters because the caller owns
+    // them and re-requests with the new page.
+    renderPager: function (container, meta, onPage) {
+      if (!container) return;
+      container.innerHTML = "";
+      var page = meta.page || 1;
+      var label = "Page " + page;
+      if (meta.total_pages) label += " of " + meta.total_pages;
+
+      var prev = document.createElement("button");
+      prev.type = "button";
+      prev.className = "btn btn-ghost btn-sm";
+      prev.textContent = "Previous";
+      prev.disabled = !meta.has_prev;
+      prev.addEventListener("click", function () { onPage(page - 1); });
+
+      var info = document.createElement("span");
+      info.className = "field-hint";
+      info.textContent = label;
+
+      var next = document.createElement("button");
+      next.type = "button";
+      next.className = "btn btn-ghost btn-sm";
+      next.textContent = "Next";
+      next.disabled = !meta.has_next;
+      next.addEventListener("click", function () { onPage(page + 1); });
+
+      container.appendChild(prev);
+      container.appendChild(info);
+      container.appendChild(next);
+    },
+
     // Render an AI analysis block that highlights [CONFIRMED] / [SUGGESTION].
     renderAnalysis: function (container, analysis) {
       container.hidden = false;

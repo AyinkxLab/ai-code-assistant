@@ -7,6 +7,7 @@ failures mark the project failed with a stored error message.
 
 import io
 import zipfile
+from types import SimpleNamespace
 
 import pytest
 
@@ -176,7 +177,12 @@ class TestAsyncImportRoute:
         self, client, app, make_user, login, fake_async, monkeypatch
     ):
         _user, workspace = _workspace_and_login(make_user, login)
-        monkeypatch.setattr("app.workspaces.routes.get_github_client", lambda *a, **k: object())
+        monkeypatch.setattr(
+            "app.workspaces.routes.get_github_client",
+            lambda *a, **k: SimpleNamespace(
+                get_repository=lambda full_name: {"default_branch": "main"}
+            ),
+        )
         monkeypatch.setattr(
             "app.workspaces.routes.import_github_repo",
             lambda project, full_name, client: None,

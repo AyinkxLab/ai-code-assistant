@@ -20,6 +20,9 @@
     {% if project.status != 'indexing' %}
     <a id="export-project" class="btn btn-ghost btn-sm" href="{{ url_for('workspaces.api_export_project', project_id=project.id) }}" title="Download a zip snapshot of the stored files (text files only; binary files become placeholders)">Export</a>
     {% endif %}
+    {% if project.status == 'ready' and project.source in ('github', 'scaffold') %}
+    <button id="refresh-project" class="btn btn-ghost btn-sm" type="button" title="Re-import this project from its source">Refresh</button>
+    {% endif %}
     <button id="delete-project" class="btn btn-ghost btn-sm btn-danger" type="button">Delete</button>
   </div>
 </div>

@@ -10,13 +10,16 @@ import json
 import pytest
 
 from app.services.github import (
+    PAGE_SIZE_MAX,
     GitHubAuthError,
     GitHubClient,
     GitHubError,
     GitHubNetworkError,
     GitHubNotFoundError,
+    GitHubPage,
     GitHubPermissionError,
     GitHubRateLimitError,
+    parse_link_header,
     validate_full_name,
     validate_path,
 )
@@ -192,6 +195,86 @@ class TestRepositoryMethods:
         ]
         issues = client.list_issues("owner/repo")
         assert [i["number"] for i in issues] == [2]
+
+
+class TestPagination:
+    def test_parse_link_header(self):
+        header = (
+            '<https://api.github.com/repos/o/r/issues?page=3>; rel="next", '
+            '<https://api.github.com/repos/o/r/issues?page=1>; rel="prev", '
+            '<https://api.github.com/repos/o/r/issues?page=7>; rel="last"'
+        )
+        links = parse_link_header(header)
+        assert links["next"].endswith("page=3")
+        assert links["prev"].endswith("page=1")
+        assert links["last"].endswith("page=7")
+        assert parse_link_header("") == {}
+
+    def test_issues_page_reports_navigation_from_link_header(self, ok_client):
+        client, session = ok_client
+        session.responses = [
+            FakeResponse.from_json(
+                200,
+                [{"number": 2, "title": "feature"}],
+                headers={
+                    "Link": (
+                        '<https://api.github.com/repos/o/r/issues?page=2>; rel="next", '
+                        '<https://api.github.com/repos/o/r/issues?page=9>; rel="last"'
+                    )
+                },
+            )
+        ]
+        page = client.list_issues_page("owner/repo", state="open", page=1, per_page=50)
+        assert isinstance(page, GitHubPage)
+        assert [i["number"] for i in page.items] == [2]
+        assert page.page == 1
+        assert page.per_page == 50
+        assert page.has_next is True
+        assert page.has_prev is False
+        assert page.total_pages == 9
+
+    def test_issues_page_excludes_pull_requests(self, ok_client):
+        client, session = ok_client
+        session.responses = [
+            FakeResponse.from_json(
+                200,
+                [
+                    {"number": 1, "title": "pr", "pull_request": {}},
+                    {"number": 2, "title": "issue"},
+                ],
+            )
+        ]
+        page = client.list_issues_page("owner/repo")
+        assert [i["number"] for i in page.items] == [2]
+
+    def test_pulls_page_passes_page_and_clamps_per_page(self, ok_client):
+        client, session = ok_client
+        session.responses = [FakeResponse.from_json(200, [{"number": 5, "title": "pr"}])]
+        page = client.list_pull_requests_page(
+            "owner/repo", state="closed", page=3, per_page=PAGE_SIZE_MAX + 100
+        )
+        assert page.per_page == PAGE_SIZE_MAX
+        assert page.page == 3
+        assert session.calls[0]["params"]["page"] == 3
+        assert session.calls[0]["params"]["per_page"] == PAGE_SIZE_MAX
+        assert session.calls[0]["params"]["state"] == "closed"
+
+    def test_page_without_next_has_no_total(self, ok_client):
+        client, session = ok_client
+        session.responses = [FakeResponse.from_json(200, [{"number": 1}])]
+        page = client.list_pull_requests_page("owner/repo")
+        assert page.has_next is False
+        assert page.has_prev is False
+        assert page.total_pages == 1
+
+    def test_page_error_is_translated_to_typed_error(self, ok_client):
+        client, session = ok_client
+        session.responses = [
+            FakeResponse(404, data={"message": "Not Found"}),
+            FakeResponse(404, data={"message": "Not Found"}),
+        ]
+        with pytest.raises(GitHubNotFoundError):
+            client.list_issues_page("owner/repo")
 
 
 class TestRateLimit:

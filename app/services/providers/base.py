@@ -111,6 +111,15 @@ class LLMProvider(ABC):
     #: the mock provider leave this ``False``; real providers set it ``True``.
     requires_key: ClassVar[bool] = False
 
+    @property
+    def supported_models(self) -> tuple[str, ...]:
+        """Models this provider accepts, used to populate the model selector.
+
+        Providers only need to define ``models``; this alias gives the
+        generation-settings UI (issue #12) a stable, explicit name.
+        """
+        return self.models
+
     @abstractmethod
     def chat(
         self,
