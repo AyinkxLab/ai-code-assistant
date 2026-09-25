@@ -1232,6 +1232,27 @@
       });
     }
 
+    // Refresh (#88): re-import from the original source and swap the file set.
+    var refreshBtn = document.getElementById("refresh-project");
+    if (refreshBtn) {
+      refreshBtn.addEventListener("click", function () {
+        if (!confirm("Re-import this project from its source? The stored files will be replaced.")) {
+          return;
+        }
+        refreshBtn.disabled = true;
+        refreshBtn.textContent = "Refreshing...";
+        api("/workspaces/api/projects/" + PROJECT_ID + "/refresh", { method: "POST" })
+          .then(function () {
+            window.location.reload();
+          })
+          .catch(function (error) {
+            refreshBtn.disabled = false;
+            refreshBtn.textContent = "Refresh";
+            flashError(error.message);
+          });
+      });
+    }
+
     document.getElementById("delete-project").addEventListener("click", function () {
       if (!confirm("Delete this project and its indexed files?")) return;
       api("/workspaces/api/projects/" + PROJECT_ID, { method: "DELETE" })

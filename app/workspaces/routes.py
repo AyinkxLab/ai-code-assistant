@@ -853,6 +853,71 @@ def api_export_project(project_id: int):
     return response
 
 
+@bp.route("/api/projects/<int:project_id>/refresh", methods=["POST"])
+@login_required
+def api_refresh_project(project_id: int):
+    """Re-import a ready project from its original source (#88).
+
+    GitHub projects are re-fetched and scaffold projects regenerated; either way
+    ``store_project_files`` swaps the stored file set atomically (delete +
+    insert + stats recompute in one transaction), so search and chat context
+    immediately reflect the refreshed snapshot.
+
+    Archive projects cannot be refreshed because the original upload is not
+    retained on the server; they are rejected with a clear message so the user
+    knows to re-import instead.
+    """
+    project = _get_project(project_id)
+    if project.status == STATUS_INDEXING:
+        return jsonify({"error": "This project is still indexing. Try again later."}), 409
+
+    if project.source == SOURCE_GITHUB:
+        if not project.source_url:
+            return jsonify({"error": "This project has no GitHub source to refresh from."}), 409
+        try:
+            client = get_github_client()
+            import_github_repo(project, project.source_url, client)
+        except GitHubError as exc:
+            return jsonify(github_error_payload(exc)), 502
+        except ProjectImportError as exc:
+            return jsonify({"error": str(exc)}), 502
+    elif project.source == SOURCE_SCAFFOLD:
+        from app.services.soroban_scaffold import (
+            ScaffoldError,
+            normalize_crate_name,
+            soroban_scaffold_rows,
+        )
+
+        try:
+            crate_name = normalize_crate_name(project.name)
+        except ScaffoldError as exc:
+            return jsonify({"error": str(exc)}), 400
+        store_project_files(project, soroban_scaffold_rows(crate_name))
+    elif project.source == SOURCE_ARCHIVE:
+        return (
+            jsonify(
+                {
+                    "error": (
+                        "Archive projects cannot be refreshed automatically because the "
+                        "original upload is not kept. Re-import the archive to update it."
+                    )
+                }
+            ),
+            409,
+        )
+    else:
+        return jsonify({"error": "This project's source does not support refresh."}), 400
+
+    db.session.refresh(project)
+    emit_event(
+        "project.refreshed",
+        data={"project_id": project.id, "file_count": project.file_count},
+        workspace_id=project.workspace_id,
+        user_id=current_user.id,
+    )
+    return jsonify(project.to_dict())
+
+
 # --------------------------------------------------------------------------
 # API: file explorer
 # --------------------------------------------------------------------------
