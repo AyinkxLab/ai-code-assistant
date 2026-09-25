@@ -10,7 +10,7 @@ from app.chat import bp
 from app.extensions import db
 from app.models import Conversation, ConversationShare, Message, ProjectFile, User, Workspace
 from app.models.project import STATUS_READY
-from app.services.llm import LLMProviderError, get_provider
+from app.services.llm import LLMProviderError, get_retrying_provider
 from app.services.notifications import notify
 
 
@@ -226,7 +226,7 @@ def send_message(conversation_id: int):
     conversation.messages.append(Message(role="user", content=content))
 
     try:
-        provider = get_provider()
+        provider = get_retrying_provider()
         reply = provider.complete([*history, {"role": "user", "content": content}])
     except LLMProviderError as exc:
         db.session.rollback()
@@ -260,7 +260,7 @@ def stream_message(conversation_id: int):
 
     def generate():
         try:
-            provider = get_provider()
+            provider = get_retrying_provider()
             for chunk in provider.stream([*history, {"role": "user", "content": content}]):
                 yield f"data: {json.dumps({'type': 'token', 'content': chunk})}\n\n"
         except LLMProviderError as exc:
@@ -271,7 +271,7 @@ def stream_message(conversation_id: int):
         # possible inside the generator without buffering; instead the mock
         # provider's complete() is used for a canonical response.
         try:
-            provider = get_provider()
+            provider = get_retrying_provider()
             reply = provider.complete([*history, {"role": "user", "content": content}])
         except LLMProviderError as exc:
             yield f"data: {json.dumps({'type': 'error', 'error': str(exc)})}\n\n"
