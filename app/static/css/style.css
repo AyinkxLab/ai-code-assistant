@@ -1076,6 +1076,45 @@ a:hover {
   color: var(--text);
 }
 
+/* Project file-browser breadcrumbs (#62): updates as the user navigates
+   directories in the lazy tree. */
+.file-breadcrumbs {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px;
+  padding: 8px 4px;
+  margin-bottom: 8px;
+  font-size: 0.9rem;
+  border-bottom: 1px solid var(--border, rgba(255, 255, 255, 0.08));
+}
+
+.file-crumb {
+  background: none;
+  border: none;
+  padding: 2px 4px;
+  color: var(--text-muted);
+  font: inherit;
+  cursor: pointer;
+  border-radius: 4px;
+}
+
+.file-crumb:hover {
+  color: var(--text);
+  text-decoration: underline;
+}
+
+.file-crumb-sep {
+  color: var(--text-muted);
+  opacity: 0.6;
+}
+
+.file-crumb-current {
+  padding: 2px 4px;
+  color: var(--text);
+  font-weight: 600;
+}
+
 .repo-tabs {
   display: flex;
   gap: 4px;
