@@ -13,6 +13,13 @@ from werkzeug.utils import secure_filename
 
 from app.extensions import db
 from app.models import Conversation, Message
+from app.services import analysis
+from app.services.github import (
+    GitHubError,
+    get_github_client,
+    github_error_payload,
+    validate_full_name,
+)
 from app.services.llm import LLMProviderError, get_provider
 from app.tools import bp
 
@@ -193,3 +200,134 @@ def send_to_chat():
     db.session.add(conversation)
     db.session.commit()
     return jsonify({"conversation_id": conversation.id}), 201
+
+
+# --------------------------------------------------------------------------
+# Repository analysis tool (#75)
+# --------------------------------------------------------------------------
+
+#: Keep the context slice bounded no matter how large the repository is.
+REPO_ANALYZE_MAX_FILES = 300
+#: Maximum number of dependency manifests whose contents are sent to the model.
+REPO_ANALYZE_MAX_MANIFESTS = 5
+
+#: Filenames that declare a project's dependencies.
+_DEPENDENCY_MANIFESTS = {
+    "package.json",
+    "requirements.txt",
+    "pyproject.toml",
+    "pipfile",
+    "cargo.toml",
+    "go.mod",
+    "pom.xml",
+    "build.gradle",
+    "gemfile",
+    "composer.json",
+    "pubspec.yaml",
+    "mix.exs",
+}
+
+#: Filenames that commonly mark an application entry point.
+_ENTRY_POINT_NAMES = {
+    "main.py",
+    "app.py",
+    "wsgi.py",
+    "manage.py",
+    "run.py",
+    "__main__.py",
+    "index.js",
+    "index.ts",
+    "server.js",
+    "server.ts",
+    "main.js",
+    "main.ts",
+    "main.rs",
+    "lib.rs",
+    "main.go",
+    "main.java",
+    "program.cs",
+    "index.php",
+    "main.c",
+    "main.cpp",
+}
+
+
+def _blob_paths(tree: dict) -> list[str]:
+    """Return the file (blob) paths from a GitHub tree payload."""
+    return [
+        entry.get("path", "")
+        for entry in tree.get("tree", [])
+        if entry.get("type") == "blob" and entry.get("path")
+    ]
+
+
+def _select_manifests(paths: list[str]) -> list[str]:
+    """Pick dependency manifests from ``paths``, bounded and de-duplicated."""
+    selected = []
+    for path in paths:
+        if path.rsplit("/", 1)[-1].lower() in _DEPENDENCY_MANIFESTS:
+            selected.append(path)
+    return selected[:REPO_ANALYZE_MAX_MANIFESTS]
+
+
+def _select_entry_points(paths: list[str]) -> list[str]:
+    """Pick likely entry-point files from ``paths`` (bounded)."""
+    return [path for path in paths if path.rsplit("/", 1)[-1].lower() in _ENTRY_POINT_NAMES][:20]
+
+
+@bp.route("/repo-analyze", methods=["POST"])
+@login_required
+def repo_analyze():
+    """Dedicated repository-analysis tool: structure, dependencies, entry points.
+
+    Fetches a bounded slice of the repository through the caller's own GitHub
+    connection and delegates the prompt to ``app/services/analysis.py``, so every
+    uncertain claim is labelled ``[CONFIRMED]`` vs ``[SUGGESTION]``. Accepts
+    ``{"owner", "repo"}`` or a single ``{"full_name"}`` plus an optional ``ref``.
+    """
+    data = request.get_json(silent=True) or {}
+    candidate = (data.get("full_name") or "").strip()
+    if not candidate:
+        owner = (data.get("owner") or "").strip()
+        repo = (data.get("repo") or "").strip()
+        candidate = f"{owner}/{repo}"
+
+    try:
+        full_name = validate_full_name(candidate)
+    except GitHubError as exc:
+        return jsonify({"error": str(exc), "kind": exc.kind}), 400
+
+    try:
+        client = get_github_client()
+        repo_data = client.get_repository(full_name)
+        default_branch = repo_data.get("default_branch") or "HEAD"
+        ref = (data.get("ref") or "").strip() or default_branch
+        readme = client.get_readme(full_name, ref=ref)
+        tree = client.get_tree(full_name, ref, recursive=True)
+    except GitHubError as exc:
+        return jsonify(github_error_payload(exc)), 502
+
+    paths = _blob_paths(tree)
+    structure = paths[:REPO_ANALYZE_MAX_FILES]
+
+    dependencies = []
+    for path in _select_manifests(structure):
+        try:
+            content = client.get_file_text(full_name, path, ref=ref)
+        except GitHubError:
+            continue
+        dependencies.append({"path": path, "content": content})
+
+    result = analysis.analyze_repository(
+        full_name,
+        readme=readme,
+        structure=structure,
+        dependencies=dependencies,
+        entry_points=_select_entry_points(structure),
+    )
+    result["structure"] = {
+        "file_count": len(paths),
+        "included": len(structure),
+        "truncated": len(paths) > REPO_ANALYZE_MAX_FILES,
+    }
+    return jsonify(result)
