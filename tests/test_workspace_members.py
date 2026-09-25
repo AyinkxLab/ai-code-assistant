@@ -159,7 +159,7 @@ class TestOwnerOnlyIsolation:
 
         # A member cannot see workspace list entries owned by others.
         response = client.get("/workspaces/api/workspaces")
-        assert response.get_json() == []
+        assert response.get_json()["items"] == []
 
         # A member cannot access the workspace via the owner-scoped API.
         assert client.get(f"/workspaces/api/workspaces/{workspace.id}/projects").status_code == 404

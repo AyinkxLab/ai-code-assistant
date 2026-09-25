@@ -113,6 +113,12 @@ from app.workspaces import bp
 
 MAX_TREE_ENTRIES = 1000
 
+# Workspace dashboard (issue #85): search and pagination keep the list bounded.
+# These mirror the collaboration list convention (``page``/``per_page`` with a
+# hard cap) so the API is consistent across the app.
+WORKSPACES_PER_PAGE_DEFAULT = 20
+WORKSPACES_PER_PAGE_MAX = 100
+
 
 # --------------------------------------------------------------------------
 # Ownership helpers
@@ -167,6 +173,36 @@ def _validate_project_path(path: str) -> str:
 
 
 # --------------------------------------------------------------------------
+# Workspace dashboard: search + pagination helpers (issue #85)
+# --------------------------------------------------------------------------
+
+
+def _workspace_search() -> str:
+    """Return the trimmed search term filtering workspaces by name/description."""
+    return (request.args.get("q") or "").strip()[:200]
+
+
+def _workspace_per_page() -> int:
+    """Return the requested page size, clamped to the configured maximum."""
+    value = request.args.get("per_page", type=int) or WORKSPACES_PER_PAGE_DEFAULT
+    return max(1, min(value, WORKSPACES_PER_PAGE_MAX))
+
+
+def _workspace_page() -> int:
+    """Return the requested 1-based page number."""
+    return max(request.args.get("page", type=int) or 1, 1)
+
+
+def _workspace_query(search: str):
+    """Build the ordered, owner-scoped workspace query for ``search``."""
+    query = Workspace.query.filter_by(user_id=current_user.id)
+    if search:
+        like = f"%{search}%"
+        query = query.filter(db.or_(Workspace.name.ilike(like), Workspace.description.ilike(like)))
+    return query.order_by(Workspace.is_pinned.desc(), Workspace.updated_at.desc())
+
+
+# --------------------------------------------------------------------------
 # Pages
 # --------------------------------------------------------------------------
 
@@ -174,11 +210,23 @@ def _validate_project_path(path: str) -> str:
 @bp.route("/")
 @login_required
 def index():
-    """Workspace list page."""
-    workspaces = Workspace.query.filter_by(user_id=current_user.id).order_by(
-        Workspace.is_pinned.desc(), Workspace.updated_at.desc()
+    """Workspace list page (searchable and paginated, issue #85)."""
+    search = _workspace_search()
+    page = _workspace_page()
+    per_page = _workspace_per_page()
+    query = _workspace_query(search)
+    total = query.count()
+    workspaces = query.offset((page - 1) * per_page).limit(per_page).all()
+    total_pages = max(1, (total + per_page - 1) // per_page)
+    return render_template(
+        "workspaces/index.html",
+        workspaces=workspaces,
+        search=search,
+        page=page,
+        per_page=per_page,
+        total=total,
+        total_pages=total_pages,
     )
-    return render_template("workspaces/index.html", workspaces=workspaces)
 
 
 @bp.route("/<int:workspace_id>")
@@ -208,10 +256,25 @@ def project_explorer(workspace_id: int, project_id: int):
 @bp.route("/api/workspaces", methods=["GET"])
 @login_required
 def api_list_workspaces():
-    workspaces = Workspace.query.filter_by(user_id=current_user.id).order_by(
-        Workspace.is_pinned.desc(), Workspace.updated_at.desc()
+    """Return a page of the current user's workspaces (issue #85).
+
+    Supports ``q`` (name/description search), ``page`` and ``per_page``. The
+    response is the standard list envelope ``{items, total, page, per_page}``.
+    """
+    search = _workspace_search()
+    page = _workspace_page()
+    per_page = _workspace_per_page()
+    query = _workspace_query(search)
+    total = query.count()
+    workspaces = query.offset((page - 1) * per_page).limit(per_page).all()
+    return jsonify(
+        {
+            "items": [w.to_dict() for w in workspaces],
+            "total": total,
+            "page": page,
+            "per_page": per_page,
+        }
     )
-    return jsonify([w.to_dict() for w in workspaces])
 
 
 @bp.route("/api/workspaces", methods=["POST"])
