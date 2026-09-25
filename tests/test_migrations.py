@@ -126,7 +126,7 @@ class TestMigrationHead:
     def test_head_is_latest_revision(self):
         result = _run_flask(["db", "heads"], {"DATABASE_URL": "sqlite:///:memory:"})
         assert result.returncode == 0, result.stderr
-        assert "a54b1c2d3e4f" in (result.stdout + result.stderr)
+        assert "c1a2b3c4d5e6" in (result.stdout + result.stderr)
 
     def test_conversation_shares_table_upgraded(self):
         expected = {

@@ -1,7 +1,7 @@
 """Tests for Phase 5 models: workspaces, projects, project files, and chat."""
 
 from app.extensions import db
-from app.models import Project, ProjectFile, ProjectMessage, User, Workspace
+from app.models import Project, ProjectChatSession, ProjectFile, ProjectMessage, User, Workspace
 from app.models.project import (
     SOURCE_ARCHIVE,
     SOURCE_GITHUB,
@@ -57,7 +57,17 @@ class TestWorkspaceModel:
                 project_id=project.id, path="app.py", size=5, is_binary=False, content="print()"
             )
         )
-        db.session.add(ProjectMessage(project_id=project.id, role="user", content="hi"))
+        chat_session = ProjectChatSession(project_id=project.id, title="Chat")
+        db.session.add(chat_session)
+        db.session.commit()
+        db.session.add(
+            ProjectMessage(
+                project_id=project.id,
+                session_id=chat_session.id,
+                role="user",
+                content="hi",
+            )
+        )
         db.session.commit()
 
         db.session.delete(workspace)
@@ -148,7 +158,15 @@ class TestProjectMessageModel:
         project = Project(workspace_id=workspace.id, user_id=user.id, name="p")
         db.session.add(project)
         db.session.commit()
-        message = ProjectMessage(project_id=project.id, role="assistant", content="reply")
+        chat_session = ProjectChatSession(project_id=project.id, title="Chat")
+        db.session.add(chat_session)
+        db.session.commit()
+        message = ProjectMessage(
+            project_id=project.id,
+            session_id=chat_session.id,
+            role="assistant",
+            content="reply",
+        )
         db.session.add(message)
         db.session.commit()
         payload = message.to_dict()

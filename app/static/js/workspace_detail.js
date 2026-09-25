@@ -38,6 +38,8 @@
       return response.json().then(function (data) {
         if (!response.ok) {
           var error = new Error(data && data.error ? data.error : "Request failed (" + response.status + ").");
+          error.status = response.status;
+          error.data = data || {};
           throw error;
         }
         return data;
@@ -137,15 +139,16 @@
     status.appendChild(openStellar);
   }
 
-  function importArchive() {
+  function importArchive(confirmed) {
     var input = document.getElementById("import-archive");
     var btn = document.getElementById("import-archive-btn");
-    if (!input.files.length) {
+    if (confirmed !== true && !input.files.length) {
       flash("Choose an archive to upload.", "warning");
       return;
     }
     var data = new FormData();
     data.append("file", input.files[0]);
+    if (confirmed === true) data.append("confirm", "1");
     btn.disabled = true;
     setStatus("Indexing archive, please wait...");
     api("/workspaces/api/workspaces/" + WORKSPACE_ID + "/projects", {
@@ -157,8 +160,16 @@
       })
       .catch(function (error) {
         setStatus("");
-        flash(error.message, "error");
         btn.disabled = false;
+        if (error.status === 409 && error.data && error.data.duplicate) {
+          if (confirmDuplicate(error)) {
+            importArchive(true);
+          } else {
+            flash("Duplicate import cancelled.", "info");
+          }
+          return;
+        }
+        flash(error.message, "error");
       });
   }
 
@@ -323,7 +334,7 @@
     }
   }
 
-  function importGithub() {
+  function importGithub(confirmed) {
     var input = document.getElementById("import-repo");
     var btn = document.getElementById("import-github-btn");
     var repo = input.value.trim();
@@ -331,21 +342,42 @@
       flash("Enter a repository in the form owner/name.", "warning");
       return;
     }
+    var payload = { source: "github", repo: repo };
+    if (confirmed === true) payload.confirm = true;
     btn.disabled = true;
     setStatus("Importing repository, please wait...");
     api("/workspaces/api/workspaces/" + WORKSPACE_ID + "/projects", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ source: "github", repo: repo }),
+      body: JSON.stringify(payload),
     })
       .then(function (project) {
         handleImportSuccess(project, "Imported repository");
       })
       .catch(function (error) {
         setStatus("");
-        flash(error.message, "error");
         btn.disabled = false;
+        if (error.status === 409 && error.data && error.data.duplicate) {
+          if (confirmDuplicate(error)) {
+            importGithub(true);
+          } else {
+            flash("Duplicate import cancelled.", "info");
+          }
+          return;
+        }
+        flash(error.message, "error");
       });
+  }
+
+  function confirmDuplicate(error) {
+    var existing = (error.data && error.data.duplicate_of) || {};
+    var name = existing.name || "an existing project";
+    var when = existing.created_at ? new Date(existing.created_at).toLocaleString() : "";
+    var detail = when ? " (imported " + when + ")" : "";
+    return window.confirm(
+      "A matching project already exists in this workspace: " + name + detail + ".\n\n" +
+        "Import another copy anyway?"
+    );
   }
 
   function loadConnectedRepos() {
@@ -457,8 +489,12 @@
     var urlParts = window.location.pathname.split("/").filter(Boolean);
     WORKSPACE_ID = parseInt(urlParts[urlParts.length - 1], 10) || 0;
 
-    document.getElementById("import-archive-btn").addEventListener("click", importArchive);
-    document.getElementById("import-github-btn").addEventListener("click", importGithub);
+    document.getElementById("import-archive-btn").addEventListener("click", function () {
+      importArchive(false);
+    });
+    document.getElementById("import-github-btn").addEventListener("click", function () {
+      importGithub(false);
+    });
     wireDropzone();
     loadConnectedRepos();
     loadActivity();

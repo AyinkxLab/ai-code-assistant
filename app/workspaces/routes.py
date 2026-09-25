@@ -94,8 +94,11 @@ from app.services.health import coverage_estimate, detect_ci_files
 from app.services.import_jobs import submit_import_job
 from app.services.importing import (
     ProjectImportError,
+    archive_hash,
     build_manifest_rows,
     extract_archive,
+    find_duplicate_archive,
+    find_duplicate_github,
     import_github_repo,
     store_project_files,
 )
@@ -541,6 +544,29 @@ def _import_scaffold(workspace: Workspace, data: dict):
     return _finish_project_import(workspace, project, SOURCE_SCAFFOLD)
 
 
+def _confirmed(data) -> bool:
+    """Return ``True`` when a request accepts an import despite a duplicate."""
+    value = data.get("confirm") if hasattr(data, "get") else None
+    if value is None:
+        return False
+    return str(value).strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _duplicate_response(existing: Project, match: str):
+    """Return ``409`` describing an existing matching project (nothing stored)."""
+    return (
+        jsonify(
+            {
+                "error": "A matching project already exists in this workspace.",
+                "duplicate": True,
+                "match": match,
+                "duplicate_of": existing.to_dict(),
+            }
+        ),
+        409,
+    )
+
+
 def _import_manifest(workspace: Workspace, data: dict):
     """Import files dragged from the OS (a single file or a folder manifest).
 
@@ -578,12 +604,19 @@ def _import_archive(workspace: Workspace):
     if uploaded is None or not uploaded.filename:
         return jsonify({"error": "No file was uploaded."}), 400
 
+    raw = uploaded.stream.read()
+    digest = archive_hash(raw)
+
+    if not _confirmed(request.form):
+        duplicate = find_duplicate_archive(workspace.id, digest)
+        if duplicate is not None:
+            return _duplicate_response(duplicate, "archive")
+
     name = Path(uploaded.filename).stem.strip() or "Untitled project"
 
     if current_app.config.get("IMPORT_JOBS_ASYNC", True):
-        # Read the upload into memory during the request (the stream is closed
-        # when the request ends), then index it in the background worker.
-        raw = uploaded.read()
+        # The upload was read into memory above (the stream is closed when the
+        # request ends), then indexed in the background worker.
         project = Project(
             workspace_id=workspace.id,
             user_id=current_user.id,
@@ -606,12 +639,13 @@ def _import_archive(workspace: Workspace):
         user_id=current_user.id,
         name=name[:200],
         source=SOURCE_ARCHIVE,
+        content_hash=digest,
     )
     db.session.add(project)
     db.session.commit()
 
     try:
-        rows = extract_archive(uploaded.stream, uploaded.filename)
+        rows = extract_archive(io.BytesIO(raw), uploaded.filename)
     except ProjectImportError as exc:
         db.session.delete(project)
         db.session.commit()
@@ -635,6 +669,19 @@ def _import_github(workspace: Workspace):
         full_name = validate_full_name(repo)
     except GitHubInvalidError as exc:
         return jsonify({"error": str(exc)}), 400
+
+    try:
+        client = get_github_client()
+        repo_data = client.get_repository(full_name)
+    except GitHubError as exc:
+        return jsonify(github_error_payload(exc)), 502
+
+    default_branch = repo_data.get("default_branch") or "HEAD"
+
+    if not _confirmed(data):
+        duplicate = find_duplicate_github(workspace.id, full_name, default_branch)
+        if duplicate is not None:
+            return _duplicate_response(duplicate, "github")
 
     if current_app.config.get("IMPORT_JOBS_ASYNC", True):
         project = Project(
@@ -661,13 +708,13 @@ def _import_github(workspace: Workspace):
         name=full_name.split("/")[1][:200],
         source=SOURCE_GITHUB,
         source_url=full_name,
+        default_branch=default_branch,
     )
     db.session.add(project)
     db.session.commit()
 
     try:
-        client = get_github_client()
-        import_github_repo(project, full_name, client)
+        import_github_repo(project, full_name, client, repo=repo_data)
     except GitHubError as exc:
         db.session.delete(project)
         db.session.commit()
@@ -1054,9 +1101,11 @@ def api_project_chat_stream(project_id: int):
         return jsonify({"error": "A message is required."}), 400
 
     session = _get_chat_session(project, data.get("session_id"))
-    history = ProjectMessage.query.filter_by(session_id=session.id).order_by(
-        ProjectMessage.created_at
-    ).all()
+    history = (
+        ProjectMessage.query.filter_by(session_id=session.id)
+        .order_by(ProjectMessage.created_at)
+        .all()
+    )
     db.session.add(
         ProjectMessage(project_id=project.id, session=session, role="user", content=content)
     )
