@@ -208,7 +208,10 @@ class TestStreaming:
 
         import app.chat.routes as chat_routes
 
-        monkeypatch.setattr(chat_routes, "get_retrying_provider", lambda: AlwaysFailingProvider())
+        monkeypatch.setattr(chat_routes, "RetryingProvider", lambda provider, **kwargs: provider)
+        monkeypatch.setattr(
+            chat_routes, "build_provider", lambda user, name=None: AlwaysFailingProvider()
+        )
         _register(client)
         conversation = _create_conversation(client)
         response = client.post(
@@ -245,9 +248,10 @@ class TestStreaming:
 
         monkeypatch.setattr(
             chat_routes,
-            "get_retrying_provider",
-            lambda: RetryingProvider(provider, sleep=lambda _delay: None),
+            "RetryingProvider",
+            lambda wrapped, **kwargs: RetryingProvider(wrapped, sleep=lambda _delay: None),
         )
+        monkeypatch.setattr(chat_routes, "build_provider", lambda user, name=None: provider)
         _register(client)
         conversation = _create_conversation(client)
         response = client.post(

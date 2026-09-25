@@ -38,11 +38,19 @@ listing the available providers instead of silently falling back.
 class LLMProvider(ABC):
     name: str
     models: tuple[str, ...]
+    supported_models: tuple[str, ...]  # alias of models, used by the selector
 
     def chat(messages, *, model=None, params=None) -> ProviderResponse: ...
     def stream(messages, *, model=None, params=None) -> Iterator[str]: ...
     def complete(messages, *, stream=False) -> str: ...  # compatibility helper
 ```
+
+Per-conversation generation settings (issue #12) resolve through
+`app/services/provider_config.py`: `provider_options(user)` lists each provider
+with its `supported_models` and whether the user has a usable key, and
+`build_provider(user, name)` applies the user's stored (decrypted) key when the
+environment does not provide one. A conversation's `model`, `temperature`, and
+`system_prompt` are passed through to `chat()`/`stream()` on every message.
 
 `ProviderResponse` carries `content`, `model`, `prompt_tokens`,
 `completion_tokens`, `total_tokens`, and `latency_seconds`. Failures use the

@@ -13,6 +13,13 @@
   var actionsEl = document.getElementById("conversation-actions");
   var currentId = null;
   var streaming = false;
+  var providerEl = document.getElementById("chat-provider");
+  var modelEl = document.getElementById("chat-model");
+  var tempEl = document.getElementById("chat-temperature");
+  var tempValueEl = document.getElementById("chat-temperature-value");
+  var systemEl = document.getElementById("chat-system-prompt");
+  var providerOptions = [];
+  var defaults = { provider: "", model: "", temperature: 0.7, system_prompt: "" };
 
   var CSRF_TOKEN = null;
 
@@ -118,6 +125,7 @@
           messagesEl.innerHTML =
             '<div class="chat-placeholder"><p>Ask the AI assistant for help with your code.</p></div>';
         }
+        applySettingsToPanel(data);
       })
       .catch(function (error) {
         flashError(error.message);
@@ -139,7 +147,7 @@
         var created = await api("/chat/conversations", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({}),
+          body: JSON.stringify(collectSettings()),
         });
         addListItem(created);
         currentId = created.id;
@@ -263,6 +271,107 @@
     messagesEl.prepend(el);
   }
 
+  // -- Model & generation settings (issue #12) ----------------------------
+
+  function loadProviderOptions() {
+    return api("/chat/api/options")
+      .then(function (data) {
+        providerOptions = data.providers || [];
+        defaults.default_provider = data.default_provider || "";
+        defaults.temperature = data.default_temperature != null ? data.default_temperature : 0.7;
+      })
+      .catch(function (error) {
+        flashError(error.message);
+      });
+  }
+
+  function renderProviderSelect(selected) {
+    if (!providerEl) return;
+    providerEl.innerHTML = "";
+    providerOptions.forEach(function (provider) {
+      var option = document.createElement("option");
+      option.value = provider.name;
+      option.textContent = provider.name + (provider.available ? "" : " (no API key)");
+      option.disabled = !provider.available;
+      if (!provider.available) {
+        option.title = "Add a " + provider.name + " API key on the Keys page to enable it.";
+      }
+      if (selected === provider.name) option.selected = true;
+      providerEl.appendChild(option);
+    });
+  }
+
+  function renderModelSelect(selected) {
+    if (!modelEl) return;
+    var provider = providerOptions.filter(function (item) {
+      return item.name === providerEl.value;
+    })[0];
+    var models = provider ? provider.models.slice() : [];
+    if (selected && models.indexOf(selected) === -1) models.unshift(selected);
+    modelEl.innerHTML = "";
+    var automatic = document.createElement("option");
+    automatic.value = "";
+    automatic.textContent = "Provider default";
+    modelEl.appendChild(automatic);
+    models.forEach(function (model) {
+      var option = document.createElement("option");
+      option.value = model;
+      option.textContent = model;
+      if (selected === model) option.selected = true;
+      modelEl.appendChild(option);
+    });
+  }
+
+  function setTemperature(value) {
+    if (!tempEl) return;
+    var numeric = isNaN(parseFloat(value)) ? defaults.temperature : parseFloat(value);
+    tempEl.value = numeric;
+    if (tempValueEl) tempValueEl.textContent = numeric.toFixed(1);
+  }
+
+  function firstAvailableProvider() {
+    var available = providerOptions.filter(function (item) { return item.available; });
+    return available.length ? available[0].name : "";
+  }
+
+  function applySettingsToPanel(settings) {
+    settings = settings || {};
+    var provider = settings.provider || defaults.default_provider || firstAvailableProvider();
+    renderProviderSelect(provider);
+    if (!providerEl.value || providerEl.selectedOptions[0].disabled) {
+      renderProviderSelect(firstAvailableProvider());
+    }
+    renderModelSelect(settings.model || "");
+    setTemperature(settings.temperature != null ? settings.temperature : defaults.temperature);
+    if (systemEl) systemEl.value = settings.system_prompt || "";
+  }
+
+  function collectSettings() {
+    return {
+      provider: providerEl ? providerEl.value : "",
+      model: modelEl ? modelEl.value : "",
+      temperature: tempEl ? parseFloat(tempEl.value) : defaults.temperature,
+      system_prompt: systemEl ? systemEl.value.trim() : "",
+    };
+  }
+
+  function persistSettings() {
+    if (currentId === null) return;
+    api("/chat/conversations/" + currentId + "/settings", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(collectSettings()),
+    }).catch(function (error) {
+      flashError(error.message);
+    });
+  }
+
+  var persistTimer = null;
+  function persistSettingsDebounced() {
+    window.clearTimeout(persistTimer);
+    persistTimer = window.setTimeout(persistSettings, 400);
+  }
+
   document.addEventListener("DOMContentLoaded", function () {
     listEl.addEventListener("click", function (event) {
       var item = event.target.closest(".conversation-item");
@@ -279,11 +388,34 @@
 
     document.getElementById("new-conversation").addEventListener("click", newConversation);
 
-    var params = new URLSearchParams(window.location.search);
-    var openId = params.get("conversation");
-    if (openId) {
-      loadConversation(openId);
+    if (providerEl) {
+      providerEl.addEventListener("change", function () {
+        renderModelSelect("");
+        persistSettings();
+      });
     }
+    if (modelEl) {
+      modelEl.addEventListener("change", persistSettings);
+    }
+    if (tempEl) {
+      tempEl.addEventListener("input", function () {
+        if (tempValueEl) tempValueEl.textContent = parseFloat(tempEl.value).toFixed(1);
+      });
+      tempEl.addEventListener("change", persistSettings);
+    }
+    if (systemEl) {
+      systemEl.addEventListener("input", persistSettingsDebounced);
+    }
+
+    loadProviderOptions().then(function () {
+      var params = new URLSearchParams(window.location.search);
+      var openId = params.get("conversation");
+      if (openId) {
+        loadConversation(openId);
+      } else {
+        applySettingsToPanel({});
+      }
+    });
 
     if (searchEl) {
       searchEl.addEventListener("input", function () {
