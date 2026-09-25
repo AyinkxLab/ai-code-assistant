@@ -26,6 +26,7 @@ from app.services.providers import (
     get_provider,
     get_retrying_provider,
     is_transient_error,
+    provider_status,
     register_provider,
 )
 
@@ -51,5 +52,6 @@ __all__ = [
     "get_provider",
     "get_retrying_provider",
     "is_transient_error",
+    "provider_status",
     "register_provider",
 ]

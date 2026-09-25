@@ -10,7 +10,7 @@ from app.chat import bp
 from app.extensions import db
 from app.models import Conversation, ConversationShare, Message, ProjectFile, User, Workspace
 from app.models.project import STATUS_READY
-from app.services.llm import LLMProviderError
+from app.services.llm import LLMProviderError, provider_status
 from app.services.notifications import notify
 from app.services.provider_config import (
     DEFAULT_TEMPERATURE,
@@ -21,6 +21,27 @@ from app.services.provider_config import (
 )
 from app.services.providers.registry import resolve_provider_name
 from app.services.providers.retry import RetryingProvider
+
+#: Machine-readable code returned when the configured provider has no key.
+PROVIDER_NOT_CONFIGURED_CODE = "provider_not_configured"
+
+
+def _provider_not_configured_payload(status: dict) -> dict:
+    """Build the distinct payload for a provider that has no usable key.
+
+    The client keys off ``code`` to render the onboarding panel instead of a
+    generic error, and uses ``provider`` to link to the right API-key entry.
+    """
+    provider = status.get("provider") or "the configured provider"
+    return {
+        "error": (
+            f"No API key is configured for '{provider}'. Add one under API keys "
+            "to start chatting."
+        ),
+        "code": PROVIDER_NOT_CONFIGURED_CODE,
+        "provider": status.get("provider"),
+        "reason": status.get("reason"),
+    }
 
 
 def _get_conversation(conversation_id: int) -> Conversation:
@@ -82,7 +103,22 @@ def index():
         .order_by(Conversation.is_pinned.desc(), Conversation.updated_at.desc())
         .all()
     )
-    return render_template("chat/index.html", conversations=conversations)
+    return render_template(
+        "chat/index.html",
+        conversations=conversations,
+        provider_status=provider_status(current_user),
+    )
+
+
+@bp.route("/api/provider-status")
+@login_required
+def api_provider_status():
+    """Report whether the LLM provider is ready to serve requests.
+
+    The chat UI calls this after the user visits the API-key page so the
+    composer unlocks without a full page reload (issue #25).
+    """
+    return jsonify(provider_status(current_user))
 
 
 @bp.route("/conversations", methods=["GET"])
@@ -282,6 +318,10 @@ def send_message(conversation_id: int):
     if not content:
         return jsonify({"error": "Message content is required."}), 400
 
+    status = provider_status(current_user)
+    if not status["configured"]:
+        return jsonify(_provider_not_configured_payload(status)), 503
+
     history = [{"role": m.role, "content": m.content} for m in conversation.messages]
     conversation.messages.append(Message(role="user", content=content))
     messages = _conversation_messages(history, content, conversation)
@@ -314,6 +354,10 @@ def stream_message(conversation_id: int):
     content = (data.get("content") or "").strip()
     if not content:
         return jsonify({"error": "Message content is required."}), 400
+
+    status = provider_status(current_user)
+    if not status["configured"]:
+        return jsonify(_provider_not_configured_payload(status)), 503
 
     history = [{"role": m.role, "content": m.content} for m in conversation.messages]
     conversation.messages.append(Message(role="user", content=content))

@@ -82,9 +82,10 @@ def _stored_api_key(user, provider_name: str) -> str | None:
 def get_provider(name: str | None = None, *, user=None) -> LLMProvider:
     """Instantiate the provider selected by ``name`` (or ``LLM_PROVIDER``).
 
-    When the provider needs an API key and the environment does not supply one,
-    the signed-in user's stored (encrypted) key is decrypted and injected here,
-    in the provider service layer (#30). ``user`` may be passed explicitly;
+    When the provider requires a key that the environment does not supply, the
+    signed-in user's stored (encrypted) key is decrypted and injected here, in
+    the provider service layer, so a key added through the API-key UI unlocks
+    chat without a restart (issues #25, #30). ``user`` may be passed explicitly;
     otherwise the current request's logged-in user is used when available.
 
     Raises :class:`UnknownProviderError` when the provider is not registered.
@@ -101,10 +102,59 @@ def get_provider(name: str | None = None, *, user=None) -> LLMProvider:
     resolved_user = user if user is not None else _current_user_or_none()
     if (
         resolved_user is not None
-        and hasattr(provider, "api_key")
+        and getattr(provider, "requires_key", False)
         and not getattr(provider, "api_key", "")
     ):
         stored = _stored_api_key(resolved_user, resolved)
         if stored:
-            provider.api_key = stored
+            try:
+                provider = factory(api_key=stored)
+            except TypeError:
+                provider.api_key = stored
     return provider
+
+
+def provider_status(user=None, name: str | None = None) -> dict:
+    """Report whether the selected provider is ready to serve requests.
+
+    Returns a small dict the UI can act on::
+
+        {"provider": "openai", "requires_key": True,
+         "configured": False, "reason": "missing_key"}
+
+    ``reason`` is ``None`` (keyless provider or env key present),
+    ``"environment"``, ``"stored_key"``, ``"missing_key"`` or
+    ``"unknown_provider"``.
+    """
+    resolved = resolve_provider_name(name)
+    factory = _FACTORIES.get(resolved)
+    if factory is None:
+        return {
+            "provider": resolved,
+            "requires_key": True,
+            "configured": False,
+            "reason": "unknown_provider",
+        }
+    probe = factory()
+    if not getattr(probe, "requires_key", False):
+        return {"provider": resolved, "requires_key": False, "configured": True, "reason": None}
+    if getattr(probe, "api_key", ""):
+        return {
+            "provider": resolved,
+            "requires_key": True,
+            "configured": True,
+            "reason": "environment",
+        }
+    if _stored_api_key(user, resolved):
+        return {
+            "provider": resolved,
+            "requires_key": True,
+            "configured": True,
+            "reason": "stored_key",
+        }
+    return {
+        "provider": resolved,
+        "requires_key": True,
+        "configured": False,
+        "reason": "missing_key",
+    }

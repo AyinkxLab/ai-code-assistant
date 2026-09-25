@@ -49,6 +49,30 @@
       </div>
     </div>
 
+    {% if not provider_status.configured %}
+    <div id="provider-onboarding" class="onboarding-panel" role="region"
+         aria-label="Provider setup"
+         data-provider="{{ provider_status.provider }}"
+         data-reason="{{ provider_status.reason }}">
+      <h3>Add a provider API key to start chatting</h3>
+      <p>
+        This assistant uses the <strong>{{ provider_status.provider }}</strong> provider,
+        which needs an API key before it can reply. You can still create and browse
+        conversations in the meantime.
+      </p>
+      <ol>
+        <li>Open the <a href="{{ url_for('keys.index') }}">API keys</a> page.</li>
+        <li>Add a key for <code>{{ provider_status.provider }}</code>.</li>
+        <li>Return here and press <em>Check again</em> — no reload needed.</li>
+      </ol>
+      <div class="onboarding-actions">
+        <a class="btn btn-primary" href="{{ url_for('keys.index') }}">Manage API keys</a>
+        <button id="provider-recheck" class="btn btn-ghost" type="button">Check again</button>
+      </div>
+      <p id="provider-onboarding-note" class="chat-hint"></p>
+    </div>
+    {% endif %}
+
     <details id="chat-settings" class="chat-settings">
       <summary>Model &amp; generation settings</summary>
       <div class="chat-settings-body">

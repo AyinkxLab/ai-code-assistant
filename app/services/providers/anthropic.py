@@ -36,6 +36,7 @@ class AnthropicProvider(LLMProvider):
 
     name = "anthropic"
     models = DEFAULT_MODELS
+    requires_key = True
 
     def __init__(
         self,
