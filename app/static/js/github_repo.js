@@ -234,6 +234,22 @@
       });
   }
 
+  function analyzeRepoStructure() {
+    var container = document.getElementById("repo-analysis");
+    container.hidden = false;
+    container.innerHTML = '<p class="sidebar-empty">Analyzing structure and dependencies...</p>';
+    GH.api("/tools/repo-analyze", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ owner: OWNER, repo: REPO, ref: state.ref }),
+    }).then(function (data) {
+      GH.renderAnalysis(container, data.analysis);
+    }).catch(function (error) {
+      container.innerHTML = "";
+      GH.flashError(error.message);
+    });
+  }
+
   function analyzeFile() {
     var question = document.getElementById("file-question").value.trim();
     var container = document.getElementById("file-analysis");
@@ -297,6 +313,7 @@
       if (event.key === "Enter") analyzeFile();
     });
     document.getElementById("analyze-repo").addEventListener("click", analyzeRepo);
+    document.getElementById("analyze-repo-structure").addEventListener("click", analyzeRepoStructure);
 
     document.getElementById("issue-state").addEventListener("change", loadIssues);
     document.getElementById("pull-state").addEventListener("change", loadPulls);
