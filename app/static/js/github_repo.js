@@ -13,6 +13,8 @@
   var state = {
     ref: "HEAD",
     filePath: "",
+    issuePage: 1,
+    pullPage: 1,
   };
 
   // -- Repo metadata -------------------------------------------------------
@@ -161,27 +163,34 @@
 
   function loadIssues() {
     var container = document.getElementById("issue-list");
+    var pager = document.getElementById("issue-pager");
     var stateFilter = document.getElementById("issue-state").value;
     container.innerHTML = '<p class="sidebar-empty">Loading issues...</p>';
+    if (pager) pager.innerHTML = "";
     var url = "/github/api/repos/" + encodeURIComponent(OWNER) + "/" + encodeURIComponent(REPO) +
-      "/issues?state=" + stateFilter;
-    GH.api(url).then(function (issues) {
+      "/issues?state=" + stateFilter + "&page=" + state.issuePage;
+    GH.api(url).then(function (result) {
+      var issues = result.items || [];
       container.innerHTML = "";
-      if (!issues.length) {
+      if (issues.length) {
+        issues.forEach(function (issue) {
+          var labels = (issue.labels || []).map(function (label) {
+            return '<span class="tag">' + GH.escapeHtml(label) + "</span>";
+          }).join(" ");
+          var row = document.createElement("div");
+          row.className = "issue-row";
+          row.innerHTML =
+            '<a class="issue-number" href="/github/repos/' + encodeURIComponent(OWNER) + "/" + encodeURIComponent(REPO) + "/issues/" + issue.number + '">#' + issue.number + "</a>" +
+            '<span class="issue-title">' + GH.escapeHtml(issue.title) + "</span> " + labels +
+            '<span class="issue-meta">' + GH.escapeHtml(issue.author || "") + " &middot; " + GH.relativeDate(issue.created_at) + "</span>";
+          container.appendChild(row);
+        });
+      } else {
         container.innerHTML = '<p class="sidebar-empty">No issues found.</p>';
-        return;
       }
-      issues.forEach(function (issue) {
-        var labels = (issue.labels || []).map(function (label) {
-          return '<span class="tag">' + GH.escapeHtml(label) + "</span>";
-        }).join(" ");
-        var row = document.createElement("div");
-        row.className = "issue-row";
-        row.innerHTML =
-          '<a class="issue-number" href="/github/repos/' + encodeURIComponent(OWNER) + "/" + encodeURIComponent(REPO) + "/issues/" + issue.number + '">#' + issue.number + "</a>" +
-          '<span class="issue-title">' + GH.escapeHtml(issue.title) + "</span> " + labels +
-          '<span class="issue-meta">' + GH.escapeHtml(issue.author || "") + " &middot; " + GH.relativeDate(issue.created_at) + "</span>";
-        container.appendChild(row);
+      GH.renderPager(pager, result, function (nextPage) {
+        state.issuePage = nextPage;
+        loadIssues();
       });
     }).catch(function (error) {
       container.innerHTML = '<p class="sidebar-empty">Could not load issues.</p>';
@@ -193,24 +202,31 @@
 
   function loadPulls() {
     var container = document.getElementById("pull-list");
+    var pager = document.getElementById("pull-pager");
     var stateFilter = document.getElementById("pull-state").value;
     container.innerHTML = '<p class="sidebar-empty">Loading pull requests...</p>';
+    if (pager) pager.innerHTML = "";
     var url = "/github/api/repos/" + encodeURIComponent(OWNER) + "/" + encodeURIComponent(REPO) +
-      "/pulls?state=" + stateFilter;
-    GH.api(url).then(function (pulls) {
+      "/pulls?state=" + stateFilter + "&page=" + state.pullPage;
+    GH.api(url).then(function (result) {
+      var pulls = result.items || [];
       container.innerHTML = "";
-      if (!pulls.length) {
+      if (pulls.length) {
+        pulls.forEach(function (pr) {
+          var row = document.createElement("div");
+          row.className = "issue-row";
+          row.innerHTML =
+            '<a class="issue-number" href="/github/repos/' + encodeURIComponent(OWNER) + "/" + encodeURIComponent(REPO) + "/pulls/" + pr.number + '">#' + pr.number + "</a>" +
+            '<span class="issue-title">' + GH.escapeHtml(pr.title) + "</span>" +
+            '<span class="issue-meta">' + GH.escapeHtml(pr.author || "") + " &middot; " + GH.relativeDate(pr.updated_at) + " &middot; " + (pr.additions || 0) + "++ / " + (pr.deletions || 0) + "--</span>";
+          container.appendChild(row);
+        });
+      } else {
         container.innerHTML = '<p class="sidebar-empty">No pull requests found.</p>';
-        return;
       }
-      pulls.forEach(function (pr) {
-        var row = document.createElement("div");
-        row.className = "issue-row";
-        row.innerHTML =
-          '<a class="issue-number" href="/github/repos/' + encodeURIComponent(OWNER) + "/" + encodeURIComponent(REPO) + "/pulls/" + pr.number + '">#' + pr.number + "</a>" +
-          '<span class="issue-title">' + GH.escapeHtml(pr.title) + "</span>" +
-          '<span class="issue-meta">' + GH.escapeHtml(pr.author || "") + " &middot; " + GH.relativeDate(pr.updated_at) + " &middot; " + (pr.additions || 0) + "++ / " + (pr.deletions || 0) + "--</span>";
-        container.appendChild(row);
+      GH.renderPager(pager, result, function (nextPage) {
+        state.pullPage = nextPage;
+        loadPulls();
       });
     }).catch(function (error) {
       container.innerHTML = '<p class="sidebar-empty">Could not load pull requests.</p>';
@@ -298,7 +314,13 @@
     });
     document.getElementById("analyze-repo").addEventListener("click", analyzeRepo);
 
-    document.getElementById("issue-state").addEventListener("change", loadIssues);
-    document.getElementById("pull-state").addEventListener("change", loadPulls);
+    document.getElementById("issue-state").addEventListener("change", function () {
+      state.issuePage = 1;
+      loadIssues();
+    });
+    document.getElementById("pull-state").addEventListener("change", function () {
+      state.pullPage = 1;
+      loadPulls();
+    });
   });
 })();
