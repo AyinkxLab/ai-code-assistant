@@ -53,6 +53,8 @@ developer tooling. This project is built incrementally across phases:
 
 ## Documentation
 
+- [Reviews & quality tooling](docs/reviews.md) — the Reviews pages, the
+  `REVIEW_*` settings, the finding vocabulary, and the review API.
 - [Team collaboration guide](docs/team-collaboration.md) — feature guide,
   roles matrix, invitation flow, FAQ, and developer guide.
 - [Collaboration API reference](docs/api-collaboration.md) — every Phase 7
