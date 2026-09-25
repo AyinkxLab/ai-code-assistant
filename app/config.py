@@ -76,6 +76,15 @@ class Config:
     # LLM provider backend: "mock" (default, offline) or "openai".
     LLM_PROVIDER = os.getenv("LLM_PROVIDER", "mock")
 
+    # LLM resilience (issue #29): transient provider failures (network errors,
+    # HTTP 429/5xx) are retried with exponential backoff plus jitter, while
+    # non-transient errors (e.g. 401/400) fail fast. ``LLM_MAX_RETRIES`` is the
+    # number of retries after the initial attempt; delays are in seconds and
+    # capped at ``LLM_RETRY_MAX_DELAY``.
+    LLM_MAX_RETRIES = int(os.getenv("LLM_MAX_RETRIES", "3"))
+    LLM_RETRY_BASE_DELAY = float(os.getenv("LLM_RETRY_BASE_DELAY", "0.5"))
+    LLM_RETRY_MAX_DELAY = float(os.getenv("LLM_RETRY_MAX_DELAY", "8.0"))
+
     # Prompt library (Phase 3): version history. Every prompt save is recorded
     # as a version; when a prompt is deleted its history is retained for this
     # many days before being purged.

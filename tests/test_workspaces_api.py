@@ -3,7 +3,7 @@
 from datetime import UTC, datetime, timedelta
 
 from app.extensions import db
-from app.models import Workspace
+from app.models import Project, Workspace
 
 
 def _create_workspace(user_id, name="Alice workspace"):
@@ -52,8 +52,11 @@ class TestWorkspaceCRUD:
         _create_workspace(user.id, "Second")
         response = client.get("/workspaces/api/workspaces")
         assert response.status_code == 200
-        names = [w["name"] for w in response.get_json()]
+        payload = response.get_json()
+        names = [w["name"] for w in payload["items"]]
         assert names == ["Second", "First"]
+        assert payload["total"] == 2
+        assert payload["page"] == 1
 
     def test_rename_workspace(self, client, make_user, login):
         user = make_user()
@@ -118,7 +121,7 @@ class TestWorkspacePin:
         db.session.add_all([pinned_old, pinned_new, plain_new, plain_old])
         db.session.commit()
 
-        names = [w["name"] for w in client.get("/workspaces/api/workspaces").get_json()]
+        names = [w["name"] for w in client.get("/workspaces/api/workspaces").get_json()["items"]]
         assert names == ["PinnedNew", "PinnedOld", "PlainNew", "PlainOld"]
 
     def test_dashboard_renders_pin_control(self, client, make_user, login):
@@ -155,4 +158,102 @@ class TestOwnershipIsolation:
         make_user(username="bob", email="bob@example.com")
         login(email="bob@example.com")
         response = client.get("/workspaces/api/workspaces")
-        assert response.get_json() == []
+        payload = response.get_json()
+        assert payload["items"] == []
+        assert payload["total"] == 0
+
+
+class TestWorkspaceSearchPagination:
+    def _seed(self, db, user_id, count=5):
+        base = datetime.now(UTC)
+        names = []
+        for index in range(count):
+            name = f"Workspace {index:02d}"
+            names.append(name)
+            db.session.add(
+                Workspace(
+                    user_id=user_id,
+                    name=name,
+                    description=f"description {index}",
+                    updated_at=base - timedelta(minutes=index),
+                )
+            )
+        db.session.commit()
+        return names
+
+    def test_search_filters_by_name(self, client, make_user, login, db):
+        user = make_user()
+        login()
+        self._seed(db, user.id)
+        items = client.get("/workspaces/api/workspaces?q=Workspace 01").get_json()["items"]
+        assert [w["name"] for w in items] == ["Workspace 01"]
+
+    def test_search_filters_by_description_and_is_case_insensitive(
+        self, client, make_user, login, db
+    ):
+        user = make_user()
+        login()
+        db.session.add(
+            Workspace(user_id=user.id, name="Unrelated", description="Stellar contracts work")
+        )
+        db.session.add(Workspace(user_id=user.id, name="Other", description="nothing here"))
+        db.session.commit()
+        items = client.get("/workspaces/api/workspaces?q=STELLAR").get_json()["items"]
+        assert [w["name"] for w in items] == ["Unrelated"]
+
+    def test_search_with_no_match_returns_empty(self, client, make_user, login, db):
+        user = make_user()
+        login()
+        self._seed(db, user.id, count=2)
+        payload = client.get("/workspaces/api/workspaces?q=zzz-no-match").get_json()
+        assert payload["items"] == []
+        assert payload["total"] == 0
+
+    def test_pagination_caps_items_and_reports_total(self, client, make_user, login, db):
+        user = make_user()
+        login()
+        self._seed(db, user.id, count=5)
+
+        first = client.get("/workspaces/api/workspaces?page=1&per_page=2").get_json()
+        assert first["total"] == 5
+        assert first["page"] == 1
+        assert first["per_page"] == 2
+        assert [w["name"] for w in first["items"]] == ["Workspace 00", "Workspace 01"]
+
+        second = client.get("/workspaces/api/workspaces?page=2&per_page=2").get_json()
+        assert [w["name"] for w in second["items"]] == ["Workspace 02", "Workspace 03"]
+
+        third = client.get("/workspaces/api/workspaces?page=3&per_page=2").get_json()
+        assert [w["name"] for w in third["items"]] == ["Workspace 04"]
+
+    def test_per_page_is_capped(self, client, make_user, login, db):
+        user = make_user()
+        login()
+        self._seed(db, user.id, count=1)
+        payload = client.get("/workspaces/api/workspaces?per_page=500").get_json()
+        assert payload["per_page"] == 100
+
+    def test_search_and_pagination_combine(self, client, make_user, login, db):
+        user = make_user()
+        login()
+        self._seed(db, user.id, count=5)
+        payload = client.get("/workspaces/api/workspaces?q=Workspace&page=2&per_page=2").get_json()
+        assert payload["total"] == 5
+        assert [w["name"] for w in payload["items"]] == ["Workspace 02", "Workspace 03"]
+
+    def test_project_count_is_accurate_across_pages(self, client, make_user, login, db):
+        user = make_user()
+        login()
+        names = self._seed(db, user.id, count=2)
+        target = Workspace.query.filter_by(user_id=user.id, name=names[0]).one()
+        db.session.add_all(
+            [
+                Project(workspace_id=target.id, user_id=user.id, name="one"),
+                Project(workspace_id=target.id, user_id=user.id, name="two"),
+            ]
+        )
+        db.session.commit()
+        payload = client.get("/workspaces/api/workspaces?page=1&per_page=1").get_json()
+        # names[0] is the most recently updated, so it is the first item.
+        assert payload["items"][0]["name"] == names[0]
+        assert payload["items"][0]["project_count"] == 2

@@ -38,7 +38,9 @@ def _add_plugin(plugin_id="cli-plugin", enabled=True):
         entry_point="plugins.test:TestPlugin",
         capabilities=["PROJECT_READ"],
         permissions=["read:project:files"],
-        dependencies=["dep>=1.0"],
+        # Satisfiable dependency (Flask is a hard project dependency) so CLI
+        # enable passes dependency resolution.
+        dependencies=["flask>=2.0"],
         configuration={"enabled_networks": ["testnet"]},
         enabled=enabled,
     )
@@ -100,7 +102,7 @@ class TestInspectCommand:
         assert data["enabled"] is True
         assert data["capabilities"] == ["PROJECT_READ"]
         assert data["permissions"] == ["read:project:files"]
-        assert data["dependencies"] == ["dep>=1.0"]
+        assert data["dependencies"] == ["flask>=2.0"]
         assert data["configuration"] == {"enabled_networks": ["testnet"]}
 
     def test_inspect_unknown_plugin(self, app):

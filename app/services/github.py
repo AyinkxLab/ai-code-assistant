@@ -16,7 +16,9 @@ import base64
 import logging
 import re
 import time
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
+from urllib.parse import parse_qs, urlparse
 
 import requests
 from flask import current_app
@@ -36,6 +38,48 @@ API_VERSION = "2022-11-28"
 
 # GitHub repository names / owners: letters, digits, dashes, dots, underscores.
 _FULL_NAME_RE = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
+
+#: Default and maximum ``per_page`` for list endpoints (GitHub caps at 100).
+PAGE_SIZE_DEFAULT = 50
+PAGE_SIZE_MAX = 100
+
+#: Matches one ``<url>; rel="name"`` entry of a GitHub ``Link`` header.
+_LINK_RE = re.compile(r'<([^>]+)>\s*;\s*rel="([^"]+)"')
+
+
+@dataclass(frozen=True)
+class GitHubPage:
+    """A single page of a GitHub list endpoint plus its navigation metadata.
+
+    ``has_next`` / ``has_prev`` / ``total_pages`` are derived from the ``Link``
+    response header GitHub returns, so the caller never has to guess where the
+    next page is.
+    """
+
+    items: list[dict]
+    page: int
+    per_page: int
+    has_next: bool = False
+    has_prev: bool = False
+    total_pages: int | None = None
+
+
+def parse_link_header(header: str) -> dict[str, str]:
+    """Return ``{rel: url}`` parsed from a GitHub ``Link`` header."""
+    return {rel: url for url, rel in _LINK_RE.findall(header or "")}
+
+
+def _page_number_from_url(url: str | None) -> int | None:
+    """Extract the ``page`` query parameter from a GitHub paging URL."""
+    if not url:
+        return None
+    values = parse_qs(urlparse(url).query).get("page")
+    if not values:
+        return None
+    try:
+        return int(values[0])
+    except (TypeError, ValueError):
+        return None
 
 
 def _github_config(name: str):
@@ -257,6 +301,55 @@ class GitHubClient:
 
         return items[:max_items]
 
+    def _get_page(
+        self,
+        path: str,
+        *,
+        params: dict | None = None,
+        page: int = 1,
+        per_page: int = PAGE_SIZE_DEFAULT,
+    ) -> GitHubPage:
+        """Fetch one page of a GitHub list endpoint.
+
+        ``page`` is 1-based and ``per_page`` is clamped to ``PAGE_SIZE_MAX``
+        (GitHub's own maximum) so a single response is always bounded. The
+        ``Link`` header GitHub sends back is parsed to report whether a
+        next/previous page exists and, when GitHub includes it, the last page
+        number.
+        """
+        page = max(1, int(page or 1))
+        per_page = max(1, min(int(per_page or PAGE_SIZE_DEFAULT), PAGE_SIZE_MAX))
+        request_params = dict(params or {})
+        request_params.update({"page": page, "per_page": per_page})
+
+        response = self.session.get(
+            f"{self.api_url}{path}", params=request_params, timeout=self.timeout
+        )
+        if response.status_code >= 400:
+            # Re-issue through _request so failures become the typed errors the
+            # rest of the app expects (auth, rate limit, not found, ...).
+            self._request("GET", path, params=params)
+
+        try:
+            items = response.json()
+        except ValueError:
+            items = []
+        if not isinstance(items, list):
+            items = []
+
+        links = parse_link_header(response.headers.get("Link", ""))
+        has_next = "next" in links
+        has_prev = "prev" in links
+        total_pages = _page_number_from_url(links.get("last")) or (page if not has_next else None)
+        return GitHubPage(
+            items=items[:per_page],
+            page=page,
+            per_page=per_page,
+            has_next=has_next,
+            has_prev=has_prev,
+            total_pages=total_pages,
+        )
+
     # -- GitHub account -----------------------------------------------------
 
     def get_user(self) -> dict:
@@ -419,7 +512,36 @@ class GitHubClient:
             f"/repos/{full_name}/issues",
             params={"state": state, "per_page": per_page},
         )
-        return [item for item in data if "pull_request" not in item]
+        return issues_only(data)
+
+    def list_issues_page(
+        self,
+        full_name: str,
+        *,
+        state: str = "open",
+        page: int = 1,
+        per_page: int = PAGE_SIZE_DEFAULT,
+    ) -> GitHubPage:
+        """Return one page of issues (excluding pull requests).
+
+        GitHub's issues endpoint includes pull requests, so the payload is
+        filtered; the returned navigation metadata still reflects GitHub's own
+        paging links for the endpoint.
+        """
+        result = self._get_page(
+            f"/repos/{full_name}/issues",
+            params={"state": state},
+            page=page,
+            per_page=per_page,
+        )
+        return GitHubPage(
+            items=issues_only(result.items),
+            page=result.page,
+            per_page=result.per_page,
+            has_next=result.has_next,
+            has_prev=result.has_prev,
+            total_pages=result.total_pages,
+        )
 
     def get_issue(self, full_name: str, number: int) -> dict:
         return self._get(f"/repos/{full_name}/issues/{number}")
@@ -430,6 +552,22 @@ class GitHubClient:
         return self._get(
             f"/repos/{full_name}/pulls",
             params={"state": state, "per_page": 50},
+        )
+
+    def list_pull_requests_page(
+        self,
+        full_name: str,
+        *,
+        state: str = "open",
+        page: int = 1,
+        per_page: int = PAGE_SIZE_DEFAULT,
+    ) -> GitHubPage:
+        """Return one page of pull requests with Link-header navigation."""
+        return self._get_page(
+            f"/repos/{full_name}/pulls",
+            params={"state": state},
+            page=page,
+            per_page=per_page,
         )
 
     def get_pull_request(self, full_name: str, number: int) -> dict:
@@ -484,6 +622,11 @@ def repo_payload(repo: dict) -> dict:
         "size": repo.get("size"),
         "fork": bool(repo.get("fork")),
     }
+
+
+def issues_only(items: list[dict]) -> list[dict]:
+    """Return only true issues from a GitHub issues payload (drop PRs)."""
+    return [item for item in items if "pull_request" not in item]
 
 
 def issue_payload(issue: dict) -> dict:

@@ -20,6 +20,12 @@ class Conversation(db.Model):
     )
     title = db.Column(db.String(200), nullable=False, default="New conversation")
     is_pinned = db.Column(db.Boolean, nullable=False, default=False)
+    # Per-conversation generation settings (issue #12). ``None`` means "use the
+    # provider/app default", so existing conversations keep working unchanged.
+    provider = db.Column(db.String(50), nullable=True)
+    model = db.Column(db.String(100), nullable=True)
+    temperature = db.Column(db.Float, nullable=True)
+    system_prompt = db.Column(db.Text, nullable=True)
     created_at = db.Column(
         db.DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC)
     )
@@ -53,6 +59,10 @@ class Conversation(db.Model):
             "title": self.title,
             "is_pinned": self.is_pinned,
             "is_shared": len(self.shares) > 0,
+            "provider": self.provider,
+            "model": self.model,
+            "temperature": self.temperature,
+            "system_prompt": self.system_prompt,
             "message_count": len(self.messages),
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "updated_at": self.updated_at.isoformat() if self.updated_at else None,

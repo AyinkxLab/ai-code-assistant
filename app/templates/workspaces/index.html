@@ -11,6 +11,10 @@
   <button id="new-workspace" class="btn btn-primary" type="button">+ New workspace</button>
 </div>
 
+<form id="workspace-search-form" class="repo-toolbar" method="get" action="{{ url_for('workspaces.index') }}" role="search">
+  <input id="workspace-search" class="sidebar-search" type="search" name="q" value="{{ search }}" placeholder="Search workspaces by name or description..." aria-label="Search workspaces">
+</form>
+
 <div id="workspace-grid" class="workspace-grid">
   {% for workspace in workspaces %}
     <a class="workspace-card{{ ' is-pinned' if workspace.is_pinned else '' }}" href="{{ url_for('workspaces.detail', workspace_id=workspace.id) }}" data-id="{{ workspace.id }}" data-pinned="{{ 'true' if workspace.is_pinned else 'false' }}">
@@ -27,11 +31,27 @@
   {% endfor %}
 </div>
 
-{% if not workspaces %}
-  <div class="analysis-output">
-    <p class="sidebar-empty">No workspaces yet. Create one to import a project and start exploring it.</p>
-  </div>
-{% endif %}
+<div id="workspace-empty" class="analysis-output"{% if workspaces %} hidden{% endif %}>
+  <p class="sidebar-empty">
+    {%- if search -%}
+      No workspaces match your search.
+    {%- else -%}
+      No workspaces yet. Create one to import a project and start exploring it.
+    {%- endif -%}
+  </p>
+</div>
+
+<div id="workspace-pager" class="pager" data-page="{{ page }}" data-per-page="{{ per_page }}" data-total="{{ total }}">
+  {% if total_pages > 1 %}
+    {% if page > 1 %}
+      <a class="btn btn-ghost btn-sm" data-page="{{ page - 1 }}" href="{{ url_for('workspaces.index', q=search, page=page - 1) }}">Previous</a>
+    {% endif %}
+    <span class="field-hint">Page {{ page }} of {{ total_pages }} ({{ total }} workspace{{ '' if total == 1 else 's' }})</span>
+    {% if page < total_pages %}
+      <a class="btn btn-ghost btn-sm" data-page="{{ page + 1 }}" href="{{ url_for('workspaces.index', q=search, page=page + 1) }}">Next</a>
+    {% endif %}
+  {% endif %}
+</div>
 
 <div id="workspace-modal" class="modal" hidden>
   <div class="modal-content">
