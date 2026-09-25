@@ -29,6 +29,16 @@
       "</div>" +
       '<div class="issue-body">' + GH.renderMarkdownish(pr.body) + "</div>";
 
+    var mergeState = pr.mergeable === true ? "mergeable" :
+      pr.mergeable === false ? "conflict" : "unknown";
+    var checks = pr.checks === null ? "Checks unavailable." :
+      (pr.checks && pr.checks.length ? pr.checks.map(function (check) {
+        var conclusion = check.conclusion || check.status || "pending";
+        var link = check.details_url ? '<a href="' + GH.escapeHtml(check.details_url) + '" target="_blank" rel="noopener">' + GH.escapeHtml(check.name || "check") + '</a>' : GH.escapeHtml(check.name || "check");
+        return '<li><span class="tag">' + GH.escapeHtml(conclusion) + '</span> ' + link + '</li>';
+      }).join("") : "No check runs reported.");
+    detailEl.insertAdjacentHTML("beforeend", '<section class="pr-health"><h3>Merge and CI</h3><p>Mergeable state: <strong>' + mergeState + '</strong></p><ul>' + checks + '</ul></section>');
+
     filesEl.innerHTML = "";
     if (pr.files && pr.files.length) {
       filesEl.innerHTML = "<h3>Changed files</h3>";

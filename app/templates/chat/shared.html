@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+
+{% block title %}Shared conversation - {{ config.APP_NAME }}{% endblock %}
+
+{% block content %}
+<section class="chat-shell">
+  <h1 id="shared-title">Shared conversation</h1>
+  <p class="field-hint">This link provides access only to this conversation.</p>
+  <div id="shared-messages" class="chat-messages"><p class="sidebar-empty">Loading conversation...</p></div>
+  <form id="shared-reply" class="chat-composer" hidden>
+    <textarea id="shared-reply-input" rows="3" maxlength="20000" placeholder="Add a comment..."></textarea>
+    <button class="btn btn-primary" type="submit">Comment</button>
+  </form>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+  var token = {{ token|tojson }};
+  fetch("/chat/api/shared/" + encodeURIComponent(token))
+    .then(function (response) { if (!response.ok) throw new Error("This share link is unavailable."); return response.json(); })
+    .then(function (data) {
+      document.getElementById("shared-title").textContent = data.conversation.title;
+      var target = document.getElementById("shared-messages");
+      target.innerHTML = data.messages.map(function (message) {
+        var item = document.createElement("article");
+        item.className = "chat-message " + message.role;
+        item.textContent = message.content;
+        return item.outerHTML;
+      }).join("") || "<p class=\"sidebar-empty\">No messages yet.</p>";
+      if (data.permission === "commenter") document.getElementById("shared-reply").hidden = false;
+    })
+    .catch(function (error) { document.getElementById("shared-messages").innerHTML = "<p class=\"sidebar-empty\">" + error.message + "</p>"; });
+  document.getElementById("shared-reply").addEventListener("submit", function (event) {
+    event.preventDefault();
+    var input = document.getElementById("shared-reply-input");
+    fetch("/chat/api/shared/" + encodeURIComponent(token) + "/messages", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({content: input.value})})
+      .then(function (response) { if (!response.ok) throw new Error("Could not add comment."); return response.json(); })
+      .then(function () { input.value = ""; window.location.reload(); })
+      .catch(function (error) { alert(error.message); });
+  });
+}());
+</script>
+{% endblock %}

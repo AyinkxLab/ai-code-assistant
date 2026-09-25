@@ -98,6 +98,7 @@ class Project(db.Model):
             "name": self.name,
             "source": self.source,
             "source_url": self.source_url,
+            "source_type": self.source,
             "status": self.status,
             "error_message": self.error_message,
             "progress": int(self.progress or 0),

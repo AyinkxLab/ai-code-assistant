@@ -1,8 +1,11 @@
 """Chat routes: UI page, conversation CRUD, and SSE streaming."""
 
+import hashlib
 import json
+import secrets
+from datetime import UTC, datetime, timedelta
 
-from flask import Response, jsonify, render_template, request
+from flask import Response, abort, jsonify, render_template, request, url_for
 from flask_login import current_user, login_required
 from sqlalchemy import func
 
@@ -10,6 +13,7 @@ from app.chat import bp
 from app.extensions import db
 from app.models import Conversation, Message, ProjectFile, Workspace
 from app.models.project import STATUS_READY
+from app.models import ConversationShare
 from app.services.llm import LLMProviderError, get_provider
 
 #: Cap on files returned per project in the chat file tree (keeps the payload
@@ -23,6 +27,29 @@ def _get_conversation(conversation_id: int) -> Conversation:
         id=conversation_id, user_id=current_user.id
     ).first_or_404()
     return conversation
+
+
+def _share_from_token(token: str) -> ConversationShare:
+    digest = hashlib.sha256(token.encode("utf-8")).hexdigest()
+    share = ConversationShare.query.filter_by(token_hash=digest).first()
+    if share is None or share.is_expired():
+        if share is not None:
+            db.session.delete(share)
+            db.session.commit()
+        abort(404)
+    return share
+
+
+def _share_payload(share: ConversationShare, token: str | None = None) -> dict:
+    payload = {
+        "id": share.id,
+        "permission": share.permission,
+        "expires_at": share.expires_at.isoformat(),
+        "created_at": share.created_at.isoformat(),
+    }
+    if token:
+        payload["url"] = url_for("chat.shared_conversation_page", token=token, _external=True)
+    return payload
 
 
 @bp.route("/")
@@ -110,6 +137,89 @@ def export_conversation(conversation_id: int):
         mimetype="application/json",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
+
+
+@bp.route("/conversations/<int:conversation_id>/shares", methods=["GET", "POST"])
+@login_required
+def conversation_shares(conversation_id: int):
+    """List or create secure, expiring links owned by the current user."""
+    conversation = _get_conversation(conversation_id)
+    if request.method == "GET":
+        return jsonify(
+            [_share_payload(share) for share in conversation.shares if not share.is_expired()]
+        )
+
+    data = request.get_json(silent=True) or {}
+    permission = data.get("permission", "read_only")
+    if permission not in {"read_only", "commenter"}:
+        return jsonify({"error": "Permission must be read_only or commenter."}), 400
+    try:
+        hours = min(max(int(data.get("expires_hours", 168)), 1), 720)
+    except (TypeError, ValueError):
+        return jsonify({"error": "expires_hours must be an integer."}), 400
+
+    token = secrets.token_urlsafe(32)
+    share = ConversationShare(
+        conversation_id=conversation.id,
+        created_by=current_user.id,
+        token_hash=hashlib.sha256(token.encode("utf-8")).hexdigest(),
+        expires_at=datetime.now(UTC) + timedelta(hours=hours),
+        permission=permission,
+    )
+    db.session.add(share)
+    db.session.commit()
+    return jsonify(_share_payload(share, token)), 201
+
+
+@bp.route("/conversations/<int:conversation_id>/shares/<int:share_id>", methods=["DELETE"])
+@login_required
+def revoke_conversation_share(conversation_id: int, share_id: int):
+    conversation = _get_conversation(conversation_id)
+    share = ConversationShare.query.filter_by(
+        id=share_id, conversation_id=conversation.id
+    ).first_or_404()
+    db.session.delete(share)
+    db.session.commit()
+    return jsonify({"ok": True})
+
+
+@bp.route("/shared/<token>")
+def shared_conversation_page(token: str):
+    """Render a token-scoped read-only conversation page."""
+    _share_from_token(token)
+    return render_template("chat/shared.html", token=token)
+
+
+@bp.route("/api/shared/<token>")
+def shared_conversation(token: str):
+    share = _share_from_token(token)
+    conversation = db.session.get(Conversation, share.conversation_id)
+    return jsonify(
+        {
+            "conversation": conversation.to_dict(),
+            "messages": [message.to_dict() for message in conversation.messages],
+            "permission": share.permission,
+            "expires_at": share.expires_at.isoformat(),
+        }
+    )
+
+
+@bp.route("/api/shared/<token>/messages", methods=["POST"])
+def add_shared_message(token: str):
+    """Allow commenter links to append a message without exposing the owner account."""
+    share = _share_from_token(token)
+    if share.permission != "commenter":
+        return jsonify({"error": "This share is read-only."}), 403
+    data = request.get_json(silent=True) or {}
+    content = (data.get("content") or "").strip()
+    if not content or len(content) > 20_000:
+        return jsonify(
+            {"error": "Message content is required and must be under 20,000 characters."}
+        ), 400
+    message = Message(role="user", content=content, conversation_id=share.conversation_id)
+    db.session.add(message)
+    db.session.commit()
+    return jsonify(message.to_dict()), 201
 
 
 @bp.route("/conversations/<int:conversation_id>/messages", methods=["POST"])

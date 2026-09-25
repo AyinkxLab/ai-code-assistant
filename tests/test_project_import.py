@@ -9,7 +9,7 @@ import pytest
 
 from app.extensions import db
 from app.models import GithubAccount, Project, ProjectFile, Workspace
-from app.models.project import SOURCE_ARCHIVE, SOURCE_GITHUB, STATUS_READY
+from app.models.project import SOURCE_ARCHIVE, SOURCE_GITHUB, STATUS_FAILED, STATUS_READY
 from app.services.importing import (
     ProjectImportError,
     build_manifest_rows,
@@ -111,6 +111,16 @@ class TestSanitizeHelpers:
 
 
 class TestArchiveImport:
+    @staticmethod
+    def _assert_failed_import(response, expected_message=None):
+        assert Project.query.count() == 1
+        project = Project.query.first()
+        assert project.status == STATUS_FAILED
+        assert project.error_message
+        if expected_message:
+            assert expected_message in project.error_message
+        assert response.get_json()["project"]["id"] == project.id
+
     def test_import_zip(self, client, workspace):
         payload = _zip_bytes([("README.md", "# Demo"), ("app.py", "print('hi')\n")])
         response = _upload_archive(client, workspace.id, payload)
@@ -142,25 +152,25 @@ class TestArchiveImport:
         response = _upload_archive(client, workspace.id, b"not an archive", "notes.docx")
         assert response.status_code == 400
         assert "Unsupported archive type" in response.get_json()["error"]
-        assert Project.query.count() == 0
+        self._assert_failed_import(response, "Unsupported archive type")
 
     def test_invalid_zip_rejected(self, client, workspace):
         response = _upload_archive(client, workspace.id, b"this is not a zip file", "bad.zip")
         assert response.status_code == 400
-        assert Project.query.count() == 0
+        self._assert_failed_import(response)
 
     def test_zip_slip_rejected(self, client, workspace):
         payload = _zip_bytes([("../../../evil.py", "malicious")])
         response = _upload_archive(client, workspace.id, payload)
         assert response.status_code == 400
         assert "escapes" in response.get_json()["error"]
-        assert Project.query.count() == 0
+        self._assert_failed_import(response, "escapes")
 
     def test_absolute_path_rejected(self, client, workspace):
         payload = _zip_bytes([("C:/Users/evil/pwn.py", "malicious")])
         response = _upload_archive(client, workspace.id, payload)
         assert response.status_code == 400
-        assert Project.query.count() == 0
+        self._assert_failed_import(response)
 
     def test_symlink_entry_skipped(self, client, workspace):
         buffer = io.BytesIO()
@@ -214,7 +224,7 @@ class TestArchiveImport:
         response = _upload_archive(client, workspace.id, payload)
         assert response.status_code == 400
         assert "maximum allowed upload size" in response.get_json()["error"]
-        assert Project.query.count() == 0
+        self._assert_failed_import(response, "maximum allowed upload size")
 
     def test_too_many_files_rejected(self, client, workspace, app):
         app.config["PROJECT_MAX_FILE_COUNT"] = 2
@@ -222,13 +232,13 @@ class TestArchiveImport:
         response = _upload_archive(client, workspace.id, payload)
         assert response.status_code == 400
         assert "too many files" in response.get_json()["error"]
-        assert Project.query.count() == 0
+        self._assert_failed_import(response, "too many files")
 
     def test_empty_archive_rejected(self, client, workspace):
         payload = _zip_bytes([])
         response = _upload_archive(client, workspace.id, payload)
         assert response.status_code == 400
-        assert Project.query.count() == 0
+        self._assert_failed_import(response, "no importable files")
 
 
 class TestGithubImport:
@@ -301,7 +311,11 @@ class TestGithubImport:
             json={"source": "github", "repo": "owner/missing"},
         )
         assert response.status_code == 502
-        assert Project.query.count() == 0
+        assert Project.query.count() == 1
+        project = Project.query.first()
+        assert project.status == STATUS_FAILED
+        assert project.error_message == "The requested GitHub resource was not found."
+        assert response.get_json()["project"]["id"] == project.id
 
     def test_invalid_repo_name_rejected(self, client, workspace):
         response = client.post(

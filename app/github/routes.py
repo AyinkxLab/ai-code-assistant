@@ -611,6 +611,10 @@ def api_pull_detail(owner: str, repo: str, number: int):
         client = _client()
         pr = client.get_pull_request(full_name, number)
         files = client.list_pull_request_files(full_name, number)
+        try:
+            check_runs = client.list_pull_request_check_runs(full_name, number)
+        except Exception:  # check APIs may be unavailable independently of PR metadata
+            check_runs = None
     except GitHubError as exc:
         return jsonify(github_error_payload(exc)), 404
 
@@ -625,6 +629,15 @@ def api_pull_detail(owner: str, repo: str, number: int):
         }
         for f in files
     ]
+    payload["checks"] = [
+        {
+            "name": check.get("name"),
+            "status": check.get("status"),
+            "conclusion": check.get("conclusion"),
+            "details_url": check.get("details_url"),
+        }
+        for check in (check_runs or [])
+    ] if check_runs is not None else None
     if analyze:
         payload["analysis"] = analysis.analyze_pull_request(
             payload, files, repo_files=_stellar_repo_context(client, full_name)

@@ -405,6 +405,15 @@ class GitHubClient:
     def list_pull_request_comments(self, full_name: str, number: int) -> list[dict]:
         return self._get(f"/repos/{full_name}/pulls/{number}/comments", params={"per_page": 100})
 
+    def list_pull_request_check_runs(self, full_name: str, number: int) -> list[dict]:
+        """Return check runs for the pull request's current head commit."""
+        pr = self.get_pull_request(full_name, number)
+        sha = (pr.get("head") or {}).get("sha")
+        if not sha:
+            return []
+        data = self._get(f"/repos/{full_name}/commits/{sha}/check-runs", params={"per_page": 100})
+        return data.get("check_runs", []) if isinstance(data, dict) else []
+
     # -- README -------------------------------------------------------------
 
     def get_readme(self, full_name: str, ref: str | None = None) -> str | None:
@@ -496,6 +505,7 @@ def pull_request_payload(pr: dict) -> dict:
         "updated_at": pr.get("updated_at"),
         "merged": bool(pr.get("merged")),
         "mergeable": pr.get("mergeable"),
+        "mergeable_state": pr.get("mergeable_state"),
         "head": (pr.get("head") or {}).get("ref"),
         "base": (pr.get("base") or {}).get("ref"),
         "additions": pr.get("additions"),

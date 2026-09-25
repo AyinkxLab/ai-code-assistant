@@ -70,6 +70,7 @@ from app.models.project import (
     SOURCE_GITHUB,
     SOURCE_SCAFFOLD,
     STATUS_INDEXING,
+    STATUS_FAILED,
     STATUS_READY,
 )
 from app.models.workspace_member import (
@@ -600,14 +601,18 @@ def _import_archive(workspace: Workspace):
     try:
         rows = extract_archive(uploaded.stream, uploaded.filename)
     except ProjectImportError as exc:
-        db.session.delete(project)
+        project.status = STATUS_FAILED
+        project.error_message = str(exc)
         db.session.commit()
-        return jsonify({"error": str(exc)}), 400
+        return jsonify({"error": str(exc), "project": project.to_dict(), "retryable": False}), 400
 
     if not rows:
-        db.session.delete(project)
+        project.status = STATUS_FAILED
+        project.error_message = "The archive contained no importable files."
         db.session.commit()
-        return jsonify({"error": "The archive contained no importable files."}), 400
+        return jsonify(
+            {"error": project.error_message, "project": project.to_dict(), "retryable": False}
+        ), 400
 
     store_project_files(project, rows)
     return _finish_project_import(workspace, project, SOURCE_ARCHIVE)
@@ -655,16 +660,33 @@ def _import_github(workspace: Workspace):
     try:
         client = get_github_client()
         import_github_repo(project, full_name, client)
-    except GitHubError as exc:
-        db.session.delete(project)
+    except (GitHubError, ProjectImportError) as exc:
+        project.status = STATUS_FAILED
+        project.error_message = str(exc)
         db.session.commit()
-        return jsonify(github_error_payload(exc)), 502
-    except ProjectImportError as exc:
-        db.session.delete(project)
-        db.session.commit()
-        return jsonify({"error": str(exc)}), 502
+        return jsonify({"error": str(exc), "project": project.to_dict(), "retryable": True}), 502
 
     return _finish_project_import(workspace, project, SOURCE_GITHUB)
+
+
+@bp.route("/api/projects/<int:project_id>/retry", methods=["POST"])
+@login_required
+def api_retry_project_import(project_id: int):
+    """Retry a failed GitHub import while retaining the failure history."""
+    project = _get_project(project_id)
+    if project.source != SOURCE_GITHUB or not project.source_url:
+        return jsonify({"error": "Only failed GitHub imports can be retried."}), 400
+    project.status = "indexing"
+    project.error_message = None
+    db.session.commit()
+    try:
+        import_github_repo(project, project.source_url, get_github_client())
+    except (GitHubError, ProjectImportError) as exc:
+        project.status = STATUS_FAILED
+        project.error_message = str(exc)
+        db.session.commit()
+        return jsonify({"error": str(exc), "project": project.to_dict(), "retryable": True}), 502
+    return jsonify(project.to_dict())
 
 
 @bp.route("/api/projects/<int:project_id>", methods=["DELETE"])

@@ -11,9 +11,10 @@
       / {{ project.name }}
     </h1>
     <p class="repo-meta">
-      {{ project.source }}{% if project.source_url %} · <span id="project-source-url">{{ project.source_url }}</span>{% endif %}
+      {{ project.source }}{% if project.source_url %} · <a id="project-source-url" href="{% if project.source == 'github' %}https://github.com/{{ project.source_url }}{% else %}{{ project.source_url }}{% endif %}" target="_blank" rel="noopener noreferrer">{{ project.source_url }}</a>{% endif %}
       · <span id="project-status" class="project-status project-status-{{ project.status }}">{{ project.status }}</span>
       {% if project.status == 'ready' %} · {{ project.file_count }} files{% endif %}
+      {% if project.indexed_at %} · indexed {{ project.indexed_at.strftime('%Y-%m-%d %H:%M UTC') }}{% endif %}
     </p>
   </div>
   <div class="repo-toolbar">
@@ -159,9 +160,24 @@
     </div>
   </section>
 </div>
+{% if project.status == 'failed' %}
+<div class="flash flash-error" role="alert">
+  Import failed: {{ project.error_message or 'An unknown error occurred.' }}
+  {% if project.source == 'github' %}<button id="retry-project" class="btn btn-ghost btn-sm" type="button">Retry import</button>{% endif %}
+</div>
+{% endif %}
 {% endblock %}
 
 {% block scripts %}
 <script src="{{ url_for('static', filename='js/stellar_tools.js') }}"></script>
 <script src="{{ url_for('static', filename='js/project.js') }}"></script>
+{% if project.status == 'failed' and project.source == 'github' %}
+<script>
+document.getElementById('retry-project')?.addEventListener('click', async function () {
+  this.disabled = true;
+  const response = await fetch('{{ url_for("workspaces.api_retry_project_import", project_id=project.id) }}', {method: 'POST', headers: {'X-CSRFToken': 'ignored'}});
+  if (response.ok) window.location.reload(); else { this.disabled = false; alert((await response.json()).error || 'Retry failed.'); }
+});
+</script>
+{% endif %}
 {% endblock %}
