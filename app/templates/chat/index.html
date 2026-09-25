@@ -10,13 +10,17 @@
       <button id="new-conversation" class="btn btn-primary btn-sm" type="button">+ New</button>
     </div>
     <input id="conversation-search" class="sidebar-search" type="search" placeholder="Search conversations...">
-    <ul id="conversation-list" class="conversation-list">
+    <ul id="conversation-list" class="conversation-list" aria-label="Conversations">
       {% for conversation in conversations %}
         <li class="conversation-item{% if loop.first %} active{% endif %}"
             data-id="{{ conversation.id }}"
-            data-title="{{ conversation.title }}">
+            data-title="{{ conversation.title }}"
+            tabindex="0"
+            role="button"
+            aria-label="Open conversation: {{ conversation.title }}"
+            {% if loop.first %}aria-current="true"{% endif %}>
           <span class="conversation-title">{{ conversation.title }}</span>
-          <span class="conversation-meta">{{ conversation.message_count }} messages</span>
+          <span class="conversation-meta">{{ conversation.message_count }} messages <time class="conversation-time" datetime="{{ conversation.updated_at.isoformat() if conversation.updated_at else '' }}"></time></span>
         </li>
       {% endfor %}
     </ul>
@@ -43,7 +47,7 @@
   </aside>
 
   <section class="chat-main">
-    <div id="chat-messages" class="chat-messages" aria-live="polite">
+    <div id="chat-messages" class="chat-messages" role="log" aria-live="polite" aria-label="Conversation messages">
       <div class="chat-placeholder">
         <p>Start a conversation with the AI assistant.</p>
       </div>
