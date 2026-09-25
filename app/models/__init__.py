@@ -7,6 +7,7 @@ can discover every table in the application.
 from app.models.activity_event import ActivityEvent
 from app.models.api_key import ApiKey
 from app.models.conversation import Conversation
+from app.models.conversation_share import ConversationShare
 from app.models.github_account import GithubAccount
 from app.models.invitation import WorkspaceInvitation
 from app.models.message import Message
@@ -15,6 +16,7 @@ from app.models.notification_preference import NotificationPreference
 from app.models.plugin import CapabilityGrant, Plugin, PluginInstallation
 from app.models.plugin_error_report import PluginErrorReport
 from app.models.project import Project
+from app.models.project_chat_session import ProjectChatSession
 from app.models.project_comment import ProjectComment
 from app.models.project_file import ProjectFile
 from app.models.project_message import ProjectMessage
@@ -35,6 +37,7 @@ __all__ = [
     "ApiKey",
     "CapabilityGrant",
     "Conversation",
+    "ConversationShare",
     "GithubAccount",
     "Message",
     "Notification",
@@ -43,6 +46,7 @@ __all__ = [
     "PluginErrorReport",
     "PluginInstallation",
     "Project",
+    "ProjectChatSession",
     "ProjectComment",
     "ProjectFile",
     "ProjectMessage",

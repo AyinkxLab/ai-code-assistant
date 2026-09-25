@@ -27,6 +27,8 @@ class GithubAccount(db.Model):
     github_user_id = db.Column(db.Integer, nullable=False, unique=True, index=True)
     github_username = db.Column(db.String(80), nullable=False, index=True)
     access_token_encrypted = db.Column(db.Text, nullable=False)
+    refresh_token_encrypted = db.Column(db.Text, nullable=True)
+    token_expires_at = db.Column(db.DateTime(timezone=True), nullable=True)
     token_type = db.Column(db.String(32), nullable=False, default="bearer")
     scopes = db.Column(db.String(255), nullable=False, default="")
     created_at = db.Column(
@@ -44,6 +46,12 @@ class GithubAccount(db.Model):
         from app.services.crypto import encrypt_secret
 
         self.access_token_encrypted = encrypt_secret(plaintext)
+
+    def set_refresh_token(self, plaintext: str | None) -> None:
+        """Encrypt and store a refresh token, or clear it when absent."""
+        from app.services.crypto import encrypt_secret
+
+        self.refresh_token_encrypted = encrypt_secret(plaintext) if plaintext else None
 
     def to_dict(self) -> dict:
         """Public metadata about the connection (never includes the token)."""

@@ -2,7 +2,7 @@
 analysis, stats, and ownership isolation."""
 
 from app.extensions import db
-from app.models import Project, ProjectFile, Workspace
+from app.models import Project, ProjectFile, ProjectMessage, Workspace
 from app.models.project import SOURCE_ARCHIVE, STATUS_INDEXING, STATUS_READY
 
 
@@ -202,6 +202,33 @@ class TestSearchRoute:
 
 
 class TestChatRoute:
+    def test_sessions_are_named_and_messages_are_scoped(self, client, app, make_user, login):
+        _, project = _setup(app, make_user, login)
+        created = client.post(
+            f"/workspaces/api/projects/{project.id}/sessions", json={"title": "Architecture"}
+        )
+        assert created.status_code == 201
+        session_id = created.get_json()["id"]
+
+        response = client.post(
+            f"/workspaces/api/projects/{project.id}/chat",
+            json={"content": "What does app.py do?", "session_id": session_id},
+        )
+        assert response.status_code == 201
+        sessions = client.get(f"/workspaces/api/projects/{project.id}/sessions").get_json()
+        assert sessions[0]["title"] == "Architecture"
+        messages = client.get(
+            f"/workspaces/api/projects/{project.id}/messages?session_id={session_id}"
+        ).get_json()
+        assert len(messages) == 2
+        assert ProjectMessage.query.filter_by(session_id=session_id).count() == 2
+
+    def test_sessions_create_default_for_existing_project(self, client, app, make_user, login):
+        _, project = _setup(app, make_user, login)
+        response = client.get(f"/workspaces/api/projects/{project.id}/sessions")
+        assert response.status_code == 200
+        assert response.get_json()[0]["title"] == "General"
+
     def test_chat_persists_messages(self, client, app, make_user, login):
         _, project = _setup(app, make_user, login)
         response = client.post(
@@ -315,3 +342,9 @@ class TestProjectIsolation:
         response = client.get(f"/workspaces/{workspace.id}/projects/{project.id}")
         assert response.status_code == 200
         assert b"AI Chat" in response.data
+
+    def test_project_explorer_renders_breadcrumb_container(self, client, app, make_user, login):
+        workspace, project = _setup(app, make_user, login)
+        response = client.get(f"/workspaces/{workspace.id}/projects/{project.id}")
+        assert response.status_code == 200
+        assert b'id="file-breadcrumbs"' in response.data

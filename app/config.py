@@ -86,6 +86,22 @@ class Config:
     PLUGIN_TRUST_POLICY = os.getenv("PLUGIN_TRUST_POLICY", "if-present")
     PLUGIN_TRUSTED_KEYS = _trusted_plugin_keys()
 
+    # Plugin outbound network policy (#193). Every plugin-triggered request must
+    # pass ``app.services.plugin_network``: it is https-only, denies
+    # private/loopback/link-local/reserved targets by default, and only reaches
+    # hosts on ``PLUGIN_NETWORK_ALLOWLIST`` (comma-separated; ``*`` allows any
+    # public host, ``*.example.com`` allows subdomains). An empty allowlist
+    # denies all plugin outbound requests (fail closed).
+    PLUGIN_NETWORK_ALLOWLIST = os.getenv("PLUGIN_NETWORK_ALLOWLIST", "")
+    PLUGIN_NETWORK_HTTPS_ONLY = os.getenv("PLUGIN_NETWORK_HTTPS_ONLY", "1") == "1"
+    PLUGIN_NETWORK_ALLOW_PRIVATE = os.getenv("PLUGIN_NETWORK_ALLOW_PRIVATE", "0") == "1"
+    PLUGIN_NETWORK_TIMEOUT = int(os.getenv("PLUGIN_NETWORK_TIMEOUT", "15"))
+    PLUGIN_NETWORK_MAX_BYTES = int(os.getenv("PLUGIN_NETWORK_MAX_BYTES", str(2 * 1024 * 1024)))
+    # When enabled, a hostname that cannot be resolved is rejected instead of
+    # tolerated (defense-in-depth for hostile DNS; off by default so the guard
+    # keeps working fully offline).
+    PLUGIN_NETWORK_STRICT_DNS = os.getenv("PLUGIN_NETWORK_STRICT_DNS", "0") == "1"
+
     # GitHub OAuth integration.
     GITHUB_CLIENT_ID = os.getenv("GITHUB_CLIENT_ID", "")
     GITHUB_CLIENT_SECRET = os.getenv("GITHUB_CLIENT_SECRET", "")
@@ -110,6 +126,12 @@ class Config:
         "PROJECT_SKIP_DIRS",
         ".git,.hg,.svn,node_modules,.venv,venv,__pycache__,.next,.cache,dist,build,"
         "vendor,.tox,.mypy_cache,.pytest_cache",
+    )
+    # Snapshot export (#107): exports stream a zip built in memory from stored
+    # rows only (never the filesystem). Binary/oversized files become clearly
+    # marked .PLACEHOLDER.txt stubs; this caps the size of one stub's text.
+    PROJECT_EXPORT_PLACEHOLDER_MAX_CHARS = int(
+        os.getenv("PROJECT_EXPORT_PLACEHOLDER_MAX_CHARS", "20000")
     )
     PROJECT_SKIP_SECRET_FILES = os.getenv(
         "PROJECT_SKIP_SECRET_FILES",
@@ -159,12 +181,10 @@ class Config:
     RATE_LIMIT_STREAM_WINDOW = int(os.getenv("RATE_LIMIT_STREAM_WINDOW", "60"))
     RATE_LIMIT_ANALYZE_MAX = int(os.getenv("RATE_LIMIT_ANALYZE_MAX", "20"))
     RATE_LIMIT_ANALYZE_WINDOW = int(os.getenv("RATE_LIMIT_ANALYZE_WINDOW", "300"))
-    # OAuth callback throttling (#81): repeated *failures* for the same user/IP
-    # are limited to blunt brute-force state probing. Only failed attempts are
-    # counted and a successful connection clears the bucket, so legitimate
-    # connects are never affected.
-    RATE_LIMIT_OAUTH_CALLBACK_MAX = int(os.getenv("RATE_LIMIT_OAUTH_CALLBACK_MAX", "10"))
-    RATE_LIMIT_OAUTH_CALLBACK_WINDOW = int(os.getenv("RATE_LIMIT_OAUTH_CALLBACK_WINDOW", "300"))
+    # Snapshot export (#107): builds a zip in memory per request, so it gets a
+    # tight per-user limit of its own.
+    RATE_LIMIT_EXPORT_MAX = int(os.getenv("RATE_LIMIT_EXPORT_MAX", "10"))
+    RATE_LIMIT_EXPORT_WINDOW = int(os.getenv("RATE_LIMIT_EXPORT_WINDOW", "3600"))
     # Optional SMTP for invitation email delivery. When unset, invitations are
     # delivered as in-app notifications only and the app never crashes on mail.
     SMTP_HOST = os.getenv("SMTP_HOST", "")

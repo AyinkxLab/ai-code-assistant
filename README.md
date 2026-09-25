@@ -63,6 +63,8 @@ developer tooling. This project is built incrementally across phases:
   configuration, detection, inspection, and the Stellar-aware AI analysis.
 - [Soroban / Stellar RPC](docs/soroban.md) — the read-only RPC client, its
   methods, ledger-key encoding, and security model.
+- [Soroban workflow guide](docs/soroban-workflow.md) — end-to-end walkthrough:
+  import a Soroban repo, see detection, run analysis, and scaffold a contract.
 - [Architecture](docs/architecture.md) — how the application is layered and
   how the Stellar tooling fits in.
 - [Security model](docs/security.md) — threat review and controls for the
@@ -546,6 +548,12 @@ All configuration is environment-driven (see `.env.example`):
 | `STELLAR_MAX_RESPONSE_BYTES` | `2097152` | Cap on Stellar response body size (Phase 8) |
 | `STELLAR_RPC_MAX_KEYS` | `100`   | Max ledger keys per RPC `getLedgerEntries` call (Phase 8) |
 | `STELLAR_STRICT_HOST_VALIDATION` | `1` | DNS-verify public Stellar hosts resolve publicly (Phase 8) |
+| `PLUGIN_NETWORK_ALLOWLIST` | empty | Comma-separated plugin outbound allowlist; `*`/`*.example.com` supported. Empty denies all (Phase 8) |
+| `PLUGIN_NETWORK_HTTPS_ONLY` | `1` | Reject non-https plugin outbound requests (Phase 8) |
+| `PLUGIN_NETWORK_ALLOW_PRIVATE` | `0` | Development escape hatch for private/loopback plugin targets (Phase 8) |
+| `PLUGIN_NETWORK_TIMEOUT` | `15` | Plugin outbound request timeout in seconds (Phase 8) |
+| `PLUGIN_NETWORK_MAX_BYTES` | `2097152` | Cap on a plugin response body size (Phase 8) |
+| `PLUGIN_NETWORK_STRICT_DNS` | `0` | Reject unresolvable plugin hosts instead of tolerating them (Phase 8) |
 
 The production configuration fails fast at startup if `SECRET_KEY` or a
 PostgreSQL `DATABASE_URL` is missing — it will never silently run with

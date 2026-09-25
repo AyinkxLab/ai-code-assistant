@@ -1,7 +1,7 @@
 """add project duplicate-import detection (issue #87)
 
 Revision ID: c1a2b3c4d5e6
-Revises: b4c3d2e1f0a9
+Revises: a54b1c2d3e4f
 Create Date: 2026-09-23 00:00:00.000000
 
 """
@@ -11,7 +11,7 @@ import sqlalchemy as sa
 
 # revision identifiers, used by Alembic.
 revision = 'c1a2b3c4d5e6'
-down_revision = 'b4c3d2e1f0a9'
+down_revision = 'a54b1c2d3e4f'
 branch_labels = None
 depends_on = None
 

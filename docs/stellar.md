@@ -144,16 +144,30 @@ futurenet) from config passphrases and file names — never from live data.
 Detection metadata is attached to every import response and exposed via
 `GET /workspaces/api/projects/<id>/stellar`.
 
+The full signal model, confidence semantics, why plain Rust is excluded, and how
+to add new signals without false positives are documented in
+[`stellar-detection.md`](stellar-detection.md).
+
 ### Stellar-aware AI analysis (`app/services/project_analysis.py`)
 
-Two analysis kinds: **`stellar`** (project overview for a Stellar developer)
-and **`stellar_security`** (Soroban-aware security review). Both:
+Three analysis kinds: **`stellar`** (project overview for a Stellar developer),
+**`stellar_security`** (Soroban-aware security review), and **`stellar_config`**
+(a review of the detected Stellar configuration files). All three:
 
 - Run the same content-access gate as every other analysis (owner-only,
   fails closed).
 - Report honestly when the project is not Stellar.
 - Ground claims in the indexed files, mark `[CONFIRMED]` vs `[SUGGESTION]`,
   and include an honest live-RPC availability note.
+
+`stellar_config` reviews only the detected configuration files
+(`stellar.toml`, `soroban.toml`, `stellar-config.toml`, `stellar.json`,
+`soroban.json`, and `.soroban/` files) for **internal consistency** and obvious
+misconfigurations — e.g. a testnet passphrase paired with a mainnet RPC
+endpoint, placeholder endpoints, or conflicting network definitions. It is
+gated on detection (non-Stellar projects get the honest "not applicable"
+result), and it marks everything `[SUGGESTION]` unless a file directly proves
+the fact.
 
 #### Structured findings (`app/services/stellar_findings.py`)
 
@@ -257,6 +271,10 @@ flask stellar account G…
 flask stellar health
 flask stellar contract C…
 ```
+
+For a step-by-step walkthrough of the whole developer flow (import a Soroban
+repository → see detection → run Stellar analysis → scaffold a contract), see
+[docs/soroban-workflow.md](soroban-workflow.md).
 
 ## Stellar-aware GitHub analysis (PR and issue)
 

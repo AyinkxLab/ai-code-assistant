@@ -24,6 +24,7 @@ from app.models.workspace_member import (
 from app.services.llm import LLMProviderError, get_provider
 from app.services.permissions import assert_content_access
 from app.services.stellar_detection import (
+    _is_config_file,
     detect_stellar_network,
     detect_stellar_project,
 )
@@ -46,6 +47,7 @@ ANALYSIS_KINDS = (
     "code_review",
     "stellar",
     "stellar_security",
+    "stellar_config",
 )
 
 _PROJECT_SYSTEM = (
@@ -256,14 +258,16 @@ def _complete(messages: list[dict]) -> str:
         return f"[analysis unavailable: {exc}]"
 
 
-def build_messages(project, question: str, history: list) -> list[dict]:
+def build_messages(
+    project, question: str, history: list, attachments: list[str] | None = None
+) -> list[dict]:
     """Build the provider message list for a project chat request.
 
     Includes bounded recent history, the project structure summary, and only
     the retrieved (bounded) file context for ``question``.
     """
     _assert_accessible(project)
-    context = build_context(project, question)
+    context = build_context(project, question, attachments=attachments)
     structure = project_structure(project)
     user_prompt = (
         f"{_context_header(project)}\n\n"
@@ -326,7 +330,18 @@ def project_structure(project) -> str:
     return summary + "\n" + "\n".join(files)
 
 
-def build_context(project, question: str, *, budget: int | None = None) -> dict:
+def _mentioned_paths(question: str, paths: set[str]) -> list[str]:
+    mentions = re.findall(r"@([A-Za-z0-9_./-]+)", question or "")
+    return [mention for mention in mentions if mention in paths]
+
+
+def build_context(
+    project,
+    question: str,
+    *,
+    budget: int | None = None,
+    attachments: list[str] | None = None,
+) -> dict:
     """Select the most relevant files for ``question`` within ``budget`` chars.
 
     Returns ``{"blocks", "paths"}`` where ``blocks`` is the assembled, clipped
@@ -339,6 +354,13 @@ def build_context(project, question: str, *, budget: int | None = None) -> dict:
         budget = current_app.config["PROJECT_MAX_CONTEXT_CHARS"]
 
     files = project.files.all()
+    files_by_path = {file.path: file for file in files if file.content is not None}
+    requested_paths = list(attachments or []) + _mentioned_paths(question, set(files_by_path))
+    pinned = []
+    for path in requested_paths:
+        file = files_by_path.get(path)
+        if file is not None and file not in pinned:
+            pinned.append(file)
     tokens = _keywords(question)
 
     # 1) Files whose path matches a question keyword.
@@ -351,7 +373,7 @@ def build_context(project, question: str, *, budget: int | None = None) -> dict:
             scored.append((score, file))
     scored.sort(key=lambda item: (-item[0], item[1].size))
 
-    selected: list[ProjectFile] = []
+    selected: list[ProjectFile] = pinned[:MAX_CONTEXT_FILES]
     for _, file in scored:
         if len(selected) >= MAX_CONTEXT_FILES:
             break
@@ -381,15 +403,17 @@ def build_context(project, question: str, *, budget: int | None = None) -> dict:
     remaining = budget
     per_file = max(budget // MAX_CONTEXT_FILES, 2000)
     for file in selected:
-        chunk = file.content or ""
-        if len(chunk) > per_file:
-            chunk = chunk[:per_file]
-        if len(chunk) > remaining:
-            chunk = chunk[:remaining]
+        prefix = f"```{file.path}\n"
+        suffix = "\n```"
+        available = remaining - len(prefix) - len(suffix)
+        if available <= 0:
+            break
+        chunk = (file.content or "")[: min(per_file, available)]
         if not chunk:
             continue
-        blocks.append(f"```{file.path}\n{chunk}\n```")
-        remaining -= len(chunk)
+        block = f"{prefix}{chunk}{suffix}"
+        blocks.append(block)
+        remaining -= len(block)
 
     return {"blocks": "\n\n".join(blocks), "paths": [f.path for f in selected]}
 
@@ -583,11 +607,11 @@ def dependency_inventory(project) -> list[dict]:
 # --------------------------------------------------------------------------
 
 
-def chat_with_project(project, question: str) -> dict:
+def chat_with_project(project, question: str, attachments: list[str] | None = None) -> dict:
     """Answer ``question`` about ``project`` using bounded retrieved context."""
     _assert_accessible(project)
-    context = build_context(project, question)
-    messages = build_messages(project, question, [])
+    context = build_context(project, question, attachments=attachments)
+    messages = build_messages(project, question, [], attachments=attachments)
     return {
         "context_paths": context["paths"],
         "analysis": _complete(messages),
@@ -692,6 +716,8 @@ Base everything on the files shown and mark [CONFIRMED] vs [SUGGESTION].
         return analyze_stellar_project(project)
     elif kind == "stellar_security":
         return analyze_stellar_security(project)
+    elif kind == "stellar_config":
+        return analyze_stellar_config(project)
     else:  # dependencies
         inventory = dependency_inventory(project)
         if inventory:
@@ -1067,6 +1093,108 @@ this schema and no other keys:
         "findings_count": len(findings),
         "structured": bool(findings),
         "persisted_count": persisted_count,
+    }
+
+
+def _stellar_config_files(files) -> list[ProjectFile]:
+    """Return the detected Stellar/Soroban configuration files (bounded).
+
+    A file is a configuration file when its basename is one of the known
+    ``stellar.toml``/``soroban.toml``/``stellar.json`` forms or it lives under a
+    ``.soroban`` directory. Only files with indexed content are returned.
+    """
+    selected: list[ProjectFile] = []
+    for file in files:
+        path = getattr(file, "path", "") or ""
+        if file.content is None:
+            continue
+        if _is_config_file(path) or ".soroban" in path.lower():
+            selected.append(file)
+    selected.sort(key=lambda f: f.path)
+    return selected[:MAX_CONTEXT_FILES]
+
+
+def analyze_stellar_config(project) -> dict:
+    """Review a detected project's Stellar configuration files for consistency.
+
+    Runs only for detected Stellar/Soroban projects (fail closed otherwise) and
+    is grounded strictly in the detected configuration files. The prompt asks
+    the model to flag internal inconsistencies and obvious misconfigurations
+    (e.g. a testnet passphrase with a mainnet RPC endpoint) and to mark
+    everything ``[SUGGESTION]`` unless the file directly proves the fact.
+    """
+    _assert_accessible(project)
+    kind = "stellar_config"
+
+    files = list(project.files.all())
+    signals = detect_stellar_project(files)
+    if not signals.is_stellar:
+        return _stellar_analysis_not_applicable(kind, signals.confidence)
+
+    network_hint = detect_stellar_network(files)
+    config_files = _stellar_config_files(files)
+    config_paths = [f.path for f in config_files]
+    if not config_files:
+        return {
+            "kind": kind,
+            "detected": True,
+            "confidence": signals.confidence,
+            "is_soroban": signals.is_soroban,
+            "network": network_hint,
+            "config_files": [],
+            "analysis": (
+                "This project is detected as Stellar/Soroban, but no Stellar "
+                "configuration files (stellar.toml, soroban.toml, or a .soroban "
+                "directory) were found in the indexed files, so a configuration "
+                "review is not possible. No configuration was invented."
+            ),
+        }
+
+    structure = project_structure(project)
+    blocks = _bounded_blocks(config_files, _budget())
+    network_line = f"Configured network hint (from files): {network_hint['network'] or 'unknown'}"
+    config_lines = "\n".join(f"- {path}" for path in config_paths)
+    prompt = f"""{_context_header(project)}
+
+Detected Stellar configuration files:
+{config_lines}
+
+{network_line}
+
+{stellar_analysis_context()}
+
+Structure (sample):
+{_clip(structure, 6000)}
+
+Configuration files under review:
+{blocks or "(no configuration file contents retrieved)"}
+
+Review ONLY the Stellar/Soroban configuration files shown above for internal
+consistency and obvious misconfigurations:
+1. Network consistency: the network name/passphrase, RPC/Horizon endpoints, and
+   any declared network must all refer to the same network. Flag a testnet
+   passphrase paired with a mainnet RPC endpoint (or vice versa).
+2. Obvious misconfigurations: mainnet endpoints in a testnet/dev config,
+   placeholder or example endpoints left in place, conflicting or duplicate
+   network definitions, and malformed or missing fields for the detected format.
+3. Credentials: flag hard-coded secret keys or credentials only when they are
+   directly visible in the files.
+
+Rules:
+- Ground every statement in the files shown above and cite the file path.
+- Mark everything [SUGGESTION] unless the file directly and unambiguously
+  proves the fact, in which case mark that fact [CONFIRMED].
+- Do not invent endpoints, networks, keys, or values that are not in the files.
+- Do not claim any live network, ledger, contract, or transaction state.
+"""
+    return {
+        "kind": kind,
+        "detected": True,
+        "confidence": signals.confidence,
+        "is_soroban": signals.is_soroban,
+        "network": network_hint,
+        "config_files": config_paths,
+        "analysis": _run(prompt),
     }
 
 

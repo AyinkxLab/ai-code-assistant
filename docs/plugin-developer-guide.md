@@ -202,6 +202,39 @@ The example plugin ties it all together:
 `tests/test_plugin_example.py` validates the example manifest and class so the
 guide cannot drift from a working plugin.
 
+## 9. Network access (outbound requests)
+
+Plugins may one day need to make outbound HTTP requests. All such requests must
+go through the shared guard in
+[`app/services/plugin_network.py`](../app/services/plugin_network.py) — never
+call `requests` directly. The guard is **https-only**, denies private /
+loopback / link-local / reserved targets and obviously-private hostnames by
+default, and only reaches hosts on the operator's allowlist.
+
+```python
+from app.services.plugin_network import guarded_get
+
+def on_event(self, event):
+    # Raises PluginNetworkError unless the configured policy allows the host.
+    response = guarded_get("https://api.example.com/v1/status")
+    return response.json()
+```
+
+The policy is configuration, not code (see `.env.example`):
+
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `PLUGIN_NETWORK_ALLOWLIST` | empty | Comma-separated hosts. `*` allows any public host, `*.example.com` allows subdomains. **Empty denies every plugin request (fail closed).** |
+| `PLUGIN_NETWORK_HTTPS_ONLY` | `1` | Reject anything that is not `https`. |
+| `PLUGIN_NETWORK_ALLOW_PRIVATE` | `0` | Development escape hatch; keep off in production. |
+| `PLUGIN_NETWORK_TIMEOUT` | `15` | Request timeout in seconds. |
+| `PLUGIN_NETWORK_MAX_BYTES` | `2097152` | Cap on a response body size. |
+| `PLUGIN_NETWORK_STRICT_DNS` | `0` | When set, an unresolvable host is rejected instead of tolerated. |
+
+Use `guard_plugin_url` / `is_plugin_url_allowed` to validate a target without
+sending a request. The full policy and threat model are recorded in
+[`security.md`](security.md).
+
 ## See also
 
 - [`plugins.md`](plugins.md) — full architecture and management API reference.

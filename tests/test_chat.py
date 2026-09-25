@@ -1,6 +1,6 @@
 """Tests for the chat blueprint: conversations, messages, streaming, export."""
 
-from app.models import Conversation
+from app.models import Conversation, ConversationShare, Notification, User
 
 
 def _register(client, username="tester", email="tester@example.com"):
@@ -210,3 +210,120 @@ class TestExport:
         payload = response.get_json()
         assert payload["conversation"]["title"] == "Export me"
         assert len(payload["messages"]) == 2
+
+
+class TestShareApi:
+    def _share(self, client, conversation_id, username):
+        return client.post(
+            f"/chat/conversations/{conversation_id}/shares",
+            json={"username": username},
+            headers={"X-CSRFToken": "ignored"},
+        )
+
+    def _unshare(self, client, conversation_id, user_id):
+        return client.delete(
+            f"/chat/conversations/{conversation_id}/shares/{user_id}",
+            headers={"X-CSRFToken": "ignored"},
+        )
+
+    def test_share_creates_share_record_and_notification(self, client, db, login):
+        _register(client, username="owner1", email="owner1@example.com")
+        conversation = _create_conversation(client, title="Shared gem")
+        _logout(client)
+        _register(client, username="recipient", email="recipient@example.com")
+        recipient = User.query.filter_by(username="recipient").one()
+        login(email="owner1@example.com")
+
+        response = self._share(client, conversation["id"], "recipient")
+        assert response.status_code == 201
+        share = ConversationShare.query.filter_by(conversation_id=conversation["id"]).one()
+        assert share.user_id == recipient.id
+        assert share.shared_by_id is not None
+        notification = Notification.query.filter_by(type="share", user_id=recipient.id).one()
+        assert notification.payload["conversation_id"] == conversation["id"]
+        assert notification.payload["title"] == "Shared gem"
+        assert notification.is_read is False
+
+    def test_recipient_can_read_shared_conversation(self, client, db, login):
+        _register(client, username="owner", email="owner@example.com")
+        conversation = _create_conversation(client, title="Readable")
+        _logout(client)
+        _register(client, username="recipient", email="recipient@example.com")
+        _logout(client)
+        _register(client, username="unrelated", email="unrelated@example.com")
+        login(email="owner@example.com")
+        self._share(client, conversation["id"], "recipient")
+        login(email="recipient@example.com")
+
+        response = client.get(f"/chat/conversations/{conversation['id']}")
+        assert response.status_code == 200
+        assert response.get_json()["title"] == "Readable"
+        listed = [c["id"] for c in client.get("/chat/conversations").get_json()]
+        assert conversation["id"] in listed
+
+    def test_unshared_user_cannot_read(self, client, db, login):
+        _register(client, username="owner", email="owner@example.com")
+        conversation = _create_conversation(client)
+        _logout(client)
+        _register(client, username="recipient", email="recipient@example.com")
+        _logout(client)
+        _register(client, username="stranger", email="stranger@example.com")
+        login(email="owner@example.com")
+        self._share(client, conversation["id"], "recipient")
+        login(email="stranger@example.com")
+        response = client.get(f"/chat/conversations/{conversation['id']}")
+        assert response.status_code == 404
+        assert conversation["id"] not in [
+            c["id"] for c in client.get("/chat/conversations").get_json()
+        ]
+
+    def test_share_is_owner_only(self, client, db, login):
+        _register(client, username="owner", email="owner@example.com")
+        conversation = _create_conversation(client)
+        _logout(client)
+        _register(client, username="recipient", email="recipient@example.com")
+        login(email="owner@example.com")
+        self._share(client, conversation["id"], "recipient")
+        login(email="recipient@example.com")
+
+        response = self._share(client, conversation["id"], "owner")
+        assert response.status_code == 404
+
+    def test_share_unknown_user_404(self, client, db, login):
+        _register(client, username="owner3", email="owner3@example.com")
+        conversation = _create_conversation(client)
+        response = self._share(client, conversation["id"], "ghost")
+        assert response.status_code == 404
+
+    def test_share_self_rejected(self, client, db, login):
+        _register(client, username="owner4", email="owner4@example.com")
+        conversation = _create_conversation(client)
+        response = self._share(client, conversation["id"], "owner4")
+        assert response.status_code == 400
+
+    def test_duplicate_share_409(self, client, db, login):
+        _register(client, username="owner", email="owner@example.com")
+        conversation = _create_conversation(client)
+        _logout(client)
+        _register(client, username="recipient", email="recipient@example.com")
+        login(email="owner@example.com")
+        assert self._share(client, conversation["id"], "recipient").status_code == 201
+        assert self._share(client, conversation["id"], "recipient").status_code == 409
+
+    def test_unshare_revokes_access(self, client, db, login):
+        _register(client, username="owner", email="owner@example.com")
+        conversation = _create_conversation(client)
+        _logout(client)
+        _register(client, username="recipient", email="recipient@example.com")
+        login(email="owner@example.com")
+        share = self._share(client, conversation["id"], "recipient").get_json()
+        response = self._unshare(client, conversation["id"], share["user_id"])
+        assert response.status_code == 200
+        assert ConversationShare.query.count() == 0
+        login(email="recipient@example.com")
+        assert client.get(f"/chat/conversations/{conversation['id']}").status_code == 404
+
+    def test_share_requires_login(self, client):
+        assert (
+            client.post("/chat/conversations/1/shares", json={"username": "x"}).status_code == 302
+        )

@@ -16,7 +16,12 @@
       {% if project.status == 'ready' %} · {{ project.file_count }} files{% endif %}
     </p>
   </div>
-  <button id="delete-project" class="btn btn-ghost btn-sm btn-danger" type="button">Delete</button>
+  <div class="repo-toolbar">
+    {% if project.status != 'indexing' %}
+    <a id="export-project" class="btn btn-ghost btn-sm" href="{{ url_for('workspaces.api_export_project', project_id=project.id) }}" title="Download a zip snapshot of the stored files (text files only; binary files become placeholders)">Export</a>
+    {% endif %}
+    <button id="delete-project" class="btn btn-ghost btn-sm btn-danger" type="button">Delete</button>
+  </div>
 </div>
 
 <div class="project-layout">
@@ -40,6 +45,7 @@
     </div>
 
     <div id="tab-files" class="project-tab">
+      <nav id="file-breadcrumbs" class="file-breadcrumbs" aria-label="Current path"></nav>
       <div id="file-viewer" class="analysis-output">
         <p class="sidebar-empty">Select a file on the left to view it.</p>
       </div>
@@ -66,15 +72,27 @@
         <h3>Review threads</h3>
         <p class="sidebar-empty">Loading review threads…</p>
       </div>
-      <div id="project-chat-messages" class="chat-messages project-chat-messages">
-        <div class="chat-placeholder">
-          <p>Ask questions about this project. The assistant retrieves a bounded slice of context before answering.</p>
-        </div>
-      </div>
-      <div class="chat-composer">
-        <textarea id="project-chat-input" rows="3" placeholder="Ask about the project code, architecture, or bugs..."></textarea>
-        <div class="composer-actions">
-          <button id="project-chat-send" class="btn btn-primary" type="button">Send</button>
+      <div class="project-chat-layout">
+        <aside class="chat-sessions" aria-label="Chat sessions">
+          <div class="sidebar-header">
+            <h3>Sessions</h3>
+            <button id="new-chat-session" class="btn btn-ghost btn-sm" type="button" title="New session">+</button>
+          </div>
+          <div id="chat-session-list"><p class="sidebar-empty">Loading sessions...</p></div>
+        </aside>
+        <div class="project-chat-pane">
+          <div id="project-chat-messages" class="chat-messages project-chat-messages">
+            <div class="chat-placeholder">
+              <p>Ask questions about this project. The assistant retrieves a bounded slice of context before answering.</p>
+            </div>
+          </div>
+          <div class="chat-composer">
+            <div id="project-chat-attachments" class="chat-attachments" aria-label="Attached files"></div>
+            <textarea id="project-chat-input" rows="3" placeholder="Ask about the project code, architecture, or bugs..."></textarea>
+            <div class="composer-actions">
+              <button id="project-chat-send" class="btn btn-primary" type="button">Send</button>
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -89,6 +107,7 @@
         <button class="btn btn-ghost btn-sm analysis-btn" data-kind="dependencies" type="button">Dependencies</button>
         <button class="btn btn-ghost btn-sm analysis-btn" data-kind="stellar" type="button">Stellar</button>
         <button class="btn btn-ghost btn-sm analysis-btn" data-kind="stellar_security" type="button">Stellar Security</button>
+        <button class="btn btn-ghost btn-sm analysis-btn" data-kind="stellar_config" type="button">Stellar Config</button>
       </div>
       <div id="analysis-output" class="analysis-output">
         <p class="sidebar-empty">Choose an analysis to inspect the project.</p>

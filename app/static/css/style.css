@@ -1076,6 +1076,66 @@ a:hover {
   color: var(--text);
 }
 
+/* Project file-browser breadcrumbs (#62): updates as the user navigates
+   directories in the lazy tree. */
+.file-breadcrumbs {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px;
+  padding: 8px 4px;
+  margin-bottom: 8px;
+  font-size: 0.9rem;
+  border-bottom: 1px solid var(--border, rgba(255, 255, 255, 0.08));
+}
+
+.file-crumb {
+  background: none;
+  border: none;
+  padding: 2px 4px;
+  color: var(--text-muted);
+  font: inherit;
+  cursor: pointer;
+  border-radius: 4px;
+}
+
+.file-crumb:hover {
+  color: var(--text);
+  text-decoration: underline;
+}
+
+.file-crumb-sep {
+  color: var(--text-muted);
+  opacity: 0.6;
+}
+
+.file-crumb-current {
+  padding: 2px 4px;
+  color: var(--text);
+  font-weight: 600;
+}
+
+/* Drag-and-drop import zone (#91). */
+.import-dropzone {
+  margin: 12px 0;
+  padding: 18px;
+  text-align: center;
+  border: 2px dashed var(--border, rgba(255, 255, 255, 0.18));
+  border-radius: 10px;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.import-dropzone p {
+  margin: 0 0 8px;
+}
+
+.import-dropzone-active {
+  border-color: var(--accent, #e8b84b);
+  background: rgba(232, 184, 75, 0.08);
+}
+
 .repo-tabs {
   display: flex;
   gap: 4px;
@@ -1670,6 +1730,68 @@ a:hover {
   max-height: 56vh;
 }
 
+.chat-attachments {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.chat-attachment {
+  border: 1px solid var(--border);
+  background: var(--surface-muted);
+  color: var(--text-muted);
+  cursor: pointer;
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  padding: 4px 7px;
+}
+
+.project-chat-layout {
+  display: grid;
+  grid-template-columns: 190px 1fr;
+  gap: 16px;
+}
+
+.chat-sessions {
+  border-right: 1px solid var(--border);
+  padding-right: 12px;
+}
+
+.chat-session {
+  display: block;
+  width: 100%;
+  overflow: hidden;
+  border: 0;
+  border-left: 2px solid transparent;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 8px 10px;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chat-session:hover,
+.chat-session.active {
+  border-left-color: var(--accent);
+  color: var(--text);
+  background: rgba(88, 166, 255, 0.08);
+}
+
+@media (max-width: 760px) {
+  .project-chat-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .chat-sessions {
+    border-right: 0;
+    border-bottom: 1px solid var(--border);
+    padding: 0 0 10px;
+  }
+}
+
 .analysis-btn.active {
   border-color: var(--accent);
   color: var(--accent);
@@ -1925,6 +2047,17 @@ a:hover {
   line-height: 16px;
   text-align: center;
   vertical-align: middle;
+}
+
+.notification-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.notification-icon {
+  display: inline-flex;
+  align-items: center;
 }
 
 .collab-header {

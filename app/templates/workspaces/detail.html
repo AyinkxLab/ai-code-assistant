@@ -20,7 +20,12 @@
 
 <div class="prompt-editor">
   <h2>Import a project</h2>
-  <p class="field-hint">Upload an archive (.zip or .tar.gz) of your code, or import a public/accessible GitHub repository you are connected to. Archives are scanned in-memory: traversal paths and symlinks are rejected, size caps are enforced, and obvious secret files are skipped.</p>
+  <p class="field-hint">Upload an archive (.zip or .tar.gz) of your code, drag &amp; drop a single file or a folder, or import a public/accessible GitHub repository you are connected to. Imports are scanned in-memory: traversal paths and symlinks are rejected, size caps are enforced, and obvious secret files are skipped.</p>
+  <div id="import-dropzone" class="import-dropzone" role="button" tabindex="0" aria-label="Drag and drop a file or folder to import">
+    <p>Drag &amp; drop a single file or a folder here to import it.</p>
+    <input id="import-dropzone-input" class="field-input" type="file" multiple hidden>
+    <button id="import-dropzone-browse" class="btn btn-ghost btn-sm" type="button">Choose files</button>
+  </div>
   <div class="prompt-editor-actions">
     <input id="import-archive" class="field-input" type="file" accept=".zip,.tar,.tar.gz,.tgz">
     <button id="import-archive-btn" class="btn btn-primary" type="button">Upload</button>

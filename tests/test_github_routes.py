@@ -5,6 +5,7 @@ network. The OAuth token-exchange POST is mocked the same way.
 """
 
 import json
+from datetime import UTC, datetime, timedelta
 
 from app.extensions import db
 from app.models import GithubAccount, User
@@ -128,6 +129,88 @@ class TestOAuthFlow:
         assert account.github_username == "ghuser"
         assert "gho_real_token" not in account.access_token_encrypted
         assert decrypt_secret(account.access_token_encrypted) == "gho_real_token"
+
+    def test_callback_stores_refresh_token_and_expiry(self, client, app, monkeypatch):
+        app.config["GITHUB_CLIENT_ID"] = "client-id"
+        app.config["GITHUB_CLIENT_SECRET"] = "client-secret"
+        _logged_in_client(client)
+        client.get("/github/connect")
+        session_state = _last_session_state(client)
+        monkeypatch.setattr(
+            "app.github.routes.requests.post",
+            lambda *a, **k: FakeResponse(
+                200,
+                {
+                    "access_token": "gho_expiring",
+                    "refresh_token": "ghr_refresh",
+                    "expires_in": 1800,
+                    "token_type": "bearer",
+                },
+            ),
+        )
+        monkeypatch.setattr(
+            "app.services.github.requests.Session",
+            lambda: _make_fake_session([("GET", "/user", 200, {"id": 42, "login": "ghuser"})]),
+        )
+
+        response = client.get(f"/github/callback?code=abc&state={session_state}")
+        assert response.status_code == 302
+        account = GithubAccount.query.first()
+        assert decrypt_secret(account.refresh_token_encrypted) == "ghr_refresh"
+        assert account.token_expires_at.replace(tzinfo=UTC) > datetime.now(UTC)
+
+    def test_expired_token_refreshes_and_persists_rotation(self, client, app, monkeypatch):
+        app.config["GITHUB_CLIENT_ID"] = "client-id"
+        app.config["GITHUB_CLIENT_SECRET"] = "client-secret"
+        _logged_in_client(client)
+        account = _create_account(app)
+        account.set_refresh_token("ghr_old")
+        account.token_expires_at = datetime.now(UTC) - timedelta(minutes=1)
+        db.session.commit()
+
+        calls = []
+
+        def refresh(*args, **kwargs):
+            calls.append(kwargs["data"])
+            return FakeResponse(
+                200,
+                {"access_token": "gho_new", "refresh_token": "ghr_new", "expires_in": 3600},
+            )
+
+        monkeypatch.setattr("app.services.github.requests.post", refresh)
+        monkeypatch.setattr(
+            "app.services.github.requests.Session",
+            lambda: _make_fake_session(
+                [
+                    ("GET", "/user/repos", 200, []),
+                    ("GET", "/user", 200, {"id": 42, "login": "ghuser"}),
+                ]
+            ),
+        )
+
+        response = client.get("/github/api/repos")
+        assert response.status_code == 200
+        assert calls[0]["grant_type"] == "refresh_token"
+        db.session.refresh(account)
+        assert decrypt_secret(account.access_token_encrypted) == "gho_new"
+        assert decrypt_secret(account.refresh_token_encrypted) == "ghr_new"
+
+    def test_disconnect_attempts_revocation(self, client, app, monkeypatch):
+        app.config["GITHUB_CLIENT_ID"] = "client-id"
+        app.config["GITHUB_CLIENT_SECRET"] = "client-secret"
+        _logged_in_client(client)
+        _create_account(app)
+        calls = []
+        monkeypatch.setattr(
+            "app.services.github.requests.delete",
+            lambda *args, **kwargs: calls.append((args, kwargs)) or FakeResponse(204),
+        )
+
+        response = client.post("/github/disconnect", follow_redirects=True)
+        assert response.status_code == 200
+        assert calls[0][0][0].endswith("/applications/client-id/token")
+        assert calls[0][1]["json"] == {"access_token": "gho_test_token"}
+        assert GithubAccount.query.count() == 0
 
     def test_disconnect_removes_account(self, client, app):
         _logged_in_client(client)

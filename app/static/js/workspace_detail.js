@@ -173,6 +173,167 @@
       });
   }
 
+  // ------------------------------------------- drag & drop import (#91)
+
+  function readFileAsText(file) {
+    return new Promise(function (resolve, reject) {
+      var reader = new FileReader();
+      reader.onload = function () {
+        resolve(reader.result == null ? "" : String(reader.result));
+      };
+      reader.onerror = function () {
+        reject(reader.error || new Error("Could not read " + file.name));
+      };
+      reader.readAsText(file);
+    });
+  }
+
+  function entryFile(entry) {
+    return new Promise(function (resolve, reject) {
+      entry.file(resolve, reject);
+    });
+  }
+
+  function readAllDirEntries(reader) {
+    return new Promise(function (resolve, reject) {
+      var all = [];
+      function readBatch() {
+        reader.readEntries(function (batch) {
+          if (!batch.length) {
+            resolve(all);
+            return;
+          }
+          all = all.concat(batch);
+          readBatch();
+        }, reject);
+      }
+      readBatch();
+    });
+  }
+
+  function walkEntry(entry, prefix, files) {
+    if (!entry) return Promise.resolve();
+    if (entry.isFile) {
+      return entryFile(entry).then(function (file) {
+        return readFileAsText(file).then(function (content) {
+          files.push({ path: prefix + entry.name, content: content });
+        });
+      });
+    }
+    if (entry.isDirectory) {
+      return readAllDirEntries(entry.createReader()).then(function (children) {
+        return children.reduce(function (chain, child) {
+          return chain.then(function () {
+            return walkEntry(child, prefix + entry.name + "/", files);
+          });
+        }, Promise.resolve());
+      });
+    }
+    return Promise.resolve();
+  }
+
+  function collectDroppedFiles(dataTransfer) {
+    var files = [];
+    var promises = [];
+    var items = dataTransfer.items;
+    var i;
+    if (items && items.length && items[0].webkitGetAsEntry) {
+      for (i = 0; i < items.length; i++) {
+        var entry = items[i].webkitGetAsEntry();
+        if (entry) promises.push(walkEntry(entry, "", files));
+      }
+    } else {
+      for (i = 0; i < dataTransfer.files.length; i++) {
+        (function (file) {
+          promises.push(
+            readFileAsText(file).then(function (content) {
+              files.push({ path: file.name, content: content });
+            })
+          );
+        })(dataTransfer.files[i]);
+      }
+    }
+    return Promise.all(promises).then(function () {
+      return files;
+    });
+  }
+
+  function uploadManifest(files) {
+    var name = "";
+    if (files.length === 1) {
+      name = files[0].path.split("/").pop().replace(/\.[^.]+$/, "");
+    }
+    setStatus("Importing " + files.length + " file(s), please wait...");
+    return api("/workspaces/api/workspaces/" + WORKSPACE_ID + "/projects", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ source: "manifest", name: name, files: files }),
+    })
+      .then(function (project) {
+        handleImportSuccess(project, "Imported files");
+      })
+      .catch(function (error) {
+        setStatus("");
+        flash(error.message, "error");
+      });
+  }
+
+  function handleDrop(event) {
+    event.preventDefault();
+    var dropzone = document.getElementById("import-dropzone");
+    if (dropzone) dropzone.classList.remove("import-dropzone-active");
+    collectDroppedFiles(event.dataTransfer)
+      .then(function (files) {
+        if (!files.length) {
+          flash("No importable files were found in the drop.", "warning");
+          return;
+        }
+        return uploadManifest(files);
+      })
+      .catch(function (error) {
+        flash(error.message, "error");
+      });
+  }
+
+  function wireDropzone() {
+    var dropzone = document.getElementById("import-dropzone");
+    if (!dropzone) return;
+    ["dragenter", "dragover"].forEach(function (name) {
+      dropzone.addEventListener(name, function (event) {
+        event.preventDefault();
+        dropzone.classList.add("import-dropzone-active");
+      });
+    });
+    ["dragleave", "dragend"].forEach(function (name) {
+      dropzone.addEventListener(name, function () {
+        dropzone.classList.remove("import-dropzone-active");
+      });
+    });
+    dropzone.addEventListener("drop", handleDrop);
+
+    var picker = document.getElementById("import-dropzone-input");
+    var browse = document.getElementById("import-dropzone-browse");
+    if (browse && picker) browse.addEventListener("click", function () { picker.click(); });
+    if (picker) {
+      picker.addEventListener("change", function () {
+        var picked = Array.prototype.slice.call(picker.files || []);
+        picker.value = "";
+        if (!picked.length) return;
+        Promise.all(
+          picked.map(function (file) {
+            return readFileAsText(file).then(function (content) {
+              return { path: file.name, content: content };
+            });
+          })
+        )
+          .then(uploadManifest)
+          .catch(function (error) {
+            flash(error.message, "error");
+          });
+      });
+    }
+  }
+
   function importGithub(confirmed) {
     var input = document.getElementById("import-repo");
     var btn = document.getElementById("import-github-btn");
@@ -334,6 +495,7 @@
     document.getElementById("import-github-btn").addEventListener("click", function () {
       importGithub(false);
     });
+    wireDropzone();
     loadConnectedRepos();
     loadActivity();
     loadWorkspaceMetrics();
