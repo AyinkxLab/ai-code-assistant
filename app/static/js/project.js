@@ -8,6 +8,8 @@
   var PROJECT_ID = null;
   var treeEl = document.getElementById("project-tree");
   var viewerEl = document.getElementById("file-viewer");
+  var breadcrumbsEl = document.getElementById("file-breadcrumbs");
+  var currentPath = "";
   var chatMessagesEl = document.getElementById("project-chat-messages");
   var chatInputEl = document.getElementById("project-chat-input");
   var chatSendBtn = document.getElementById("project-chat-send");
@@ -218,16 +220,57 @@
       }
       children.hidden = false;
       toggle.textContent = "▾";
+      setCurrentPath(fullPath);
     } else {
       children.hidden = true;
       toggle.textContent = "▸";
     }
   }
 
+  // ------------------------------------------------------------ breadcrumbs
+
+  function renderBreadcrumbs(path) {
+    if (!breadcrumbsEl) return;
+    var parts = (path || "").split("/").filter(Boolean);
+    var html = '<button type="button" class="file-crumb" data-path="">Project</button>';
+    var accumulated = "";
+    parts.forEach(function (segment, index) {
+      accumulated = accumulated ? accumulated + "/" + segment : segment;
+      html += '<span class="file-crumb-sep">/</span>';
+      if (index === parts.length - 1) {
+        html += '<span class="file-crumb-current">' + escapeHtml(segment) + "</span>";
+      } else {
+        html +=
+          '<button type="button" class="file-crumb" data-path="' +
+          escapeHtml(accumulated) +
+          '">' +
+          escapeHtml(segment) +
+          "</button>";
+      }
+    });
+    breadcrumbsEl.innerHTML = html;
+  }
+
+  function setCurrentPath(path) {
+    currentPath = path || "";
+    renderBreadcrumbs(currentPath);
+  }
+
+  function navigateToDir(path) {
+    var ul = document.createElement("ul");
+    ul.className = "tree-children";
+    treeEl.innerHTML = "";
+    treeEl.appendChild(ul);
+    loadDir(path || "", ul);
+    setCurrentPath(path || "");
+    switchTab("files");
+  }
+
   // ----------------------------------------------------------------- file
 
   function loadFile(path) {
     switchTab("files");
+    setCurrentPath(path);
     viewerEl.innerHTML = '<p class="sidebar-empty">Loading file...</p>';
     api("/workspaces/api/projects/" + PROJECT_ID + "/file?path=" + encodeURIComponent(path))
       .then(function (data) {
@@ -959,6 +1002,15 @@
     rootUl.className = "tree-children";
     treeEl.appendChild(rootUl);
     loadDir("", rootUl);
+    renderBreadcrumbs("");
+
+    if (breadcrumbsEl) {
+      breadcrumbsEl.addEventListener("click", function (event) {
+        var crumb = event.target.closest(".file-crumb");
+        if (!crumb) return;
+        navigateToDir(crumb.getAttribute("data-path") || "");
+      });
+    }
 
     document.getElementById("refresh-tree").addEventListener("click", function () {
       treeEl.innerHTML = "";

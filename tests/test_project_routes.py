@@ -315,3 +315,11 @@ class TestProjectIsolation:
         response = client.get(f"/workspaces/{workspace.id}/projects/{project.id}")
         assert response.status_code == 200
         assert b"AI Chat" in response.data
+
+    def test_project_explorer_renders_breadcrumb_container(
+        self, client, app, make_user, login
+    ):
+        workspace, project = _setup(app, make_user, login)
+        response = client.get(f"/workspaces/{workspace.id}/projects/{project.id}")
+        assert response.status_code == 200
+        assert b'id="file-breadcrumbs"' in response.data
