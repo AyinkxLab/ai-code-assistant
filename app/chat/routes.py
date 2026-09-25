@@ -63,6 +63,8 @@ def _generation_kwargs(conversation) -> dict:
     if conversation.temperature is not None:
         params["temperature"] = conversation.temperature
     return {"model": conversation.model, "params": params or None}
+
+
 #: Cap on files returned per project in the chat file tree (keeps the payload
 #: bounded for large imports); ``truncated`` signals the client when it applies.
 MAX_TREE_FILES = 500
