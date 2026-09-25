@@ -487,6 +487,11 @@ a:hover {
   background: rgba(88, 166, 255, 0.1);
 }
 
+.conversation-item:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
 .conversation-title {
   display: block;
   font-size: 0.9rem;

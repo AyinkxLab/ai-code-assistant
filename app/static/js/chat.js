@@ -49,6 +49,37 @@
     return div.innerHTML;
   }
 
+  function formatRelativeTime(iso) {
+    if (!iso) return "";
+    var then = new Date(iso);
+    if (isNaN(then.getTime())) return "";
+    var seconds = Math.round((then.getTime() - Date.now()) / 1000);
+    var relative = typeof Intl !== "undefined" && Intl.RelativeTimeFormat
+      ? new Intl.RelativeTimeFormat(undefined, { numeric: "auto" })
+      : null;
+    var units = [
+      ["year", 31536000], ["month", 2592000], ["week", 604800],
+      ["day", 86400], ["hour", 3600], ["minute", 60],
+    ];
+    for (var i = 0; i < units.length; i++) {
+      var unit = units[i][0];
+      var secs = units[i][1];
+      if (Math.abs(seconds) >= secs || unit === "minute") {
+        var value = Math.round(seconds / secs);
+        if (relative) return relative.format(value, unit);
+        return Math.abs(value) + " " + unit + (Math.abs(value) === 1 ? "" : "s") + " ago";
+      }
+    }
+    return relative ? relative.format(seconds, "second") : "just now";
+  }
+
+  function updateTimestamps(root) {
+    (root || document).querySelectorAll(".conversation-time").forEach(function (el) {
+      var iso = el.getAttribute("datetime");
+      if (iso) el.textContent = formatRelativeTime(iso);
+    });
+  }
+
   // Markdown rendering lives in chat_markdown.js, which escapes all text and
   // sanitizes the generated HTML before it can be inserted into the DOM. If
   // that module failed to load we fall back to a plain escaped rendering.
@@ -107,13 +138,17 @@
   function setActiveItem(id) {
     var items = listEl.querySelectorAll(".conversation-item");
     items.forEach(function (item) {
-      item.classList.toggle("active", Number(item.dataset.id) === Number(id));
+      var active = Number(item.dataset.id) === Number(id);
+      item.classList.toggle("active", active);
+      if (active) item.setAttribute("aria-current", "true");
+      else item.removeAttribute("aria-current");
     });
   }
 
   function updateTitle(item, title) {
     item.querySelector(".conversation-title").textContent = title;
     item.dataset.title = title;
+    item.setAttribute("aria-label", "Open conversation: " + title);
   }
 
   async function api(url, options) {
@@ -392,11 +427,18 @@
     li.className = "conversation-item";
     li.dataset.id = conversation.id;
     li.dataset.title = conversation.title;
+    li.tabIndex = 0;
+    li.setAttribute("role", "button");
+    li.setAttribute("aria-label", "Open conversation: " + conversation.title);
     li.innerHTML =
       '<span class="conversation-title">' +
       escapeHtml(conversation.title) +
-      '</span><span class="conversation-meta">0 messages</span>';
+      '</span><span class="conversation-meta">0 messages ' +
+      '<time class="conversation-time" datetime="' +
+      (conversation.updated_at || "") +
+      '"></time></span>';
     listEl.appendChild(li);
+    updateTimestamps(li);
   }
 
   function refreshList() {
@@ -408,6 +450,7 @@
         if (items.length === 0) {
           listEl.innerHTML = '<p class="sidebar-empty">No conversations match your search.</p>';
         }
+        updateTimestamps(listEl);
       })
       .catch(function (error) {
         flashError(error.message);
@@ -585,6 +628,8 @@
 
 
   document.addEventListener("DOMContentLoaded", function () {
+    updateTimestamps();
+
     listEl.addEventListener("click", function (event) {
       var item = event.target.closest(".conversation-item");
       if (item && !streaming) loadConversation(item.dataset.id);
@@ -623,6 +668,16 @@
         imageInput.value = "";
       });
     }
+
+    // Keyboard activation for the conversation list (Enter/Space).
+    listEl.addEventListener("keydown", function (event) {
+      if (event.key !== "Enter" && event.key !== " ") return;
+      var item = event.target.closest(".conversation-item");
+      if (item && !streaming) {
+        event.preventDefault();
+        loadConversation(item.dataset.id);
+      }
+    });
     inputEl.addEventListener("keydown", function (event) {
       if (event.key === "Enter" && !event.shiftKey) {
         event.preventDefault();

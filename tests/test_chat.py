@@ -42,6 +42,17 @@ class TestChatPage:
         assert b"Conversations" in response.data
         assert b"chat-input" in response.data
 
+    def test_conversation_list_is_accessible(self, client, db):
+        _register(client)
+        _create_conversation(client, title="Accessible chat")
+        html = client.get("/chat/").get_data(as_text=True)
+        assert 'aria-label="Conversations"' in html
+        assert 'role="log"' in html
+        assert 'role="button"' in html
+        assert 'tabindex="0"' in html
+        assert 'aria-label="Open conversation: Accessible chat"' in html
+        assert 'class="conversation-time"' in html
+
 
 class TestConversationApi:
     def test_create_conversation(self, client, db):
