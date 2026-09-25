@@ -1,5 +1,5 @@
 // AI Code Assistant — workspaces list page
-// Creates new workspaces from the modal form.
+// Search (debounced), pagination, pin toggling, and the create modal.
 
 (function () {
   "use strict";
@@ -35,11 +35,34 @@
     });
   }
 
+  function escapeHtml(text) {
+    var div = document.createElement("div");
+    div.textContent = text == null ? "" : String(text);
+    return div.innerHTML;
+  }
+
+  function formatDate(iso) {
+    if (!iso) return "recently";
+    var date = new Date(iso);
+    if (isNaN(date.getTime())) return "recently";
+    return date.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "2-digit" });
+  }
+
   document.addEventListener("DOMContentLoaded", function () {
     var modal = document.getElementById("workspace-modal");
     var nameEl = document.getElementById("ws-name");
     var descEl = document.getElementById("ws-description");
     var createBtn = document.getElementById("create-workspace");
+    var grid = document.getElementById("workspace-grid");
+    var emptyEl = document.getElementById("workspace-empty");
+    var pagerEl = document.getElementById("workspace-pager");
+    var searchEl = document.getElementById("workspace-search");
+    var searchForm = document.getElementById("workspace-search-form");
+
+    var state = {
+      q: searchEl ? searchEl.value : "",
+      page: pagerEl ? parseInt(pagerEl.dataset.page, 10) || 1 : 1,
+    };
 
     document.getElementById("new-workspace").addEventListener("click", function () {
       modal.hidden = false;
@@ -82,34 +105,113 @@
       if (event.key === "Enter") createWorkspace();
     });
 
-    var grid = document.getElementById("workspace-grid");
+    // -- Search + pagination -------------------------------------------------
 
-    function updatePinButton(card, pinned) {
-      var button = card.querySelector('[data-action="toggle-pin"]');
-      if (!button) return;
-      button.classList.toggle("active", pinned);
-      button.setAttribute("aria-pressed", pinned ? "true" : "false");
-      button.title = pinned ? "Unpin workspace" : "Pin workspace";
-      button.textContent = pinned ? "★" : "☆";
+    function workspaceCard(workspace) {
+      var count = workspace.project_count === 1 ? "1 project" : workspace.project_count + " projects";
+      var pinLabel = workspace.is_pinned ? "Unpin workspace" : "Pin workspace";
+      var card = document.createElement("a");
+      card.className = "workspace-card" + (workspace.is_pinned ? " is-pinned" : "");
+      card.href = "/workspaces/" + workspace.id;
+      card.dataset.id = workspace.id;
+      card.dataset.pinned = workspace.is_pinned ? "true" : "false";
+      card.innerHTML =
+        '<div class="workspace-card-header">' +
+        '<h3 class="workspace-name">' + escapeHtml(workspace.name) + "</h3>" +
+        '<span class="tag">' + escapeHtml(count) + "</span>" +
+        '<button class="workspace-pin' + (workspace.is_pinned ? " active" : "") + '" type="button" data-action="toggle-pin" title="' + pinLabel + '" aria-pressed="' + (workspace.is_pinned ? "true" : "false") + '">' +
+        (workspace.is_pinned ? "\u2605" : "\u2606") +
+        "</button></div>" +
+        (workspace.description ? '<p class="workspace-description">' + escapeHtml(workspace.description) + "</p>" : "") +
+        '<p class="workspace-meta">Updated ' + escapeHtml(formatDate(workspace.updated_at)) + "</p>";
+      return card;
     }
 
-    function reorderGrid() {
+    function renderWorkspaces(items) {
       if (!grid) return;
-      api("/workspaces/api/workspaces")
-        .then(function (workspaces) {
-          workspaces.forEach(function (workspace) {
-            var card = grid.querySelector('.workspace-card[data-id="' + workspace.id + '"]');
-            if (!card) return;
-            card.dataset.pinned = workspace.is_pinned ? "true" : "false";
-            card.classList.toggle("is-pinned", workspace.is_pinned);
-            updatePinButton(card, workspace.is_pinned);
-            grid.appendChild(card);
-          });
-        })
-        .catch(function (error) {
-          flashError(error.message);
-        });
+      grid.innerHTML = "";
+      items.forEach(function (workspace) {
+        grid.appendChild(workspaceCard(workspace));
+      });
+      if (emptyEl) {
+        emptyEl.hidden = items.length > 0;
+        var message = emptyEl.querySelector(".sidebar-empty");
+        if (message && items.length === 0) {
+          message.textContent = state.q
+            ? "No workspaces match your search."
+            : "No workspaces yet. Create one to import a project and start exploring it.";
+        }
+      }
     }
+
+    function pageLink(page, label) {
+      var link = document.createElement("a");
+      link.className = "btn btn-ghost btn-sm";
+      link.href = "?q=" + encodeURIComponent(state.q) + "&page=" + page;
+      link.dataset.page = page;
+      link.textContent = label;
+      return link;
+    }
+
+    function renderPager(data) {
+      if (!pagerEl) return;
+      pagerEl.dataset.page = data.page;
+      pagerEl.dataset.total = data.total;
+      pagerEl.innerHTML = "";
+      var totalPages = Math.max(1, Math.ceil(data.total / data.per_page));
+      if (totalPages <= 1) return;
+
+      if (data.page > 1) pagerEl.appendChild(pageLink(data.page - 1, "Previous"));
+      var info = document.createElement("span");
+      info.className = "field-hint";
+      info.textContent =
+        "Page " + data.page + " of " + totalPages +
+        " (" + data.total + " workspace" + (data.total === 1 ? "" : "s") + ")";
+      pagerEl.appendChild(info);
+      if (data.page < totalPages) pagerEl.appendChild(pageLink(data.page + 1, "Next"));
+    }
+
+    function refresh() {
+      if (!grid) return;
+      var url = "/workspaces/api/workspaces?q=" + encodeURIComponent(state.q) +
+        "&page=" + state.page;
+      api(url).then(function (data) {
+        renderWorkspaces(data.items || []);
+        renderPager(data);
+      }).catch(flashError);
+    }
+
+    var searchTimer = null;
+    if (searchEl) {
+      searchEl.addEventListener("input", function () {
+        window.clearTimeout(searchTimer);
+        searchTimer = window.setTimeout(function () {
+          state.q = searchEl.value.trim();
+          state.page = 1;
+          refresh();
+        }, 300);
+      });
+    }
+    if (searchForm) {
+      searchForm.addEventListener("submit", function (event) {
+        event.preventDefault();
+        state.q = searchEl ? searchEl.value.trim() : "";
+        state.page = 1;
+        refresh();
+      });
+    }
+
+    if (pagerEl) {
+      pagerEl.addEventListener("click", function (event) {
+        var link = event.target.closest("a[data-page]");
+        if (!link) return;
+        event.preventDefault();
+        state.page = parseInt(link.dataset.page, 10) || 1;
+        refresh();
+      });
+    }
+
+    // -- Pinning -------------------------------------------------------------
 
     function togglePin(card) {
       var pinned = card.dataset.pinned === "true";
@@ -118,7 +220,7 @@
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ is_pinned: !pinned }),
       })
-        .then(reorderGrid)
+        .then(refresh)
         .catch(function (error) {
           flashError(error.message);
         });
