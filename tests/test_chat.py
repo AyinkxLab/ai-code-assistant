@@ -193,6 +193,73 @@ class TestStreaming:
         )
         assert response.status_code == 400
 
+    def test_stream_surfaces_error_event_when_retries_exhausted(self, client, db, monkeypatch):
+        from app.services.providers import ProviderUnavailableError
+
+        class AlwaysFailingProvider:
+            name = "failing"
+            models = ("failing-1",)
+
+            def stream(self, messages, *, model=None, params=None):
+                raise ProviderUnavailableError("upstream down", provider=self.name)
+
+            def complete(self, messages):
+                raise ProviderUnavailableError("upstream down", provider=self.name)
+
+        import app.chat.routes as chat_routes
+
+        monkeypatch.setattr(chat_routes, "get_retrying_provider", lambda: AlwaysFailingProvider())
+        _register(client)
+        conversation = _create_conversation(client)
+        response = client.post(
+            f"/chat/conversations/{conversation['id']}/stream",
+            json={"content": "hello"},
+            headers={"X-CSRFToken": "ignored"},
+        )
+        data = response.get_data(as_text=True)
+        assert '"type": "error"' in data
+        assert "upstream down" in data
+
+    def test_stream_uses_retrying_provider(self, client, db, monkeypatch):
+        from app.services.providers import ProviderResponse, ProviderUnavailableError
+        from app.services.providers.retry import RetryingProvider
+
+        class FlakyProvider:
+            name = "flaky"
+            models = ("flaky-1",)
+
+            def __init__(self):
+                self.stream_calls = 0
+
+            def stream(self, messages, *, model=None, params=None):
+                self.stream_calls += 1
+                if self.stream_calls == 1:
+                    raise ProviderUnavailableError("blip", provider=self.name)
+                yield "recovered"
+
+            def chat(self, messages, *, model=None, params=None):
+                return ProviderResponse(content="recovered", model=self.models[0])
+
+        provider = FlakyProvider()
+        import app.chat.routes as chat_routes
+
+        monkeypatch.setattr(
+            chat_routes,
+            "get_retrying_provider",
+            lambda: RetryingProvider(provider, sleep=lambda _delay: None),
+        )
+        _register(client)
+        conversation = _create_conversation(client)
+        response = client.post(
+            f"/chat/conversations/{conversation['id']}/stream",
+            json={"content": "hello"},
+            headers={"X-CSRFToken": "ignored"},
+        )
+        data = response.get_data(as_text=True)
+        assert provider.stream_calls == 2
+        assert '"type": "token"' in data
+        assert '"type": "done"' in data
+
 
 class TestExport:
     def test_export_returns_json_document(self, client, db):

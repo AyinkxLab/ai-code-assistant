@@ -20,9 +20,12 @@ from app.services.providers import (
     ProviderResponse,
     ProviderResponseError,
     ProviderUnavailableError,
+    RetryingProvider,
     UnknownProviderError,
     available_providers,
     get_provider,
+    get_retrying_provider,
+    is_transient_error,
     register_provider,
 )
 
@@ -42,8 +45,11 @@ __all__ = [
     "ProviderResponse",
     "ProviderResponseError",
     "ProviderUnavailableError",
+    "RetryingProvider",
     "UnknownProviderError",
     "available_providers",
     "get_provider",
+    "get_retrying_provider",
+    "is_transient_error",
     "register_provider",
 ]

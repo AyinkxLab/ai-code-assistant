@@ -13,6 +13,7 @@ touch a vendor SDK, HTTP status code, or response shape.
 | OpenAI-compatible provider | `app/services/providers/openai.py` |
 | Anthropic Messages API provider | `app/services/providers/anthropic.py` |
 | Deterministic offline provider | `app/services/providers/mock.py` |
+| Retry/backoff decorator | `app/services/providers/retry.py` |
 | Backward-compatible façade | `app/services/llm.py` |
 
 ## Selecting a provider
@@ -65,3 +66,34 @@ LLMProviderError` blocks keep working.
 
 Providers must treat prompts as data, never log secrets, and avoid assuming a
 specific response shape outside their own module.
+
+## Retries and backoff (issue #29)
+
+`get_retrying_provider()` returns the resolved provider wrapped in
+`RetryingProvider`, which retries transient failures — network errors, HTTP 429
+and 5xx (`ProviderRateLimitError` / `ProviderUnavailableError`) — with
+exponential backoff plus jitter. Non-transient failures (`401`/`400`,
+configuration, unexpected response shape) are re-raised immediately so they
+fail fast.
+
+```python
+from app.services.providers import get_retrying_provider
+
+provider = get_retrying_provider()
+response = provider.chat([{"role": "user", "content": "hi"}])
+```
+
+Retry behaviour is configurable via the environment and bounded by default:
+
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `LLM_MAX_RETRIES` | `3` | Retries after the initial attempt |
+| `LLM_RETRY_BASE_DELAY` | `0.5` | Base delay in seconds |
+| `LLM_RETRY_MAX_DELAY` | `8.0` | Cap on any single delay |
+
+The delay before retry `n` is `LLM_RETRY_BASE_DELAY * 2 ** (n - 1)`, capped at
+`LLM_RETRY_MAX_DELAY`, then multiplied by a random jitter in `[0, 1]`. Streaming
+retries only while establishing the stream: after the first chunk is emitted a
+partial reply is never replayed. When every retry is exhausted the chat stream
+endpoint emits an SSE `{"type": "error"}` event. Use `is_transient_error(exc)`
+to test whether an error is retryable.
