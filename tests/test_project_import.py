@@ -12,6 +12,7 @@ from app.models import GithubAccount, Project, ProjectFile, Workspace
 from app.models.project import SOURCE_ARCHIVE, SOURCE_GITHUB, STATUS_READY
 from app.services.importing import (
     ProjectImportError,
+    build_manifest_rows,
     detect_language,
     sanitize_member_path,
     should_skip,
@@ -322,4 +323,86 @@ class TestGithubImport:
         response = _upload_archive(client, workspace.id, payload)
         project_id = response.get_json()["id"]
         assert client.delete(f"/workspaces/api/projects/{project_id}").status_code == 200
+        assert Project.query.count() == 0
+
+
+class TestManifestImport:
+    """Drag-and-drop single file / folder manifest import (#91)."""
+
+    def test_manifest_rows_validate_and_classify(self, app):
+        rows = build_manifest_rows(
+            [
+                {"path": "src/app.py", "content": "print('hi')\n"},
+                {"path": "README.md", "content": "# Demo"},
+            ]
+        )
+        by_path = {row["path"]: row for row in rows}
+        assert by_path["src/app.py"]["language"] == "Python"
+        assert by_path["src/app.py"]["content"] == "print('hi')\n"
+        assert by_path["README.md"]["language"] == "Markdown"
+
+    def test_manifest_skips_secret_and_vendor_paths(self, app):
+        rows = build_manifest_rows(
+            [
+                {"path": ".env", "content": "SECRET=1"},
+                {"path": "node_modules/x/index.js", "content": "x"},
+                {"path": "app.py", "content": "ok"},
+            ]
+        )
+        assert [row["path"] for row in rows] == ["app.py"]
+
+    def test_manifest_rejects_traversal(self, app):
+        with pytest.raises(ProjectImportError):
+            build_manifest_rows([{"path": "../etc/passwd", "content": "x"}])
+
+    def test_manifest_rejects_absolute_path(self, app):
+        with pytest.raises(ProjectImportError):
+            build_manifest_rows([{"path": "/etc/passwd", "content": "x"}])
+
+    def test_manifest_requires_files(self, app):
+        with pytest.raises(ProjectImportError):
+            build_manifest_rows([])
+
+    def test_import_folder_manifest(self, client, workspace):
+        response = client.post(
+            f"/workspaces/api/workspaces/{workspace.id}/projects",
+            json={
+                "source": "manifest",
+                "name": "dropped-folder",
+                "files": [
+                    {"path": "pkg/a.py", "content": "a = 1\n"},
+                    {"path": "pkg/b.js", "content": "const b = 2;\n"},
+                ],
+            },
+        )
+        assert response.status_code == 201
+        project = Project.query.first()
+        assert project.name == "dropped-folder"
+        assert project.status == STATUS_READY
+        assert project.file_count == 2
+        assert ProjectFile.query.filter_by(path="pkg/a.py").first().language == "Python"
+
+    def test_single_file_creates_minimal_project(self, client, workspace):
+        response = client.post(
+            f"/workspaces/api/workspaces/{workspace.id}/projects",
+            json={
+                "source": "manifest",
+                "files": [{"path": "hello.py", "content": "print('hello')\n"}],
+            },
+        )
+        assert response.status_code == 201
+        project = Project.query.first()
+        # No folder/name provided -> named after the single dropped file.
+        assert project.name == "hello"
+        assert project.file_count == 1
+
+    def test_manifest_traversal_rejected_by_route(self, client, workspace):
+        response = client.post(
+            f"/workspaces/api/workspaces/{workspace.id}/projects",
+            json={
+                "source": "manifest",
+                "files": [{"path": "../../etc/passwd", "content": "x"}],
+            },
+        )
+        assert response.status_code == 400
         assert Project.query.count() == 0
