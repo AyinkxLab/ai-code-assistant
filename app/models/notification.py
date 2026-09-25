@@ -20,6 +20,7 @@ NOTIF_MENTION = "mention"
 NOTIF_MEMBERSHIP = "membership"
 NOTIF_ROLE_CHANGE = "role_change"
 NOTIF_AI_EVENT = "ai_event"
+NOTIF_SHARE = "share"
 
 # Notification types that are always delivered: users cannot disable security-
 # critical system notifications about their own access.
@@ -29,6 +30,7 @@ NOTIF_TYPES = (
     NOTIF_MEMBERSHIP,
     NOTIF_ROLE_CHANGE,
     NOTIF_AI_EVENT,
+    NOTIF_SHARE,
 )
 
 

@@ -1,7 +1,7 @@
 """Tests for the notification inbox API and preferences (#148/#150)."""
 
 from app.extensions import db
-from app.models import NotificationPreference, User
+from app.models import NotificationPreference, User, Workspace, WorkspaceMember
 from app.services.notifications import notify
 
 
@@ -90,7 +90,7 @@ class TestPreferences:
         make_user()
         login()
         data = client.get("/workspaces/api/notifications/preferences").get_json()
-        for key in ("invitations", "mentions", "membership", "ai_events"):
+        for key in ("invitations", "mentions", "membership", "ai_events", "shares"):
             assert data[key] is True
 
     def test_update_preference_persists(self, client, make_user, login):
@@ -115,8 +115,55 @@ class TestPreferences:
         always = notify(user, "role_change", payload={"title": "Always sent"})
         assert always is not None
 
+    def test_share_preference_gates_delivery(self, client, app, make_user, login):
+        user = make_user()
+        login()
+        client.put("/workspaces/api/notifications/preferences", json={"shares": False})
+        suppressed = notify(user, "share", payload={"title": "Suppressed share"})
+        assert suppressed is None
+
     def test_preference_row_created_on_get(self, client, make_user, login):
         user = make_user()
         login()
         client.get("/workspaces/api/notifications/preferences")
         assert NotificationPreference.query.filter_by(user_id=user.id).count() == 1
+
+
+class TestMembershipNotifications:
+    def test_add_member_creates_membership_notification(self, client, make_user, login, db):
+        owner = make_user(username="owner", email="owner@example.com")
+        member = _create_user("member", "member@example.com")
+        workspace = Workspace(user_id=owner.id, name="The workspace")
+        db.session.add(workspace)
+        db.session.commit()
+        login(email="owner@example.com")
+
+        response = client.post(
+            f"/workspaces/api/workspaces/{workspace.id}/members",
+            json={"username": "member", "role": "viewer"},
+        )
+        assert response.status_code == 201
+
+        from app.models import Notification
+
+        created = Notification.query.filter_by(user_id=member.id, type="membership").one()
+        assert created.is_read is False
+        assert created.workspace_id == workspace.id
+
+    def test_remove_member_creates_membership_notification(self, client, make_user, login, db):
+        owner = make_user(username="owner", email="owner@example.com")
+        member = _create_user("member", "member@example.com")
+        workspace = Workspace(user_id=owner.id, name="The workspace")
+        db.session.add(workspace)
+        db.session.commit()
+        db.session.add(WorkspaceMember(workspace_id=workspace.id, user_id=member.id, role="viewer"))
+        db.session.commit()
+        login(email="owner@example.com")
+
+        response = client.delete(f"/workspaces/api/workspaces/{workspace.id}/members/{member.id}")
+        assert response.status_code == 200
+
+        from app.models import Notification
+
+        created = Notification.query.filter_by(user_id=member.id, type="membership").one()
+        assert created.is_read is False

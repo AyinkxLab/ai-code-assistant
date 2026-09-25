@@ -2049,6 +2049,17 @@ a:hover {
   vertical-align: middle;
 }
 
+.notification-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.notification-icon {
+  display: inline-flex;
+  align-items: center;
+}
+
 .collab-header {
   display: flex;
   align-items: center;
