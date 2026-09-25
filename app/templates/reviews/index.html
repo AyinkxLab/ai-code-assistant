@@ -11,6 +11,33 @@
   <a class="btn btn-primary" href="{{ url_for('workspaces.index') }}">Open a project</a>
 </div>
 
+<div class="finding-filters review-filters" role="group" aria-label="Filter reviews">
+  <label class="filter-field" for="review-source">Source
+    <select id="review-source" class="prompt-filter">
+      <option value="">All sources</option>
+      <option value="github_pr">Pull request</option>
+      <option value="project">Project</option>
+    </select>
+  </label>
+  <label class="filter-field" for="review-kind">Kind
+    <select id="review-kind" class="prompt-filter">
+      <option value="">All kinds</option>
+      <option value="pr">PR</option>
+      <option value="quality">Quality</option>
+      <option value="security">Security</option>
+      <option value="tests">Tests</option>
+    </select>
+  </label>
+  <label class="filter-field" for="review-status">Status
+    <select id="review-status" class="prompt-filter">
+      <option value="">All statuses</option>
+      <option value="running">Running</option>
+      <option value="completed">Completed</option>
+      <option value="failed">Failed</option>
+    </select>
+  </label>
+</div>
+
 <div class="metrics-strip" id="metrics-strip">
   <p class="sidebar-empty">Loading quality metrics...</p>
 </div>

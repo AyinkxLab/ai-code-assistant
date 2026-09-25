@@ -136,6 +136,7 @@
     if (filter) {
       if (filter.source) params.push("source=" + encodeURIComponent(filter.source));
       if (filter.kind) params.push("kind=" + encodeURIComponent(filter.kind));
+      if (filter.status) params.push("status=" + encodeURIComponent(filter.status));
       if (filter.project_id) params.push("project_id=" + encodeURIComponent(filter.project_id));
     }
     var url = "/reviews/api/reviews" + (params.length ? "?" + params.join("&") : "");
@@ -157,12 +158,31 @@
     });
   }
 
+  function reviewFilter() {
+    var source = document.getElementById("review-source");
+    var kind = document.getElementById("review-kind");
+    var status = document.getElementById("review-status");
+    var filter = {};
+    if (source && source.value) filter.source = source.value;
+    if (kind && kind.value) filter.kind = kind.value;
+    if (status && status.value) filter.status = status.value;
+    return filter;
+  }
+
   function initIndex() {
     var metricsEl = document.getElementById("metrics-strip");
     var listEl = document.getElementById("review-list");
     if (!listEl) return;
     loadMetrics(metricsEl);
-    loadReviewList(listEl, null);
+    loadReviewList(listEl, reviewFilter());
+    ["review-source", "review-kind", "review-status"].forEach(function (id) {
+      var select = document.getElementById(id);
+      if (select) {
+        select.addEventListener("change", function () {
+          loadReviewList(listEl, reviewFilter());
+        });
+      }
+    });
   }
 
   // ----- Detail ----------------------------------------------------------
