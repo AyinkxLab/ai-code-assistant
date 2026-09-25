@@ -98,6 +98,17 @@ class TestRequestHandling:
         assert session.headers["Authorization"] == "Bearer gho_test_token"
         assert session.headers["X-GitHub-Api-Version"] == "2022-11-28"
 
+    def test_captures_granted_scopes_header(self, ok_client):
+        client, session = ok_client
+        session.responses = [
+            FakeResponse.from_json(200, {"id": 1}, headers={"X-OAuth-Scopes": "repo, read:user"})
+        ]
+        client.get_user()
+        assert client.granted_scopes == ["repo", "read:user"]
+
+    def test_granted_scopes_default_empty(self):
+        assert GitHubClient("gho_token").granted_scopes == []
+
     def test_not_found_raises_typed_error(self, ok_client):
         client, session = ok_client
         session.responses = [FakeResponse(404, data={"message": "Not Found"})]

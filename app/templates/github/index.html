@@ -23,6 +23,13 @@
     </div>
   </div>
 
+  {% if 'repo' not in account.granted_scopes %}
+  <div class="github-scope-warning" role="alert">
+    <strong>Limited access:</strong> your GitHub connection is missing the <code>repo</code> scope, so private repositories will not load.
+    <a href="{{ url_for('github.connect') }}">Reconnect with repo access</a>.
+  </div>
+  {% endif %}
+
   <div id="github-rate-limit" class="github-rate-limit" role="status" aria-live="polite" hidden></div>
 
   <div class="github-features">

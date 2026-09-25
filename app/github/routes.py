@@ -148,7 +148,11 @@ def callback():
         db.session.add(account)
     account.github_user_id = user["id"]
     account.github_username = user.get("login", "")
-    account.scopes = token_data.get("scope", "")
+    # Prefer the scopes GitHub reports as actually granted on ``GET /user`` and
+    # fall back to the token-exchange response (issue #57). This value is shown
+    # to the user only; authorization always defers to GitHub.
+    granted = client.granted_scopes
+    account.scopes = ",".join(granted) or token_data.get("scope", "")
     account.token_type = token_data.get("token_type", "bearer")
     account.set_access_token(token)
     account.set_refresh_token(token_data.get("refresh_token"))
@@ -209,6 +213,11 @@ def status():
         "account": account.to_dict() if account else None,
     }
     if account is not None:
+        scopes = account.granted_scopes
+        payload["scopes"] = scopes
+        # A missing ``repo`` scope means private repositories will not load.
+        # This drives a warning banner only; it is never used to gate access.
+        payload["missing_repo_scope"] = "repo" not in scopes
         payload["rate_limit"] = _rate_limit_summary()
     return jsonify(payload)
 

@@ -37,7 +37,8 @@ def _make_fake_session(script):
             for entry in ordered:
                 if entry[0] in (method, "*") and (entry[1] == "*" or entry[1] in url_path):
                     status, data = entry[2], entry[3]
-                    return FakeResponse(status, data)
+                    headers = entry[4] if len(entry) > 4 else None
+                    return FakeResponse(status, data, headers=headers)
             raise AssertionError(f"Unhandled request: {method} {url_path}")
 
         def get(self, url, params=None, timeout=None, **kwargs):
@@ -331,6 +332,107 @@ class TestOAuthFlow:
         data = client.get("/github/api/status").get_json()
         assert data["connected"] is False
         assert "rate_limit" not in data
+
+
+class TestOAuthScopes:
+    def _connect(self, client):
+        client.get("/github/connect")
+        return _last_session_state(client)
+
+    def test_granted_scopes_are_stored_from_user_header(self, client, app, monkeypatch):
+        app.config["GITHUB_CLIENT_ID"] = "client-id"
+        app.config["GITHUB_CLIENT_SECRET"] = "client-secret"
+        _logged_in_client(client)
+        state = self._connect(client)
+        monkeypatch.setattr(
+            "app.github.routes.requests.post",
+            lambda *a, **k: FakeResponse(
+                200, {"access_token": "gho_scoped", "scope": "read:user repo"}
+            ),
+        )
+        monkeypatch.setattr(
+            "app.services.github.requests.Session",
+            lambda: _make_fake_session(
+                [
+                    (
+                        "GET",
+                        "/user",
+                        200,
+                        {"id": 7, "login": "scoped"},
+                        {"X-OAuth-Scopes": "repo, read:user"},
+                    )
+                ]
+            ),
+        )
+        client.get(f"/github/callback?code=abc&state={state}")
+        account = GithubAccount.query.first()
+        # GET /user's granted scopes win over the token-exchange scope.
+        assert account.scopes == "repo,read:user"
+        assert account.granted_scopes == ["repo", "read:user"]
+
+    def test_token_exchange_scope_is_the_fallback(self, client, app, monkeypatch):
+        app.config["GITHUB_CLIENT_ID"] = "client-id"
+        app.config["GITHUB_CLIENT_SECRET"] = "client-secret"
+        _logged_in_client(client)
+        state = self._connect(client)
+        monkeypatch.setattr(
+            "app.github.routes.requests.post",
+            lambda *a, **k: FakeResponse(
+                200, {"access_token": "gho_plain", "scope": "read:user repo"}
+            ),
+        )
+        monkeypatch.setattr(
+            "app.services.github.requests.Session",
+            lambda: _make_fake_session([("GET", "/user", 200, {"id": 7, "login": "plain"})]),
+        )
+        client.get(f"/github/callback?code=abc&state={state}")
+        account = GithubAccount.query.first()
+        assert account.scopes == "read:user repo"
+        assert account.granted_scopes == ["read:user", "repo"]
+
+    def _status(self, client, app, monkeypatch, scopes):
+        _logged_in_client(client)
+        account = _create_account(app)
+        account.scopes = scopes
+        db.session.commit()
+        monkeypatch.setattr(
+            "app.services.github.requests.Session",
+            lambda: _make_fake_session(
+                [
+                    (
+                        "GET",
+                        "/rate_limit",
+                        200,
+                        {"resources": {"core": {"limit": 5000, "remaining": 4999}}},
+                    )
+                ]
+            ),
+        )
+        return client.get("/github/api/status").get_json()
+
+    def test_status_flags_missing_repo_scope(self, client, app, monkeypatch):
+        data = self._status(client, app, monkeypatch, "read:user")
+        assert data["scopes"] == ["read:user"]
+        assert data["missing_repo_scope"] is True
+
+    def test_status_reports_repo_scope_present(self, client, app, monkeypatch):
+        data = self._status(client, app, monkeypatch, "repo,read:user")
+        assert data["scopes"] == ["repo", "read:user"]
+        assert data["missing_repo_scope"] is False
+
+    def test_dashboard_warns_when_repo_scope_missing(self, client, app):
+        _logged_in_client(client)
+        _create_account(app)  # scopes default to ""
+        html = client.get("/github/").get_data(as_text=True)
+        assert "github-scope-warning" in html
+
+    def test_dashboard_has_no_warning_with_repo_scope(self, client, app):
+        _logged_in_client(client)
+        account = _create_account(app)
+        account.scopes = "repo,read:user"
+        db.session.commit()
+        html = client.get("/github/").get_data(as_text=True)
+        assert "github-scope-warning" not in html
 
 
 class TestRepositoryApi:

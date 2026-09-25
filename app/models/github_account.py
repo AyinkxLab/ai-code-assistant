@@ -53,13 +53,23 @@ class GithubAccount(db.Model):
 
         self.refresh_token_encrypted = encrypt_secret(plaintext) if plaintext else None
 
+    @property
+    def granted_scopes(self) -> list[str]:
+        """Return the granted OAuth scopes as a normalized list.
+
+        GitHub reports scopes comma-separated, but this tolerates whitespace so
+        callers never parse the raw string. Scopes are display-only and are
+        never used to make an authorization decision (issue #57).
+        """
+        return [scope for scope in (self.scopes or "").replace(",", " ").split() if scope]
+
     def to_dict(self) -> dict:
         """Public metadata about the connection (never includes the token)."""
         return {
             "id": self.id,
             "github_user_id": self.github_user_id,
             "github_username": self.github_username,
-            "scopes": self.scopes.split(",") if self.scopes else [],
+            "scopes": self.granted_scopes,
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "updated_at": self.updated_at.isoformat() if self.updated_at else None,
         }
