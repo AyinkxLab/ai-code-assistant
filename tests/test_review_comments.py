@@ -9,6 +9,7 @@ from app.extensions import db
 from app.models import (
     Notification,
     Project,
+    ProjectChatSession,
     ProjectMessage,
     ReviewComment,
     User,
@@ -53,7 +54,17 @@ def _setup(owner, member_emails=()):
 
 
 def _message(project, role="assistant", content=MESSAGE_BODY):
-    message = ProjectMessage(project_id=project.id, role=role, content=content)
+    chat_session = ProjectChatSession.query.filter_by(project_id=project.id).first()
+    if chat_session is None:
+        chat_session = ProjectChatSession(project_id=project.id, title="Chat")
+        db.session.add(chat_session)
+        db.session.commit()
+    message = ProjectMessage(
+        project_id=project.id,
+        session_id=chat_session.id,
+        role=role,
+        content=content,
+    )
     db.session.add(message)
     db.session.commit()
     return message
