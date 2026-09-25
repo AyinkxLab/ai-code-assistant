@@ -126,7 +126,23 @@ class TestMigrationHead:
     def test_head_is_latest_revision(self):
         result = _run_flask(["db", "heads"], {"DATABASE_URL": "sqlite:///:memory:"})
         assert result.returncode == 0, result.stderr
-        assert "c1a2b3c4d5e6" in (result.stdout + result.stderr)
+        assert "d5e6f7a8b9c0" in (result.stdout + result.stderr)
+
+    def test_conversation_settings_columns_upgraded(self):
+        with _migration_db() as db_url, _inspect(db_url) as insp:
+            columns = {col["name"] for col in insp.get_columns("conversations")}
+            assert {"provider", "model", "temperature", "system_prompt"} <= columns
+
+    def test_conversation_settings_columns_downgrade_removed(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            db_url = f"sqlite:///{os.path.join(tmp, 'mig12.db')}"
+            up = _run_flask(["db", "upgrade"], {"DATABASE_URL": db_url})
+            assert up.returncode == 0, up.stderr
+            down = _run_flask(["db", "downgrade", "c1a2b3c4d5e6"], {"DATABASE_URL": db_url})
+            assert down.returncode == 0, down.stderr
+            with _inspect(db_url) as insp:
+                columns = {col["name"] for col in insp.get_columns("conversations")}
+                assert {"provider", "model", "temperature", "system_prompt"}.isdisjoint(columns)
 
     def test_conversation_shares_table_upgraded(self):
         expected = {
