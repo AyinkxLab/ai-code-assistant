@@ -40,8 +40,11 @@ from app.services import analysis, ratelimit
 from app.services.github import (
     GITHUB_AUTHORIZE_URL,
     GITHUB_TOKEN_URL,
+    PAGE_SIZE_DEFAULT,
+    PAGE_SIZE_MAX,
     GitHubClient,
     GitHubError,
+    GitHubPage,
     get_github_client,
     github_error_payload,
     issue_payload,
@@ -346,6 +349,25 @@ def _client() -> GitHubClient:
     return get_github_client()
 
 
+def _page_params() -> tuple[int, int]:
+    """Return the requested ``(page, per_page)``, bounded to safe values."""
+    page = request.args.get("page", type=int) or 1
+    per_page = request.args.get("per_page", type=int) or PAGE_SIZE_DEFAULT
+    return max(1, page), max(1, min(per_page, PAGE_SIZE_MAX))
+
+
+def _paginated_payload(result: GitHubPage, item_fn) -> dict:
+    """Serialize a :class:`GitHubPage` into the list-endpoint JSON envelope."""
+    return {
+        "items": [item_fn(item) for item in result.items],
+        "page": result.page,
+        "per_page": result.per_page,
+        "has_next": result.has_next,
+        "has_prev": result.has_prev,
+        "total_pages": result.total_pages,
+    }
+
+
 def _stellar_repo_context(client: GitHubClient, full_name: str) -> list[dict]:
     """Return a bounded, detection-relevant repo context for Stellar analysis.
 
@@ -602,12 +624,13 @@ def api_issues(owner: str, repo: str):
     state = request.args.get("state", "open")
     if state not in ("open", "closed", "all"):
         state = "open"
+    page, per_page = _page_params()
     try:
         client = _client()
-        data = client.list_issues(full_name, state=state)
+        result = client.list_issues_page(full_name, state=state, page=page, per_page=per_page)
     except GitHubError as exc:
         return jsonify(github_error_payload(exc)), 502
-    return jsonify([issue_payload(i) for i in data])
+    return jsonify(_paginated_payload(result, issue_payload))
 
 
 @bp.route("/api/repos/<owner>/<repo>/issues/<int:number>")
@@ -643,12 +666,15 @@ def api_pulls(owner: str, repo: str):
     state = request.args.get("state", "open")
     if state not in ("open", "closed", "all"):
         state = "open"
+    page, per_page = _page_params()
     try:
         client = _client()
-        data = client.list_pull_requests(full_name, state=state)
+        result = client.list_pull_requests_page(
+            full_name, state=state, page=page, per_page=per_page
+        )
     except GitHubError as exc:
         return jsonify(github_error_payload(exc)), 502
-    return jsonify([pull_request_payload(pr) for pr in data])
+    return jsonify(_paginated_payload(result, pull_request_payload))
 
 
 @bp.route("/api/repos/<owner>/<repo>/pulls/<int:number>")

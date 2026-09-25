@@ -476,8 +476,10 @@ class TestApiEndpoints:
         ]
         self._script_client(client, app, script, monkeypatch)
         data = client.get("/github/api/repos/owner/repo/issues").get_json()
-        assert [i["number"] for i in data] == [2]
-        assert data[0]["labels"] == ["enhancement"]
+        assert [i["number"] for i in data["items"]] == [2]
+        assert data["items"][0]["labels"] == ["enhancement"]
+        assert data["page"] == 1
+        assert data["has_prev"] is False
 
     def test_pull_detail_returns_files(self, client, app, monkeypatch):
         script = [
@@ -506,6 +508,74 @@ class TestApiEndpoints:
         data = client.get("/github/api/repos/owner/repo/pulls/5").get_json()
         assert data["number"] == 5
         assert data["files"][0]["filename"] == "app/x.py"
+
+    def test_issues_page_envelope_exposes_navigation(self, client, app, monkeypatch):
+        from app.services.github import GitHubPage
+
+        _logged_in_client(client)
+        _create_account(app)
+        captured = {}
+
+        def fake_page(self_, full_name, *, state="open", page=1, per_page=50):
+            captured.update(state=state, page=page, per_page=per_page)
+            return GitHubPage(
+                items=[{"number": 2, "title": "feature"}],
+                page=page,
+                per_page=per_page,
+                has_next=True,
+                has_prev=False,
+                total_pages=4,
+            )
+
+        monkeypatch.setattr(GitHubClient, "list_issues_page", fake_page)
+        data = client.get("/github/api/repos/owner/repo/issues?state=closed&page=2").get_json()
+        assert [i["number"] for i in data["items"]] == [2]
+        assert data["page"] == 2
+        assert data["has_next"] is True
+        assert data["has_prev"] is False
+        assert data["total_pages"] == 4
+        assert captured["state"] == "closed"
+        assert captured["page"] == 2
+
+    def test_issues_per_page_is_capped(self, client, app, monkeypatch):
+        from app.services.github import GitHubPage
+
+        _logged_in_client(client)
+        _create_account(app)
+        captured = {}
+
+        def fake_page(self_, full_name, *, state="open", page=1, per_page=50):
+            captured["per_page"] = per_page
+            return GitHubPage(items=[], page=page, per_page=per_page)
+
+        monkeypatch.setattr(GitHubClient, "list_issues_page", fake_page)
+        client.get("/github/api/repos/owner/repo/issues?per_page=500")
+        assert captured["per_page"] == 100
+
+    def test_pulls_page_envelope(self, client, app, monkeypatch):
+        from app.services.github import GitHubPage
+
+        _logged_in_client(client)
+        _create_account(app)
+        captured = {}
+
+        def fake_page(self_, full_name, *, state="open", page=1, per_page=50):
+            captured["state"] = state
+            return GitHubPage(
+                items=[{"number": 5, "title": "Add feature"}],
+                page=page,
+                per_page=per_page,
+                has_next=False,
+                has_prev=True,
+                total_pages=2,
+            )
+
+        monkeypatch.setattr(GitHubClient, "list_pull_requests_page", fake_page)
+        data = client.get("/github/api/repos/owner/repo/pulls?state=all&page=2").get_json()
+        assert data["items"][0]["number"] == 5
+        assert data["has_prev"] is True
+        assert data["total_pages"] == 2
+        assert captured["state"] == "all"
 
     def test_analyze_file_requires_path(self, client, app, monkeypatch):
         self._script_client(client, app, [], monkeypatch)
