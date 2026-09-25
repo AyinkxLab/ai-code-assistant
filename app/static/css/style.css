@@ -1115,6 +1115,27 @@ a:hover {
   font-weight: 600;
 }
 
+/* Drag-and-drop import zone (#91). */
+.import-dropzone {
+  margin: 12px 0;
+  padding: 18px;
+  text-align: center;
+  border: 2px dashed var(--border, rgba(255, 255, 255, 0.18));
+  border-radius: 10px;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.import-dropzone p {
+  margin: 0 0 8px;
+}
+
+.import-dropzone-active {
+  border-color: var(--accent, #e8b84b);
+  background: rgba(232, 184, 75, 0.08);
+}
+
 .repo-tabs {
   display: flex;
   gap: 4px;

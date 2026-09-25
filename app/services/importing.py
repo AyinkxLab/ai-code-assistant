@@ -261,6 +261,39 @@ def extract_archive(fileobj, filename: str) -> list[dict]:
     return _extract_tar(buffer, limits)
 
 
+def build_manifest_rows(files: list[dict]) -> list[dict]:
+    """Validate a client-built file manifest (files/folder dragged from the OS).
+
+    Each entry is ``{"path": str, "content": str}``. Paths go through the same
+    :func:`sanitize_member_path` as archives and the Phase 5 size/count caps are
+    enforced, so a manifest cannot bypass the archive import rules. Skips the
+    same VCS/vendor and obvious-secret paths as archives.
+    """
+    if not isinstance(files, list) or not files:
+        raise ProjectImportError("No files were provided in the import manifest.")
+
+    limits = _limits()
+    rows: list[dict] = []
+    total = 0
+    for entry in files:
+        if not isinstance(entry, dict):
+            continue
+        path = sanitize_member_path(str(entry.get("path") or ""))
+        if not path or should_skip(path):
+            continue
+        content = entry.get("content")
+        raw = str(content if content is not None else "").encode("utf-8", errors="replace")
+        if len(raw) > limits["max_total"]:
+            raise ProjectImportError("A dropped file is larger than the project size limit.")
+        if total + len(raw) > limits["max_total"]:
+            raise ProjectImportError("Dropped files exceed the project size limit.")
+        if len(rows) >= limits["max_files"]:
+            raise ProjectImportError("Too many files to import.")
+        total += len(raw)
+        rows.append(_to_file_row(path, raw, max_chars=limits["max_chars"]))
+    return rows
+
+
 # --------------------------------------------------------------------------
 # GitHub import
 # --------------------------------------------------------------------------

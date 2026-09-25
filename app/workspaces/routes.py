@@ -93,6 +93,7 @@ from app.services.health import coverage_estimate, detect_ci_files
 from app.services.import_jobs import submit_import_job
 from app.services.importing import (
     ProjectImportError,
+    build_manifest_rows,
     extract_archive,
     import_github_repo,
     store_project_files,
@@ -413,7 +414,10 @@ def api_import_project(workspace_id: int):
     if request.files.get("file"):
         return _import_archive(workspace)
     data = request.get_json(silent=True) or {}
-    if (data.get("source") or "").strip().lower() == SOURCE_SCAFFOLD:
+    source = (data.get("source") or "").strip().lower()
+    if source == "manifest":
+        return _import_manifest(workspace, data)
+    if source == SOURCE_SCAFFOLD:
         return _import_scaffold(workspace, data)
     return _import_github(workspace)
 
@@ -522,6 +526,38 @@ def _import_scaffold(workspace: Workspace, data: dict):
     db.session.commit()
     store_project_files(project, rows)
     return _finish_project_import(workspace, project, SOURCE_SCAFFOLD)
+
+
+def _import_manifest(workspace: Workspace, data: dict):
+    """Import files dragged from the OS (a single file or a folder manifest).
+
+    The browser walks the dropped entries and sends ``{"source": "manifest",
+    "name": ..., "files": [{"path", "content"}]}``. Every path is re-validated
+    server-side and the Phase 5 size/count caps still apply.
+    """
+    try:
+        rows = build_manifest_rows(data.get("files"))
+    except ProjectImportError as exc:
+        return jsonify({"error": str(exc)}), 400
+
+    if not rows:
+        return jsonify({"error": "The drop contained no importable files."}), 400
+
+    name = (data.get("name") or "").strip()
+    if not name:
+        # Single-file import -> a minimal project named after the file.
+        name = Path(rows[0]["path"]).stem or "Imported file"
+
+    project = Project(
+        workspace_id=workspace.id,
+        user_id=current_user.id,
+        name=name[:200],
+        source=SOURCE_ARCHIVE,
+    )
+    db.session.add(project)
+    db.session.commit()
+    store_project_files(project, rows)
+    return _finish_project_import(workspace, project, SOURCE_ARCHIVE)
 
 
 def _import_archive(workspace: Workspace):
