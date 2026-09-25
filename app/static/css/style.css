@@ -2558,3 +2558,33 @@ a:hover {
 .review-line-end {
   width: 90px;
 }
+
+/* Provider onboarding panel (#25) */
+.onboarding-panel {
+  margin: 0 0 16px;
+  padding: 16px 18px;
+  border: 1px solid #f0c36d;
+  border-left: 4px solid #e0a800;
+  border-radius: 8px;
+  background: #fffaf0;
+  color: #4a3b12;
+}
+.onboarding-panel h3 {
+  margin: 0 0 8px;
+  font-size: 1.05rem;
+}
+.onboarding-panel p {
+  margin: 0 0 8px;
+}
+.onboarding-panel ol {
+  margin: 0 0 12px 20px;
+  padding: 0;
+}
+.onboarding-panel li {
+  margin: 2px 0;
+}
+.onboarding-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}

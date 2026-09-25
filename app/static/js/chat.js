@@ -15,6 +15,7 @@
   var streaming = false;
   var currentController = null;
   var cancelRequested = false;
+  var onboardingEl = document.getElementById("provider-onboarding");
   var providerEl = document.getElementById("chat-provider");
   var modelEl = document.getElementById("chat-model");
   var tempEl = document.getElementById("chat-temperature");
@@ -174,6 +175,11 @@
   async function startStream() {
     var content = inputEl.value.trim();
     if (!content || streaming) return;
+    if (onboardingEl && !onboardingEl.hidden) {
+      flashError("Add a provider API key before sending a message.");
+      onboardingEl.scrollIntoView({ behavior: "smooth", block: "center" });
+      return;
+    }
     if (currentId === null) {
       try {
         var created = await api("/chat/conversations", {
@@ -217,6 +223,10 @@
           errData = await response.json();
         } catch (e) {
           errData = null;
+        }
+        if (errData && errData.code === "provider_not_configured") {
+          showOnboarding(errData);
+          return;
         }
         throw new Error(errData && errData.error ? errData.error : "Stream failed (" + response.status + ").");
       }
@@ -284,6 +294,7 @@
       cancelRequested = false;
       streaming = false;
       setComposerState("idle");
+      sendBtn.disabled = !!(onboardingEl && !onboardingEl.hidden);
     }
   }
 
@@ -333,6 +344,53 @@
     el.className = "flash flash-info";
     el.textContent = message;
     messagesEl.prepend(el);
+  }
+
+  function flashSuccess(message) {
+    var el = document.createElement("div");
+    el.className = "flash flash-success";
+    el.textContent = message;
+    messagesEl.prepend(el);
+  }
+
+  function showOnboarding(payload) {
+    if (!onboardingEl) {
+      if (payload && payload.error) flashError(payload.error);
+      return;
+    }
+    onboardingEl.hidden = false;
+    if (payload && payload.provider) onboardingEl.dataset.provider = payload.provider;
+    var note = document.getElementById("provider-onboarding-note");
+    if (note) note.textContent = (payload && payload.error) || "";
+    sendBtn.disabled = true;
+    onboardingEl.scrollIntoView({ behavior: "smooth", block: "center" });
+  }
+
+  function hideOnboarding() {
+    if (onboardingEl) onboardingEl.hidden = true;
+    sendBtn.disabled = false;
+  }
+
+  // Re-check the server's provider status so a key added on another page
+  // unlocks the composer without a full reload (issue #25).
+  function checkProviderStatus(options) {
+    return api("/chat/api/provider-status")
+      .then(function (status) {
+        if (status && status.configured) {
+          var wasVisible = !!(onboardingEl && !onboardingEl.hidden);
+          hideOnboarding();
+          if (wasVisible && options && options.notify) {
+            flashSuccess("Provider key detected — you can send messages now.");
+          }
+        } else if (onboardingEl) {
+          onboardingEl.hidden = false;
+          sendBtn.disabled = true;
+        }
+        return status;
+      })
+      .catch(function () {
+        return null;
+      });
   }
 
   // -- Model & generation settings (issue #12) ----------------------------
@@ -436,11 +494,28 @@
     persistTimer = window.setTimeout(persistSettings, 400);
   }
 
+
   document.addEventListener("DOMContentLoaded", function () {
     listEl.addEventListener("click", function (event) {
       var item = event.target.closest(".conversation-item");
       if (item && !streaming) loadConversation(item.dataset.id);
     });
+
+    if (onboardingEl && !onboardingEl.hidden) {
+      sendBtn.disabled = true;
+      var recheck = document.getElementById("provider-recheck");
+      if (recheck) {
+        recheck.addEventListener("click", function () {
+          checkProviderStatus({ notify: true });
+        });
+      }
+      window.addEventListener("focus", function () {
+        checkProviderStatus({});
+      });
+      document.addEventListener("visibilitychange", function () {
+        if (!document.hidden) checkProviderStatus({});
+      });
+    }
 
     sendBtn.addEventListener("click", function () {
       if (streaming) {
