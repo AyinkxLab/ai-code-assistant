@@ -16,10 +16,13 @@ import base64
 import logging
 import re
 import time
+from datetime import UTC, datetime, timedelta
 
 import requests
+from flask import current_app
 
 from app.config import Config
+from app.extensions import db
 from app.models import GithubAccount
 from app.services.crypto import decrypt_secret
 
@@ -27,11 +30,17 @@ logger = logging.getLogger(__name__)
 
 GITHUB_AUTHORIZE_URL = "https://github.com/login/oauth/authorize"
 GITHUB_TOKEN_URL = "https://github.com/login/oauth/access_token"
+GITHUB_REVOKE_URL = "https://api.github.com/applications/{client_id}/token"
 DEFAULT_API_URL = "https://api.github.com"
 API_VERSION = "2022-11-28"
 
 # GitHub repository names / owners: letters, digits, dashes, dots, underscores.
 _FULL_NAME_RE = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
+
+
+def _github_config(name: str):
+    """Read GitHub settings from the active app, with class-config fallback."""
+    return current_app.config.get(name, getattr(Config, name))
 
 
 class GitHubError(RuntimeError):
@@ -528,6 +537,44 @@ def validate_path(path: str) -> str:
     return "/".join(parts)
 
 
+def revoke_github_token(access_token: str) -> None:
+    """Best-effort revocation of a GitHub OAuth token."""
+    try:
+        response = requests.delete(
+            GITHUB_REVOKE_URL.format(client_id=_github_config("GITHUB_CLIENT_ID")),
+            auth=(_github_config("GITHUB_CLIENT_ID"), _github_config("GITHUB_CLIENT_SECRET")),
+            json={"access_token": access_token},
+            headers={"Accept": "application/vnd.github+json"},
+            timeout=_github_config("GITHUB_REQUEST_TIMEOUT"),
+        )
+        if response.status_code >= 400:
+            logger.warning("GitHub token revocation failed with HTTP %s", response.status_code)
+    except requests.RequestException as exc:
+        logger.warning("GitHub token revocation failed: %s", exc)
+
+
+def _refresh_github_token(refresh_token: str) -> dict | None:
+    """Exchange a GitHub refresh token for a new token pair."""
+    try:
+        response = requests.post(
+            GITHUB_TOKEN_URL,
+            headers={"Accept": "application/json"},
+            data={
+                "client_id": _github_config("GITHUB_CLIENT_ID"),
+                "client_secret": _github_config("GITHUB_CLIENT_SECRET"),
+                "grant_type": "refresh_token",
+                "refresh_token": refresh_token,
+            },
+            timeout=_github_config("GITHUB_REQUEST_TIMEOUT"),
+        )
+        data = response.json()
+    except (requests.RequestException, ValueError):
+        return None
+    if response.status_code >= 400 or "access_token" not in data:
+        return None
+    return data
+
+
 def get_github_client(user=None) -> GitHubClient:
     """Return an authenticated client for ``user`` (default: current user).
 
@@ -543,9 +590,33 @@ def get_github_client(user=None) -> GitHubClient:
         raise GitHubNotConnectedError("Connect your GitHub account to use this feature.")
     try:
         token = decrypt_secret(account.access_token_encrypted)
+        refresh_token = (
+            decrypt_secret(account.refresh_token_encrypted)
+            if account.refresh_token_encrypted
+            else None
+        )
     except ValueError as exc:
         raise GitHubAuthError(
             "Your GitHub connection is no longer valid. Reconnect your account.",
             detail=str(exc),
         ) from exc
+    expires_at = account.token_expires_at
+    if expires_at and expires_at.tzinfo is None:
+        expires_at = expires_at.replace(tzinfo=UTC)
+    if expires_at and expires_at <= datetime.now(UTC):
+        refreshed = _refresh_github_token(refresh_token) if refresh_token else None
+        if refreshed is None:
+            db.session.delete(account)
+            db.session.commit()
+            raise GitHubNotConnectedError("Connect your GitHub account to use this feature.")
+        account.set_access_token(refreshed["access_token"])
+        if "refresh_token" in refreshed:
+            account.set_refresh_token(refreshed["refresh_token"])
+        account.token_expires_at = (
+            datetime.now(UTC) + timedelta(seconds=int(refreshed["expires_in"]))
+            if refreshed.get("expires_in")
+            else None
+        )
+        db.session.commit()
+        token = refreshed["access_token"]
     return GitHubClient(token)

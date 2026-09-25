@@ -29,6 +29,9 @@
           if (!response.ok) {
             var error = new Error(data && data.error ? data.error : "Request failed (" + response.status + ").");
             error.kind = data && data.kind;
+            if (error.kind === "auth" || error.kind === "not_connected") {
+              window.location.assign("/github/connect");
+            }
             throw error;
           }
           return data;

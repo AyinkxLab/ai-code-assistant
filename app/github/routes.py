@@ -26,6 +26,7 @@ API (JSON)
     /github/api/repos/.../analyze-file      AI analysis of one file
 """
 
+from datetime import UTC, datetime, timedelta
 from urllib.parse import urlencode
 
 import requests
@@ -46,6 +47,7 @@ from app.services.github import (
     issue_payload,
     pull_request_payload,
     repo_payload,
+    revoke_github_token,
     validate_full_name,
     validate_path,
 )
@@ -146,6 +148,12 @@ def callback():
     account.scopes = token_data.get("scope", "")
     account.token_type = token_data.get("token_type", "bearer")
     account.set_access_token(token)
+    account.set_refresh_token(token_data.get("refresh_token"))
+    account.token_expires_at = (
+        datetime.now(UTC) + timedelta(seconds=int(token_data["expires_in"]))
+        if token_data.get("expires_in")
+        else None
+    )
     db.session.commit()
 
     from app.services.events import emit_event
@@ -170,6 +178,12 @@ def disconnect():
     """Remove the GitHub connection and its stored token."""
     account = GithubAccount.query.filter_by(user_id=current_user.id).first()
     if account is not None:
+        try:
+            from app.services.crypto import decrypt_secret
+
+            revoke_github_token(decrypt_secret(account.access_token_encrypted))
+        except ValueError:
+            pass
         db.session.delete(account)
         db.session.commit()
         flash("Disconnected your GitHub account.", "info")
