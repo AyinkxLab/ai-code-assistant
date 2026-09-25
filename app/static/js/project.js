@@ -11,11 +11,16 @@
   var breadcrumbsEl = document.getElementById("file-breadcrumbs");
   var currentPath = "";
   var chatMessagesEl = document.getElementById("project-chat-messages");
+  var chatSessionListEl = document.getElementById("chat-session-list");
+  var newChatSessionBtn = document.getElementById("new-chat-session");
   var chatInputEl = document.getElementById("project-chat-input");
   var chatSendBtn = document.getElementById("project-chat-send");
+  var chatAttachmentsEl = document.getElementById("project-chat-attachments");
   var reviewSummaryEl = document.getElementById("review-summary");
   var streaming = false;
   var chatLoaded = false;
+  var activeSessionId = null;
+  var pendingAttachments = [];
 
   function getCsrf() {
     var meta = document.querySelector('meta[name="csrf-token"]');
@@ -182,6 +187,10 @@
         '<span class="tree-file-size">' + humanSize(file.size) + "</span></button>";
       li.addEventListener("click", function () {
         loadFile(file.path);
+        if (pendingAttachments.indexOf(file.path) === -1) {
+          pendingAttachments.push(file.path);
+          renderChatAttachments();
+        }
       });
       containerUl.appendChild(li);
     });
@@ -294,6 +303,20 @@
 
   // ---------------------------------------------------------------- search
 
+  function renderChatAttachments() {
+    if (!chatAttachmentsEl) return;
+    chatAttachmentsEl.innerHTML = pendingAttachments.map(function (path, index) {
+      return '<button type="button" class="chat-attachment" data-index="' + index + '" title="Remove attachment">' +
+        escapeHtml(path) + " x</button>";
+    }).join("");
+    chatAttachmentsEl.querySelectorAll(".chat-attachment").forEach(function (button) {
+      button.addEventListener("click", function () {
+        pendingAttachments.splice(parseInt(button.dataset.index, 10), 1);
+        renderChatAttachments();
+      });
+    });
+  }
+
   function runSearch() {
     var query = document.getElementById("search-query").value.trim();
     var caseSensitive = document.getElementById("search-case").checked;
@@ -382,9 +405,35 @@
     return el;
   }
 
-  function loadChatHistory() {
-    chatLoaded = true;
-    api("/workspaces/api/projects/" + PROJECT_ID + "/messages")
+  function renderChatSessions(sessions) {
+    chatSessionListEl.innerHTML = "";
+    sessions.forEach(function (session) {
+      var button = document.createElement("button");
+      button.type = "button";
+      button.className = "chat-session" + (session.id === activeSessionId ? " active" : "");
+      button.textContent = session.title;
+      button.title = session.title;
+      button.addEventListener("click", function () {
+        if (session.id === activeSessionId) return;
+        activeSessionId = session.id;
+        renderChatSessions(sessions);
+        loadChatMessages();
+      });
+      chatSessionListEl.appendChild(button);
+    });
+  }
+
+  function loadChatSessions() {
+    return api("/workspaces/api/projects/" + PROJECT_ID + "/sessions")
+      .then(function (sessions) {
+        if (!activeSessionId && sessions.length) activeSessionId = sessions[0].id;
+        renderChatSessions(sessions);
+      });
+  }
+
+  function loadChatMessages() {
+    var query = activeSessionId ? "?session_id=" + activeSessionId : "";
+    return api("/workspaces/api/projects/" + PROJECT_ID + "/messages" + query)
       .then(function (messages) {
         chatMessagesEl.innerHTML = "";
         messages.forEach(function (message) {
@@ -405,9 +454,34 @@
       });
   }
 
+  function loadChatHistory() {
+    chatLoaded = true;
+    loadChatSessions().then(loadChatMessages).catch(function (error) {
+      flashError(error.message);
+    });
+  }
+
+  function createChatSession() {
+    var title = window.prompt("Session title");
+    if (!title || !title.trim()) return;
+    api("/workspaces/api/projects/" + PROJECT_ID + "/sessions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ title: title.trim() }),
+    }).then(function (session) {
+      activeSessionId = session.id;
+      return loadChatSessions().then(loadChatMessages);
+    }).catch(function (error) {
+      flashError(error.message);
+    });
+  }
+
   async function startChat() {
     var content = chatInputEl.value.trim();
     if (!content || streaming) return;
+    var attachments = pendingAttachments.slice();
+    pendingAttachments = [];
+    renderChatAttachments();
     chatInputEl.value = "";
     chatSendBtn.disabled = true;
     streaming = true;
@@ -423,7 +497,7 @@
           "Content-Type": "application/json",
           "X-CSRFToken": getCsrf(),
         },
-        body: JSON.stringify({ content: content }),
+        body: JSON.stringify({ content: content, session_id: activeSessionId, attachments: attachments }),
       });
 
       if (!response.ok) {
@@ -466,6 +540,7 @@
             fullText += payload.content;
             streamBody.innerHTML = renderMarkdown(fullText);
             scrollChat();
+            loadChatSessions();
           } else if (payload.type === "error") {
             flashError(payload.error);
           } else if (payload.type === "done") {
@@ -1066,6 +1141,7 @@
     }
 
     chatSendBtn.addEventListener("click", startChat);
+    newChatSessionBtn.addEventListener("click", createChatSession);
     chatInputEl.addEventListener("keydown", function (event) {
       if (event.key === "Enter" && !event.shiftKey) {
         event.preventDefault();

@@ -15,6 +15,7 @@ from app.models.notification_preference import NotificationPreference
 from app.models.plugin import CapabilityGrant, Plugin, PluginInstallation
 from app.models.plugin_error_report import PluginErrorReport
 from app.models.project import Project
+from app.models.project_chat_session import ProjectChatSession
 from app.models.project_comment import ProjectComment
 from app.models.project_file import ProjectFile
 from app.models.project_message import ProjectMessage
@@ -43,6 +44,7 @@ __all__ = [
     "PluginErrorReport",
     "PluginInstallation",
     "Project",
+    "ProjectChatSession",
     "ProjectComment",
     "ProjectFile",
     "ProjectMessage",

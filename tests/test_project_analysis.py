@@ -82,6 +82,29 @@ class TestBoundedContext:
             context = project_analysis.build_context(project, "handler")
         assert "app.py" in context["paths"]
 
+    def test_attachments_are_pinned_and_mentioned_files_attach(self, app):
+        project = _ready_project(
+            [
+                ("attached.py", "attached content"),
+                ("mentioned.py", "mentioned content"),
+                ("keyword.py", "keyword content"),
+            ]
+        )
+        with _authorized_context(app, project):
+            context = project_analysis.build_context(
+                project, "Explain @mentioned.py", budget=5000, attachments=["attached.py"]
+            )
+        assert context["paths"][:2] == ["attached.py", "mentioned.py"]
+
+    def test_attachments_obey_budget_and_per_file_clip(self, app):
+        project = _ready_project([("attached.py", "x" * 5000), ("other.py", "y" * 5000)])
+        with _authorized_context(app, project):
+            context = project_analysis.build_context(
+                project, "question", budget=3000, attachments=["attached.py"]
+            )
+        assert len(context["blocks"]) <= 3000
+        assert "x" * 1500 in context["blocks"]
+
     def test_key_files_included_without_keywords(self, app):
         project = _ready_project(
             [

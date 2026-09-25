@@ -71,6 +71,12 @@ class Project(db.Model):
         cascade="all, delete-orphan",
         order_by="ProjectMessage.created_at",
     )
+    chat_sessions = db.relationship(
+        "ProjectChatSession",
+        back_populates="project",
+        cascade="all, delete-orphan",
+        order_by="ProjectChatSession.updated_at.desc()",
+    )
     reviews = db.relationship(
         "Review",
         back_populates="project",

@@ -258,14 +258,16 @@ def _complete(messages: list[dict]) -> str:
         return f"[analysis unavailable: {exc}]"
 
 
-def build_messages(project, question: str, history: list) -> list[dict]:
+def build_messages(
+    project, question: str, history: list, attachments: list[str] | None = None
+) -> list[dict]:
     """Build the provider message list for a project chat request.
 
     Includes bounded recent history, the project structure summary, and only
     the retrieved (bounded) file context for ``question``.
     """
     _assert_accessible(project)
-    context = build_context(project, question)
+    context = build_context(project, question, attachments=attachments)
     structure = project_structure(project)
     user_prompt = (
         f"{_context_header(project)}\n\n"
@@ -328,7 +330,18 @@ def project_structure(project) -> str:
     return summary + "\n" + "\n".join(files)
 
 
-def build_context(project, question: str, *, budget: int | None = None) -> dict:
+def _mentioned_paths(question: str, paths: set[str]) -> list[str]:
+    mentions = re.findall(r"@([A-Za-z0-9_./-]+)", question or "")
+    return [mention for mention in mentions if mention in paths]
+
+
+def build_context(
+    project,
+    question: str,
+    *,
+    budget: int | None = None,
+    attachments: list[str] | None = None,
+) -> dict:
     """Select the most relevant files for ``question`` within ``budget`` chars.
 
     Returns ``{"blocks", "paths"}`` where ``blocks`` is the assembled, clipped
@@ -341,6 +354,13 @@ def build_context(project, question: str, *, budget: int | None = None) -> dict:
         budget = current_app.config["PROJECT_MAX_CONTEXT_CHARS"]
 
     files = project.files.all()
+    files_by_path = {file.path: file for file in files if file.content is not None}
+    requested_paths = list(attachments or []) + _mentioned_paths(question, set(files_by_path))
+    pinned = []
+    for path in requested_paths:
+        file = files_by_path.get(path)
+        if file is not None and file not in pinned:
+            pinned.append(file)
     tokens = _keywords(question)
 
     # 1) Files whose path matches a question keyword.
@@ -353,7 +373,7 @@ def build_context(project, question: str, *, budget: int | None = None) -> dict:
             scored.append((score, file))
     scored.sort(key=lambda item: (-item[0], item[1].size))
 
-    selected: list[ProjectFile] = []
+    selected: list[ProjectFile] = pinned[:MAX_CONTEXT_FILES]
     for _, file in scored:
         if len(selected) >= MAX_CONTEXT_FILES:
             break
@@ -383,15 +403,17 @@ def build_context(project, question: str, *, budget: int | None = None) -> dict:
     remaining = budget
     per_file = max(budget // MAX_CONTEXT_FILES, 2000)
     for file in selected:
-        chunk = file.content or ""
-        if len(chunk) > per_file:
-            chunk = chunk[:per_file]
-        if len(chunk) > remaining:
-            chunk = chunk[:remaining]
+        prefix = f"```{file.path}\n"
+        suffix = "\n```"
+        available = remaining - len(prefix) - len(suffix)
+        if available <= 0:
+            break
+        chunk = (file.content or "")[: min(per_file, available)]
         if not chunk:
             continue
-        blocks.append(f"```{file.path}\n{chunk}\n```")
-        remaining -= len(chunk)
+        block = f"{prefix}{chunk}{suffix}"
+        blocks.append(block)
+        remaining -= len(block)
 
     return {"blocks": "\n\n".join(blocks), "paths": [f.path for f in selected]}
 
@@ -585,11 +607,13 @@ def dependency_inventory(project) -> list[dict]:
 # --------------------------------------------------------------------------
 
 
-def chat_with_project(project, question: str) -> dict:
+def chat_with_project(
+    project, question: str, attachments: list[str] | None = None
+) -> dict:
     """Answer ``question`` about ``project`` using bounded retrieved context."""
     _assert_accessible(project)
-    context = build_context(project, question)
-    messages = build_messages(project, question, [])
+    context = build_context(project, question, attachments=attachments)
+    messages = build_messages(project, question, [], attachments=attachments)
     return {
         "context_paths": context["paths"],
         "analysis": _complete(messages),
