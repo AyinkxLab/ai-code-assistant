@@ -24,7 +24,7 @@ from app.services.providers.base import (
     ProviderResponse,
     ProviderResponseError,
     ProviderUnavailableError,
-    normalize_messages,
+    prepare_messages,
 )
 
 TIMEOUT_SECONDS = 60
@@ -37,6 +37,7 @@ class OpenAIProvider(LLMProvider):
     name = "openai"
     models = DEFAULT_MODELS
     requires_key = True
+    supports_vision = True
 
     def __init__(
         self,
@@ -76,9 +77,26 @@ class OpenAIProvider(LLMProvider):
         params: dict | None,
         stream: bool,
     ) -> dict:
+        formatted: list[dict] = []
+        for message in prepare_messages(messages, supports_vision=self.supports_vision):
+            images = message.pop("images", [])
+            if images:
+                parts: list[dict] = [{"type": "text", "text": message["content"]}]
+                for image in images:
+                    parts.append(
+                        {
+                            "type": "image_url",
+                            "image_url": {
+                                "url": (f"data:{image['content_type']};base64,{image['data']}")
+                            },
+                        }
+                    )
+                formatted.append({"role": message["role"], "content": parts})
+            else:
+                formatted.append(message)
         payload: dict[str, Any] = {
             "model": model or self.model,
-            "messages": normalize_messages(messages),
+            "messages": formatted,
             "temperature": self.temperature,
             "stream": stream,
         }

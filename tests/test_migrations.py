@@ -126,7 +126,34 @@ class TestMigrationHead:
     def test_head_is_latest_revision(self):
         result = _run_flask(["db", "heads"], {"DATABASE_URL": "sqlite:///:memory:"})
         assert result.returncode == 0, result.stderr
-        assert "d5e6f7a8b9c0" in (result.stdout + result.stderr)
+        assert "f1a2b3c4d5e6" in (result.stdout + result.stderr)
+
+    def test_message_attachments_table_upgraded(self):
+        expected = {
+            "id",
+            "conversation_id",
+            "message_id",
+            "filename",
+            "content_type",
+            "size",
+            "data",
+            "created_at",
+        }
+        with _migration_db() as db_url, _inspect(db_url) as insp:
+            tables = set(insp.get_table_names())
+            assert "message_attachments" in tables
+            columns = {col["name"] for col in insp.get_columns("message_attachments")}
+            assert columns == expected
+
+    def test_message_attachments_downgrade_removed(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            db_url = f"sqlite:///{os.path.join(tmp, 'mig49.db')}"
+            up = _run_flask(["db", "upgrade"], {"DATABASE_URL": db_url})
+            assert up.returncode == 0, up.stderr
+            down = _run_flask(["db", "downgrade", "d5e6f7a8b9c0"], {"DATABASE_URL": db_url})
+            assert down.returncode == 0, down.stderr
+            with _inspect(db_url) as insp:
+                assert "message_attachments" not in set(insp.get_table_names())
 
     def test_conversation_settings_columns_upgraded(self):
         with _migration_db() as db_url, _inspect(db_url) as insp:

@@ -11,6 +11,7 @@ from app.models.conversation_share import ConversationShare
 from app.models.github_account import GithubAccount
 from app.models.invitation import WorkspaceInvitation
 from app.models.message import Message
+from app.models.message_attachment import MessageAttachment
 from app.models.notification import Notification
 from app.models.notification_preference import NotificationPreference
 from app.models.plugin import CapabilityGrant, Plugin, PluginInstallation
@@ -40,6 +41,7 @@ __all__ = [
     "ConversationShare",
     "GithubAccount",
     "Message",
+    "MessageAttachment",
     "Notification",
     "NotificationPreference",
     "Plugin",

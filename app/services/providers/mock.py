@@ -17,6 +17,7 @@ from app.services.providers.base import (
     ProviderResponse,
     message_content,
     message_role,
+    prepare_messages,
 )
 
 
@@ -52,8 +53,9 @@ class MockProvider(LLMProvider):
         started = time.perf_counter()
         if self.delay:
             time.sleep(self.delay)
+        prepared = prepare_messages(messages, supports_vision=self.supports_vision)
         return ProviderResponse(
-            content=self._respond(messages),
+            content=self._respond(prepared),
             model=model or self.models[0],
             latency_seconds=time.perf_counter() - started,
         )
@@ -65,7 +67,7 @@ class MockProvider(LLMProvider):
         model: str | None = None,
         params: dict | None = None,
     ) -> Iterator[str]:
-        text = self._respond(messages)
+        text = self._respond(prepare_messages(messages, supports_vision=self.supports_vision))
         for word in text.split(" "):
             if self.delay:
                 time.sleep(self.delay)

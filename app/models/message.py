@@ -29,6 +29,12 @@ class Message(db.Model):
     )
 
     conversation = db.relationship("Conversation", back_populates="messages")
+    attachments = db.relationship(
+        "MessageAttachment",
+        back_populates="message",
+        cascade="all, delete-orphan",
+        order_by="MessageAttachment.created_at",
+    )
 
     def to_dict(self) -> dict:
         """Serialize the message for JSON API responses."""
@@ -36,6 +42,7 @@ class Message(db.Model):
             "id": self.id,
             "role": self.role,
             "content": self.content,
+            "attachments": [attachment.to_dict() for attachment in self.attachments],
             "created_at": self.created_at.isoformat() if self.created_at else None,
         }
 
