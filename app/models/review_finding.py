@@ -42,6 +42,7 @@ SECURITY_CATEGORIES = (
     "file-access",
     "secrets",
     "injection",
+    "unsafe-deserialization",
     "unsafe-dependencies",
     "information-exposure",
     "insecure-config",

@@ -545,8 +545,8 @@ def analyze_tests(project, config: dict) -> dict:
 
 _SECURITY_CATEGORY_HINT = (
     "use categories: authentication, authorization, input-validation, "
-    "file-access, secrets, injection, unsafe-dependencies, "
-    "information-exposure, insecure-config, other"
+    "file-access, secrets, injection, unsafe-deserialization, "
+    "unsafe-dependencies, information-exposure, insecure-config, other"
 )
 
 
@@ -565,11 +565,13 @@ def review_project(project, kind: str, config: dict) -> dict:
     intro = (
         "Perform a security analysis of this project. Look for legitimate "
         "risks involving authentication, authorization, input validation, "
-        "file access, secrets, injection risks, unsafe dependencies, "
-        "sensitive information exposure, and insecure configuration. Do NOT "
-        "invent vulnerabilities; if a category shows no evidence, do not "
-        "report it. For dependency concerns that require a registry or "
-        "advisory source, mark them 'suggestion' and recommend verification."
+        "file access, secrets, injection, unsafe deserialization (e.g. "
+        "pickle, yaml.load, eval, unsafe JSON/object parsing), unsafe "
+        "dependencies, sensitive information exposure, and insecure "
+        "configuration. Do NOT invent vulnerabilities; if a category shows "
+        "no evidence, do not report it. For dependency concerns that require "
+        "a registry or advisory source, mark them 'suggestion' and recommend "
+        "verification."
     )
     prompt = (
         f"Project: {project.name}\n\n"

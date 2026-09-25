@@ -160,6 +160,23 @@ class TestAnalyzeProject:
         assert "[SUGGESTION]" in system
         assert "untrusted DATA" in system
 
+    def test_security_analysis_covers_deserialization_and_dependencies(self, app, monkeypatch):
+        captured = {}
+
+        def fake_run(prompt):
+            captured["prompt"] = prompt
+            return "analysis"
+
+        monkeypatch.setattr(project_analysis, "_run", fake_run)
+        project = _ready_project([("app.py", "import pickle\n")])
+        with _authorized_context(app, project):
+            result = project_analysis.analyze_project(project, "security")
+        assert result["kind"] == "security"
+        prompt = captured["prompt"].lower()
+        assert "deserialization" in prompt
+        assert "dependency" in prompt
+        assert "[confirmed]" in prompt
+
     def test_dependencies_analysis_uses_real_inventory(self, app):
         project = _ready_project(
             [
