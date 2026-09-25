@@ -496,11 +496,29 @@ class TestStructuredFindingContract:
         for category in (
             "authorization",
             "injection",
+            "unsafe-deserialization",
             "unsafe-dependencies",
             "information-exposure",
             "insecure-config",
         ):
             assert category in prompt
+
+    def test_unsafe_deserialization_category_is_accepted(self, app):
+        payload = {
+            "findings": [
+                {
+                    "explanation": "Untrusted YAML is loaded with yaml.load.",
+                    "severity": "high",
+                    "category": "unsafe-deserialization",
+                    "confidence": "confirmed",
+                    "file": "app/config.py",
+                    "line": 5,
+                }
+            ]
+        }
+        finding = reviews.parse_review_response(json.dumps(payload), kind="security")["findings"][0]
+        assert finding["category"] == "unsafe-deserialization"
+        assert finding["confidence"] == "confirmed"
 
     def test_findings_only_expose_structured_fields(self, app):
         payload = {

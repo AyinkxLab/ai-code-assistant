@@ -789,11 +789,13 @@ Source files under review:
 
 Perform a security analysis. Look only for real, evidence-based risks:
 authentication, authorization, input validation, file access, hard-coded
-secrets, injection, sensitive-information exposure, and insecure
-configuration. Do NOT invent vulnerabilities, CVEs, or advisory data; if a
-category shows no evidence, do not report it. Dependency concerns that would
-require a registry source must be marked [SUGGESTION] with a recommendation
-to verify. Mark [CONFIRMED] for issues directly proven by the files.
+secrets, injection, unsafe deserialization (e.g. pickle, yaml.load, eval,
+unsafe object parsing), dependency risks, sensitive-information exposure, and
+insecure configuration. Do NOT invent vulnerabilities, CVEs, or advisory data;
+if a category shows no evidence, do not report it. Dependency concerns that
+would require a registry source must be marked [SUGGESTION] with a
+recommendation to verify. Mark [CONFIRMED] for issues directly proven by the
+files.
 """
     return {"kind": kind, "analysis": _run(prompt)}
 
