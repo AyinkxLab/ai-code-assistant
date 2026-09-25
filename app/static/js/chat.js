@@ -221,6 +221,7 @@
             flashError(payload.error);
           } else if (payload.type === "done") {
             streamBody.innerHTML = renderMarkdown(payload.message.content);
+            highlightCode(streamBody);
             scrollToBottom();
           }
         });
@@ -229,7 +230,12 @@
       flashError(error.message);
     } finally {
       typing.classList.remove("typing", "streaming");
-      if (!typing.querySelector(".message-body") || !typing.querySelector(".message-body").textContent) {
+      var finalBody = typing.querySelector(".message-body");
+      if (finalBody && finalBody.textContent) {
+        // Covers partial output too (e.g. stream cancelled before "done").
+        highlightCode(finalBody);
+      }
+      if (!finalBody || !finalBody.textContent) {
         typing.remove();
       }
       sendBtn.disabled = false;
@@ -262,6 +268,13 @@
       .catch(function (error) {
         flashError(error.message);
       });
+  }
+
+  // Apply syntax highlighting once markdown has been rendered (issue #44).
+  // A no-op when highlight.js is unavailable, and unknown languages are left
+  // untouched, so the streaming flow is never interrupted.
+  function highlightCode(container) {
+    if (window.AICASyntaxHighlight) window.AICASyntaxHighlight.apply(container);
   }
 
   function flashError(message) {

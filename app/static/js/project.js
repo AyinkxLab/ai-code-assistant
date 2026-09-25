@@ -290,12 +290,14 @@
             " — this file is binary or too large to display/search (size: " + humanSize(data.size) + ").</p>";
           return;
         }
+        var codeClass = data.language ? ' class="language-' + escapeHtml(data.language) + '"' : "";
         viewerEl.innerHTML =
           '<div class="file-viewer-header">' +
           '<code>' + escapeHtml(data.path) + "</code>" +
           '<span class="tag">' + escapeHtml(data.language || "text") + "</span>" +
           "</div>" +
-          '<pre class="code-view">' + escapeHtml(data.content) + "</pre>";
+          '<pre class="code-view"><code' + codeClass + ">" + escapeHtml(data.content) + "</code></pre>";
+        if (window.AICASyntaxHighlight) window.AICASyntaxHighlight.apply(viewerEl);
       })
       .catch(function (error) {
         viewerEl.innerHTML = '<p class="sidebar-empty">' + escapeHtml(error.message) + "</p>";
