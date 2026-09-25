@@ -607,9 +607,7 @@ def dependency_inventory(project) -> list[dict]:
 # --------------------------------------------------------------------------
 
 
-def chat_with_project(
-    project, question: str, attachments: list[str] | None = None
-) -> dict:
+def chat_with_project(project, question: str, attachments: list[str] | None = None) -> dict:
     """Answer ``question`` about ``project`` using bounded retrieved context."""
     _assert_accessible(project)
     context = build_context(project, question, attachments=attachments)

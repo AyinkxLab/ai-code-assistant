@@ -13,6 +13,8 @@
   var actionsEl = document.getElementById("conversation-actions");
   var currentId = null;
   var streaming = false;
+  var currentController = null;
+  var cancelRequested = false;
 
   var CSRF_TOKEN = null;
 
@@ -131,6 +133,36 @@
     inputEl.focus();
   }
 
+  // Toggle the composer button between Send (idle) and Stop (while streaming).
+  function setComposerState(state) {
+    if (state === "streaming") {
+      sendBtn.textContent = "Stop";
+      sendBtn.classList.add("btn-danger");
+      sendBtn.classList.remove("btn-primary");
+      sendBtn.disabled = false;
+      sendBtn.setAttribute("aria-label", "Stop generating");
+    } else if (state === "stopping") {
+      sendBtn.textContent = "Stopping...";
+      sendBtn.disabled = true;
+      sendBtn.setAttribute("aria-label", "Stopping generation");
+    } else {
+      sendBtn.textContent = "Send";
+      sendBtn.classList.remove("btn-danger");
+      sendBtn.classList.add("btn-primary");
+      sendBtn.disabled = false;
+      sendBtn.setAttribute("aria-label", "Send message");
+    }
+  }
+
+  function stopStream() {
+    if (!streaming || !currentController) return;
+    // Stay in-flight until the abort resolves so a fast double-click cannot
+    // open a second stream (double-submit protection during the cancel window).
+    cancelRequested = true;
+    setComposerState("stopping");
+    currentController.abort();
+  }
+
   async function startStream() {
     var content = inputEl.value.trim();
     if (!content || streaming) return;
@@ -151,8 +183,10 @@
     }
 
     inputEl.value = "";
-    sendBtn.disabled = true;
     streaming = true;
+    cancelRequested = false;
+    currentController = new AbortController();
+    setComposerState("streaming");
     addMessage("user", content);
 
     var typing = addTypingIndicator();
@@ -166,6 +200,7 @@
           "X-CSRFToken": getCsrf(),
         },
         body: JSON.stringify({ content: content }),
+        signal: currentController.signal,
       });
 
       if (!response.ok) {
@@ -212,20 +247,29 @@
           } else if (payload.type === "error") {
             flashError(payload.error);
           } else if (payload.type === "done") {
-            streamBody.innerHTML = renderMarkdown(payload.message.content);
+            if (payload.message) {
+              streamBody.innerHTML = renderMarkdown(payload.message.content);
+            }
             scrollToBottom();
           }
         });
       }
     } catch (error) {
-      flashError(error.message);
+      if (error && error.name === "AbortError") {
+        // The user pressed Stop: keep the partial reply already on screen.
+        flashInfo(cancelRequested ? "Generation stopped." : "Stream aborted.");
+      } else {
+        flashError(error.message);
+      }
     } finally {
       typing.classList.remove("typing", "streaming");
       if (!typing.querySelector(".message-body") || !typing.querySelector(".message-body").textContent) {
         typing.remove();
       }
-      sendBtn.disabled = false;
+      currentController = null;
+      cancelRequested = false;
       streaming = false;
+      setComposerState("idle");
     }
   }
 
@@ -263,13 +307,26 @@
     messagesEl.prepend(el);
   }
 
+  function flashInfo(message) {
+    var el = document.createElement("div");
+    el.className = "flash flash-info";
+    el.textContent = message;
+    messagesEl.prepend(el);
+  }
+
   document.addEventListener("DOMContentLoaded", function () {
     listEl.addEventListener("click", function (event) {
       var item = event.target.closest(".conversation-item");
       if (item && !streaming) loadConversation(item.dataset.id);
     });
 
-    sendBtn.addEventListener("click", startStream);
+    sendBtn.addEventListener("click", function () {
+      if (streaming) {
+        stopStream();
+      } else {
+        startStream();
+      }
+    });
     inputEl.addEventListener("keydown", function (event) {
       if (event.key === "Enter" && !event.shiftKey) {
         event.preventDefault();

@@ -2,7 +2,7 @@
 
 import json
 
-from flask import Response, abort, jsonify, render_template, request, url_for
+from flask import Response, abort, jsonify, render_template, request, stream_with_context, url_for
 from flask_login import current_user, login_required
 from sqlalchemy import func
 
@@ -38,6 +38,7 @@ def _shared_conversation_ids() -> list[int]:
         .all()
     )
     return [row[0] for row in rows]
+
 
 #: Cap on files returned per project in the chat file tree (keeps the payload
 #: bounded for large imports); ``truncated`` signals the client when it applies.
@@ -257,31 +258,55 @@ def stream_message(conversation_id: int):
     conversation.messages.append(Message(role="user", content=content))
     db.session.commit()
 
-    def generate():
-        try:
-            provider = get_provider()
-            for chunk in provider.stream([*history, {"role": "user", "content": content}]):
-                yield f"data: {json.dumps({'type': 'token', 'content': chunk})}\n\n"
-        except LLMProviderError as exc:
-            yield f"data: {json.dumps({'type': 'error', 'error': str(exc)})}\n\n"
-            return
+    provider = get_provider()
 
-        # Persist the complete reply built from the streamed chunks is not
-        # possible inside the generator without buffering; instead the mock
-        # provider's complete() is used for a canonical response.
-        try:
-            provider = get_provider()
-            reply = provider.complete([*history, {"role": "user", "content": content}])
-        except LLMProviderError as exc:
-            yield f"data: {json.dumps({'type': 'error', 'error': str(exc)})}\n\n"
-            return
+    def persist_assistant(reply: str):
+        """Persist an assistant message, or return ``None`` when empty.
 
+        Used both for the completed reply and for the partial text kept when
+        the client cancels mid-stream (issue #11).
+        """
+        reply = reply or ""
+        if not reply.strip():
+            return None
         message = Message(role="assistant", content=reply)
         conversation.messages.append(message)
         db.session.commit()
-        yield f"data: {json.dumps({'type': 'done', 'message': message.to_dict()})}\n\n"
+        return message
 
-    return Response(generate(), mimetype="text/event-stream")
+    def generate():
+        # Accumulate chunks so a cancelled stream can still keep what it got.
+        chunks: list[str] = []
+        try:
+            for chunk in provider.stream([*history, {"role": "user", "content": content}]):
+                chunks.append(chunk)
+                yield f"data: {json.dumps({'type': 'token', 'content': chunk})}\n\n"
+        except GeneratorExit:
+            # The client disconnected (Stop button or closed tab). Persist the
+            # partial reply so the user keeps what was generated, then stop.
+            persist_assistant("".join(chunks))
+            raise
+        except LLMProviderError as exc:
+            # A provider failure mid-stream: keep the partial text too.
+            persist_assistant("".join(chunks))
+            yield f"data: {json.dumps({'type': 'error', 'error': str(exc)})}\n\n"
+            return
+
+        message = persist_assistant("".join(chunks))
+        if message is None:
+            # The provider streamed no text; fall back to a single completion.
+            try:
+                message = persist_assistant(
+                    provider.complete([*history, {"role": "user", "content": content}])
+                )
+            except LLMProviderError as exc:
+                yield f"data: {json.dumps({'type': 'error', 'error': str(exc)})}\n\n"
+                return
+
+        payload = {"type": "done", "message": message.to_dict() if message else None}
+        yield f"data: {json.dumps(payload)}\n\n"
+
+    return Response(stream_with_context(generate()), mimetype="text/event-stream")
 
 
 # --------------------------------------------------------------------------
