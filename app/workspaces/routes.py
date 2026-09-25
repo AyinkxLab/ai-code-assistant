@@ -919,6 +919,9 @@ def api_project_chat(project_id: int):
         return jsonify({"error": "This project has not finished indexing."}), 409
     data = request.get_json(silent=True) or {}
     content = (data.get("content") or "").strip()
+    attachments = data.get("attachments") or []
+    if not isinstance(attachments, list) or not all(isinstance(path, str) for path in attachments):
+        return jsonify({"error": "Attachments must be a list of file paths."}), 400
     if not content:
         return jsonify({"error": "A message is required."}), 400
 
@@ -926,7 +929,7 @@ def api_project_chat(project_id: int):
     db.session.add(
         ProjectMessage(project_id=project.id, session=session, role="user", content=content)
     )
-    result = project_analysis.chat_with_project(project, content)
+    result = project_analysis.chat_with_project(project, content, attachments)
     message = ProjectMessage(
         project_id=project.id, session=session, role="assistant", content=result["analysis"]
     )
@@ -958,6 +961,9 @@ def api_project_chat_stream(project_id: int):
         return jsonify({"error": "This project has not finished indexing."}), 409
     data = request.get_json(silent=True) or {}
     content = (data.get("content") or "").strip()
+    attachments = data.get("attachments") or []
+    if not isinstance(attachments, list) or not all(isinstance(path, str) for path in attachments):
+        return jsonify({"error": "Attachments must be a list of file paths."}), 400
     if not content:
         return jsonify({"error": "A message is required."}), 400
 
@@ -970,7 +976,7 @@ def api_project_chat_stream(project_id: int):
     )
     session.updated_at = datetime.now(UTC)
     db.session.commit()
-    messages = project_analysis.build_messages(project, content, history)
+    messages = project_analysis.build_messages(project, content, history, attachments=attachments)
 
     def generate():
         try:
@@ -982,7 +988,7 @@ def api_project_chat_stream(project_id: int):
             return
 
         try:
-            reply = project_analysis.chat_with_project(project, content)["analysis"]
+            reply = project_analysis.chat_with_project(project, content, attachments)["analysis"]
         except LLMProviderError as exc:
             yield f"data: {json.dumps({'type': 'error', 'error': str(exc)})}\n\n"
             return

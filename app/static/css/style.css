@@ -1670,6 +1670,23 @@ a:hover {
   max-height: 56vh;
 }
 
+.chat-attachments {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.chat-attachment {
+  border: 1px solid var(--border);
+  background: var(--surface-muted);
+  color: var(--text-muted);
+  cursor: pointer;
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  padding: 4px 7px;
+}
+
 .project-chat-layout {
   display: grid;
   grid-template-columns: 190px 1fr;

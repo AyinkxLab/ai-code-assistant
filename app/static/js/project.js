@@ -13,10 +13,12 @@
   var newChatSessionBtn = document.getElementById("new-chat-session");
   var chatInputEl = document.getElementById("project-chat-input");
   var chatSendBtn = document.getElementById("project-chat-send");
+  var chatAttachmentsEl = document.getElementById("project-chat-attachments");
   var reviewSummaryEl = document.getElementById("review-summary");
   var streaming = false;
   var chatLoaded = false;
   var activeSessionId = null;
+  var pendingAttachments = [];
 
   function getCsrf() {
     var meta = document.querySelector('meta[name="csrf-token"]');
@@ -183,6 +185,10 @@
         '<span class="tree-file-size">' + humanSize(file.size) + "</span></button>";
       li.addEventListener("click", function () {
         loadFile(file.path);
+        if (pendingAttachments.indexOf(file.path) === -1) {
+          pendingAttachments.push(file.path);
+          renderChatAttachments();
+        }
       });
       containerUl.appendChild(li);
     });
@@ -253,6 +259,20 @@
   }
 
   // ---------------------------------------------------------------- search
+
+  function renderChatAttachments() {
+    if (!chatAttachmentsEl) return;
+    chatAttachmentsEl.innerHTML = pendingAttachments.map(function (path, index) {
+      return '<button type="button" class="chat-attachment" data-index="' + index + '" title="Remove attachment">' +
+        escapeHtml(path) + " x</button>";
+    }).join("");
+    chatAttachmentsEl.querySelectorAll(".chat-attachment").forEach(function (button) {
+      button.addEventListener("click", function () {
+        pendingAttachments.splice(parseInt(button.dataset.index, 10), 1);
+        renderChatAttachments();
+      });
+    });
+  }
 
   function runSearch() {
     var query = document.getElementById("search-query").value.trim();
@@ -416,6 +436,9 @@
   async function startChat() {
     var content = chatInputEl.value.trim();
     if (!content || streaming) return;
+    var attachments = pendingAttachments.slice();
+    pendingAttachments = [];
+    renderChatAttachments();
     chatInputEl.value = "";
     chatSendBtn.disabled = true;
     streaming = true;
@@ -431,7 +454,7 @@
           "Content-Type": "application/json",
           "X-CSRFToken": getCsrf(),
         },
-        body: JSON.stringify({ content: content, session_id: activeSessionId }),
+        body: JSON.stringify({ content: content, session_id: activeSessionId, attachments: attachments }),
       });
 
       if (!response.ok) {
