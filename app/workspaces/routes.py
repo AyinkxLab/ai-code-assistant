@@ -41,6 +41,7 @@ API (JSON, all scoped to the current user)
 import io
 import json
 from collections import Counter
+from datetime import UTC, datetime
 from pathlib import Path
 
 from flask import (
@@ -55,7 +56,7 @@ from flask import (
 from flask_login import current_user, login_required
 
 from app.extensions import db
-from app.models import Project, ProjectMessage, User, Workspace, WorkspaceMember
+from app.models import Project, ProjectChatSession, ProjectMessage, User, Workspace, WorkspaceMember
 from app.models.activity_event import (
     EVENT_AI_ANALYSIS_RUN,
     EVENT_MEMBER_ADDED,
@@ -117,6 +118,18 @@ def _get_workspace(workspace_id: int) -> Workspace:
 
 def _get_project(project_id: int) -> Project:
     return Project.query.filter_by(id=project_id, user_id=current_user.id).first_or_404()
+
+
+def _get_chat_session(project: Project, session_id: int | None = None) -> ProjectChatSession:
+    query = ProjectChatSession.query.filter_by(project_id=project.id)
+    if session_id is not None:
+        return query.filter_by(id=session_id).first_or_404()
+    session = query.order_by(ProjectChatSession.updated_at.desc()).first()
+    if session is None:
+        session = ProjectChatSession(project=project, title="General")
+        db.session.add(session)
+        db.session.flush()
+    return session
 
 
 def _member_role(workspace_id: int) -> str | None:
@@ -843,10 +856,53 @@ def _is_test_path(path: str) -> bool:
 @login_required
 def api_project_messages(project_id: int):
     project = _get_project(project_id)
-    messages = ProjectMessage.query.filter_by(project_id=project.id).order_by(
+    session_id = request.args.get("session_id", type=int)
+    session = _get_chat_session(project, session_id)
+    db.session.commit()
+    messages = ProjectMessage.query.filter_by(session_id=session.id).order_by(
         ProjectMessage.created_at
     )
     return jsonify([m.to_dict() for m in messages])
+
+
+@bp.route("/api/projects/<int:project_id>/sessions", methods=["GET", "POST"])
+@login_required
+def api_project_chat_sessions(project_id: int):
+    project = _get_project(project_id)
+    if request.method == "POST":
+        data = request.get_json(silent=True) or {}
+        title = (data.get("title") or "").strip()
+        if not title:
+            return jsonify({"error": "A session title is required."}), 400
+        if len(title) > 200:
+            return jsonify({"error": "Session titles must be 200 characters or fewer."}), 400
+        session = ProjectChatSession(project=project, title=title)
+        db.session.add(session)
+        db.session.commit()
+        return jsonify(session.to_dict()), 201
+
+    _get_chat_session(project)
+    db.session.commit()
+    sessions = ProjectChatSession.query.filter_by(project_id=project.id).order_by(
+        ProjectChatSession.updated_at.desc()
+    )
+    return jsonify([session.to_dict() for session in sessions])
+
+
+@bp.route("/api/projects/<int:project_id>/sessions/<int:session_id>", methods=["PATCH"])
+@login_required
+def api_project_chat_session(project_id: int, session_id: int):
+    project = _get_project(project_id)
+    session = _get_chat_session(project, session_id)
+    title = ((request.get_json(silent=True) or {}).get("title") or "").strip()
+    if not title:
+        return jsonify({"error": "A session title is required."}), 400
+    if len(title) > 200:
+        return jsonify({"error": "Session titles must be 200 characters or fewer."}), 400
+    session.title = title
+    session.updated_at = datetime.now(UTC)
+    db.session.commit()
+    return jsonify(session.to_dict())
 
 
 @bp.route("/api/projects/<int:project_id>/chat", methods=["POST"])
@@ -866,9 +922,15 @@ def api_project_chat(project_id: int):
     if not content:
         return jsonify({"error": "A message is required."}), 400
 
-    db.session.add(ProjectMessage(project_id=project.id, role="user", content=content))
+    session = _get_chat_session(project, data.get("session_id"))
+    db.session.add(
+        ProjectMessage(project_id=project.id, session=session, role="user", content=content)
+    )
     result = project_analysis.chat_with_project(project, content)
-    message = ProjectMessage(project_id=project.id, role="assistant", content=result["analysis"])
+    message = ProjectMessage(
+        project_id=project.id, session=session, role="assistant", content=result["analysis"]
+    )
+    session.updated_at = datetime.now(UTC)
     db.session.add(message)
     db.session.commit()
     return (
@@ -899,8 +961,14 @@ def api_project_chat_stream(project_id: int):
     if not content:
         return jsonify({"error": "A message is required."}), 400
 
-    history = list(project.messages)
-    db.session.add(ProjectMessage(project_id=project.id, role="user", content=content))
+    session = _get_chat_session(project, data.get("session_id"))
+    history = ProjectMessage.query.filter_by(session_id=session.id).order_by(
+        ProjectMessage.created_at
+    ).all()
+    db.session.add(
+        ProjectMessage(project_id=project.id, session=session, role="user", content=content)
+    )
+    session.updated_at = datetime.now(UTC)
     db.session.commit()
     messages = project_analysis.build_messages(project, content, history)
 
@@ -919,7 +987,9 @@ def api_project_chat_stream(project_id: int):
             yield f"data: {json.dumps({'type': 'error', 'error': str(exc)})}\n\n"
             return
 
-        message = ProjectMessage(project_id=project.id, role="assistant", content=reply)
+        message = ProjectMessage(
+            project_id=project.id, session=session, role="assistant", content=reply
+        )
         db.session.add(message)
         db.session.commit()
         yield f"data: {json.dumps({'type': 'done', 'message': message.to_dict()})}\n\n"

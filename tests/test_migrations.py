@@ -126,7 +126,7 @@ class TestMigrationHead:
     def test_head_is_latest_revision(self):
         result = _run_flask(["db", "heads"], {"DATABASE_URL": "sqlite:///:memory:"})
         assert result.returncode == 0, result.stderr
-        assert "e6f7a8b9c0d1" in (result.stdout + result.stderr)
+        assert "f7b8c9d0e1f2" in (result.stdout + result.stderr)
 
     def test_users_stellar_network_column_upgraded(self):
         with _migration_db() as db_url, _inspect(db_url) as insp:

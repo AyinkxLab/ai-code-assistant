@@ -19,6 +19,12 @@ class ProjectMessage(db.Model):
     project_id = db.Column(
         db.Integer, db.ForeignKey("projects.id", ondelete="CASCADE"), nullable=False, index=True
     )
+    session_id = db.Column(
+        db.Integer,
+        db.ForeignKey("project_chat_sessions.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
     role = db.Column(db.String(20), nullable=False)
     content = db.Column(db.Text, nullable=False)
     created_at = db.Column(
@@ -26,6 +32,7 @@ class ProjectMessage(db.Model):
     )
 
     project = db.relationship("Project", back_populates="messages")
+    session = db.relationship("ProjectChatSession", back_populates="messages")
 
     def to_dict(self) -> dict:
         """Serialize the message for JSON API responses."""
