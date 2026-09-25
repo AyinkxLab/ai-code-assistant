@@ -34,87 +34,14 @@
     return div.innerHTML;
   }
 
-  // Minimal markdown renderer: code blocks, inline code, headings, bold,
-  // italics, links, and unordered lists.
+  // Markdown rendering lives in chat_markdown.js, which escapes all text and
+  // sanitizes the generated HTML before it can be inserted into the DOM. If
+  // that module failed to load we fall back to a plain escaped rendering.
   function renderMarkdown(text) {
-    var lines = String(text).split("\n");
-    var html = "";
-    var inCode = false;
-    var codeLang = "";
-    var codeLines = [];
-    var listOpen = false;
-
-    function flushList() {
-      if (listOpen) {
-        html += "</ul>\n";
-        listOpen = false;
-      }
+    if (window.AICAMarkdown && window.AICAMarkdown.renderMarkdown) {
+      return window.AICAMarkdown.renderMarkdown(text);
     }
-
-    lines.forEach(function (line) {
-      var codeMatch = line.match(/^```(\w*)/);
-      if (codeMatch) {
-        flushList();
-        if (inCode) {
-          html +=
-            '<pre class="code-block"><code class="language-' +
-            escapeHtml(codeLang) +
-            '">' +
-            escapeHtml(codeLines.join("\n")) +
-            "</code></pre>\n";
-          inCode = false;
-          codeLines = [];
-        } else {
-          inCode = true;
-          codeLang = codeMatch[1] || "";
-        }
-        return;
-      }
-      if (inCode) {
-        codeLines.push(line);
-        return;
-      }
-
-      if (/^\s*-\s+/.test(line) || /^\s*\*\s+/.test(line)) {
-        if (!listOpen) {
-          html += "<ul>\n";
-          listOpen = true;
-        }
-        html += "<li>" + renderInline(line.replace(/^\s*[-*]\s+/, "")) + "</li>\n";
-        return;
-      }
-      flushList();
-
-      if (/^#{1,4}\s/.test(line)) {
-        var level = line.match(/^(#{1,4})\s/)[1].length;
-        html +=
-          "<h" + level + ">" + renderInline(line.replace(/^#{1,4}\s/, "")) + "</h" + level + ">\n";
-      } else if (/^\s*$/.test(line)) {
-        html += "<br>\n";
-      } else {
-        html += "<p>" + renderInline(line) + "</p>\n";
-      }
-    });
-
-    flushList();
-    if (inCode) {
-      html +=
-        '<pre class="code-block"><code class="language-' +
-        escapeHtml(codeLang) +
-        '">' +
-        escapeHtml(codeLines.join("\n")) +
-        "</code></pre>\n";
-    }
-    return html;
-  }
-
-  function renderInline(text) {
-    var escaped = escapeHtml(text);
-    return escaped
-      .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
-      .replace(/\*([^*]+)\*/g, "<em>$1</em>")
-      .replace(/`([^`]+)`/g, '<code class="inline-code">$1</code>')
-      .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
+    return escapeHtml(text).replace(/\n/g, "<br>\n");
   }
 
   function addMessage(role, content) {
