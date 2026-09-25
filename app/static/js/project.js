@@ -146,7 +146,7 @@
     document.querySelectorAll("#project-tabs .repo-tab").forEach(function (tab) {
       tab.classList.toggle("active", tab.dataset.tab === name);
     });
-    ["files", "search", "chat", "analysis", "stats", "stellar", "discussion"].forEach(function (key) {
+    ["files", "search", "chat", "analysis", "stats", "reviews", "stellar", "discussion"].forEach(function (key) {
       document.getElementById("tab-" + key).hidden = key !== name;
     });
     if (name === "chat") {
@@ -154,6 +154,7 @@
       loadReviewSummary();
     }
     if (name === "stats") loadStats();
+    if (name === "reviews") loadProjectReviews();
     if (name === "stellar") loadStellar();
     if (name === "discussion") loadComments();
   }
@@ -649,6 +650,45 @@
   function metric(label, value) {
     return '<div class="metric-card"><span class="metric-value">' + escapeHtml(value) +
       '</span><span class="metric-label">' + escapeHtml(label) + "</div>";
+  }
+
+  // --------------------------------------------------------------- reviews
+
+  var reviewsLoaded = false;
+
+  function reviewStatusTag(review) {
+    var cls = review.status === "completed" ? "tag-public" :
+      review.status === "failed" ? "tag-private" : "";
+    return '<span class="tag ' + cls + '">' + escapeHtml(review.status) + "</span>";
+  }
+
+  function loadProjectReviews() {
+    var output = document.getElementById("project-reviews");
+    if (!output || reviewsLoaded) return;
+    reviewsLoaded = true;
+    api("/reviews/api/reviews?project_id=" + PROJECT_ID)
+      .then(function (reviews) {
+        if (!reviews.length) {
+          output.innerHTML =
+            '<p class="sidebar-empty">No reviews yet. Open the review runner to run one.</p>';
+          return;
+        }
+        var html = "";
+        reviews.forEach(function (review) {
+          html +=
+            '<a class="issue-item" href="/reviews/' + review.id + '">' +
+            '<div class="issue-item-title">' + reviewStatusTag(review) + " " +
+            escapeHtml(review.kind) + " review</div>" +
+            '<div class="issue-item-sub">' +
+            (review.findings_count || 0) + " findings &middot; " +
+            escapeHtml(review.created_at ? new Date(review.created_at).toLocaleString() : "") +
+            "</div></a>";
+        });
+        output.innerHTML = html;
+      })
+      .catch(function (error) {
+        output.innerHTML = '<p class="sidebar-empty">' + escapeHtml(error.message) + "</p>";
+      });
   }
 
   // -------------------------------------------------------------- stellar
