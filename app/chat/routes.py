@@ -39,6 +39,7 @@ def _shared_conversation_ids() -> list[int]:
     )
     return [row[0] for row in rows]
 
+
 #: Cap on files returned per project in the chat file tree (keeps the payload
 #: bounded for large imports); ``truncated`` signals the client when it applies.
 MAX_TREE_FILES = 500
