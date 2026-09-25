@@ -194,6 +194,59 @@ class TestRepositoryMethods:
         assert [i["number"] for i in issues] == [2]
 
 
+class TestRateLimit:
+    def test_get_rate_limit_normalizes_core(self, ok_client):
+        client, session = ok_client
+        session.responses = [
+            FakeResponse.from_json(
+                200,
+                {
+                    "resources": {
+                        "core": {
+                            "limit": 5000,
+                            "remaining": 12,
+                            "reset": 1_700_000_000,
+                            "used": 4988,
+                        }
+                    },
+                    "rate": {"limit": 5000, "remaining": 12, "reset": 1_700_000_000},
+                },
+            )
+        ]
+        budget = client.get_rate_limit()
+        assert budget == {
+            "limit": 5000,
+            "remaining": 12,
+            "reset": 1_700_000_000,
+            "used": 4988,
+        }
+        assert session.calls[0]["url"].endswith("/rate_limit")
+
+    def test_get_rate_limit_falls_back_to_rate_object(self, ok_client):
+        client, session = ok_client
+        session.responses = [
+            FakeResponse.from_json(
+                200, {"rate": {"limit": 60, "remaining": 60, "reset": 1_700_000_000}}
+            )
+        ]
+        assert client.get_rate_limit() == {
+            "limit": 60,
+            "remaining": 60,
+            "reset": 1_700_000_000,
+            "used": None,
+        }
+
+    def test_get_rate_limit_returns_none_when_missing(self, ok_client):
+        client, session = ok_client
+        session.responses = [FakeResponse.from_json(200, {"resources": {}})]
+        assert client.get_rate_limit() is None
+
+    def test_get_rate_limit_returns_none_on_non_dict(self, ok_client):
+        client, session = ok_client
+        session.responses = [FakeResponse.from_json(200, [])]
+        assert client.get_rate_limit() is None
+
+
 class TestValidation:
     def test_validate_full_name_accepts_valid(self):
         assert validate_full_name("owner/repo") == "owner/repo"

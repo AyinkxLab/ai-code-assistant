@@ -220,19 +220,117 @@ class TestOAuthFlow:
         assert b"Disconnected your GitHub account" in response.data
         assert GithubAccount.query.count() == 0
 
-    def test_status_returns_connection(self, client, app):
+    def test_status_returns_connection(self, client, app, monkeypatch):
         _logged_in_client(client)
         _create_account(app)
+        monkeypatch.setattr(
+            "app.services.github.requests.Session",
+            lambda: _make_fake_session(
+                [
+                    (
+                        "GET",
+                        "/rate_limit",
+                        200,
+                        {
+                            "resources": {
+                                "core": {
+                                    "limit": 5000,
+                                    "remaining": 4999,
+                                    "reset": 1_700_000_000,
+                                    "used": 1,
+                                }
+                            }
+                        },
+                    )
+                ]
+            ),
+        )
         response = client.get("/github/api/status")
         data = response.get_json()
         assert data["connected"] is True
         assert data["account"]["github_username"] == "ghuser"
         assert "access_token" not in json.dumps(data)
 
+    def test_status_includes_rate_limit_when_available(self, client, app, monkeypatch):
+        _logged_in_client(client)
+        _create_account(app)
+        monkeypatch.setattr(
+            "app.services.github.requests.Session",
+            lambda: _make_fake_session(
+                [
+                    (
+                        "GET",
+                        "/rate_limit",
+                        200,
+                        {
+                            "resources": {
+                                "core": {
+                                    "limit": 5000,
+                                    "remaining": 4999,
+                                    "reset": 1_700_000_000,
+                                    "used": 1,
+                                }
+                            }
+                        },
+                    )
+                ]
+            ),
+        )
+        data = client.get("/github/api/status").get_json()
+        rate_limit = data["rate_limit"]
+        assert rate_limit["available"] is True
+        assert rate_limit["remaining"] == 4999
+        assert rate_limit["reset"] == 1_700_000_000
+        assert rate_limit["low"] is False
+        serialized = json.dumps(data)
+        assert "gho_test_token" not in serialized
+        assert "access_token" not in serialized
+
+    def test_status_flags_low_quota(self, client, app, monkeypatch):
+        _logged_in_client(client)
+        _create_account(app)
+        monkeypatch.setattr(
+            "app.services.github.requests.Session",
+            lambda: _make_fake_session(
+                [
+                    (
+                        "GET",
+                        "/rate_limit",
+                        200,
+                        {
+                            "resources": {
+                                "core": {
+                                    "limit": 5000,
+                                    "remaining": 5,
+                                    "reset": 1_700_000_000,
+                                    "used": 4995,
+                                }
+                            }
+                        },
+                    )
+                ]
+            ),
+        )
+        rate_limit = client.get("/github/api/status").get_json()["rate_limit"]
+        assert rate_limit["available"] is True
+        assert rate_limit["remaining"] == 5
+        assert rate_limit["low"] is True
+
+    def test_status_reports_unavailable_quota(self, client, app, monkeypatch):
+        _logged_in_client(client)
+        _create_account(app)
+        monkeypatch.setattr(
+            "app.services.github.requests.Session",
+            lambda: _make_fake_session([("GET", "/rate_limit", 200, {"resources": {}})]),
+        )
+        rate_limit = client.get("/github/api/status").get_json()["rate_limit"]
+        assert rate_limit == {"available": False}
+
     def test_status_when_disconnected(self, client):
         _logged_in_client(client)
         data = client.get("/github/api/status").get_json()
         assert data["connected"] is False
+        assert "rate_limit" not in data
 
 
 class TestRepositoryApi:

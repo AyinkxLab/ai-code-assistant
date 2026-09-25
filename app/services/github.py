@@ -262,6 +262,36 @@ class GitHubClient:
     def get_user(self) -> dict:
         return self._get("/user")
 
+    def get_rate_limit(self) -> dict | None:
+        """Return the caller's core rate-limit budget, or ``None`` if unknown.
+
+        Uses GitHub's dedicated ``/rate_limit`` endpoint, which does not count
+        against the caller's quota. The result is normalized to
+        ``{"limit", "remaining", "reset", "used"}`` where ``reset`` is a Unix
+        timestamp. Only numeric fields are returned: no token, headers, or raw
+        GitHub response is ever surfaced (issue #77).
+        """
+        data = self._get("/rate_limit")
+        if not isinstance(data, dict):
+            return None
+        resources = data.get("resources")
+        core = (resources or {}).get("core") if isinstance(resources, dict) else None
+        if not isinstance(core, dict):
+            core = data.get("rate")
+        if not isinstance(core, dict):
+            return None
+        remaining = core.get("remaining")
+        reset = core.get("reset")
+        if remaining is None or reset is None:
+            return None
+        limit = core.get("limit")
+        return {
+            "limit": limit,
+            "remaining": remaining,
+            "reset": reset,
+            "used": core.get("used"),
+        }
+
     # -- Repositories -------------------------------------------------------
 
     def list_repositories(self, *, per_page: int = 100) -> list[dict]:
