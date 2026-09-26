@@ -104,9 +104,12 @@ class TestFileView:
         assert body["language"] == "python"
         assert body["content"] == "print(1)"
 
-    def test_highlighter_asset_is_served(self, client, make_user, login):
+    def test_file_viewer_uses_the_shared_highlighter(self, client, make_user, login):
         make_user()
         login()
         response = client.get("/static/js/chat_files.js")
         assert response.status_code == 200
-        assert b"function highlight" in response.data
+        # The sidebar delegates to the shared highlighter and emits the
+        # language-tagged code node it recognizes (issue #94).
+        assert b"AICASyntaxHighlight" in response.data
+        assert b'class="language-' in response.data

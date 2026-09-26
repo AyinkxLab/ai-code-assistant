@@ -1,6 +1,7 @@
 // AI Code Assistant — multi-file project tree in the chat sidebar.
-// Renders the user's workspaces → projects → files, opens a file with a
-// lightweight syntax highlighter, and offers an "Ask about this file" action.
+// Renders the user's workspaces → projects → files, opens a file with the
+// shared syntax highlighter (js/highlight.js), and offers an "Ask about this
+// file" action.
 
 (function () {
   "use strict";
@@ -14,23 +15,10 @@
   var askBtn = document.getElementById("project-file-ask");
   var inputEl = document.getElementById("chat-input");
 
-  var KEYWORDS = {
-    python: ["def", "class", "return", "import", "from", "as", "if", "elif", "else", "for", "while", "try", "except", "finally", "with", "lambda", "yield", "None", "True", "False", "and", "or", "not", "in", "is", "pass", "raise", "async", "await", "self"],
-    javascript: ["function", "const", "let", "var", "return", "if", "else", "for", "while", "class", "extends", "new", "import", "export", "default", "from", "async", "await", "try", "catch", "finally", "throw", "typeof", "null", "undefined", "true", "false", "this"],
-    typescript: ["function", "const", "let", "var", "return", "if", "else", "for", "while", "class", "interface", "type", "enum", "extends", "implements", "new", "import", "export", "default", "from", "async", "await", "try", "catch", "finally", "throw", "public", "private", "protected", "readonly", "null", "undefined", "true", "false", "this"],
-    rust: ["fn", "let", "mut", "pub", "impl", "struct", "enum", "trait", "use", "mod", "match", "if", "else", "for", "while", "loop", "return", "self", "Self", "as", "const", "static", "async", "await", "move", "where", "true", "false"],
-    json: ["true", "false", "null"],
-    default: [],
-  };
-
   function escapeHtml(text) {
     var div = document.createElement("div");
     div.textContent = text == null ? "" : String(text);
     return div.innerHTML;
-  }
-
-  function escapeRegExp(text) {
-    return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   }
 
   function humanSize(bytes) {
@@ -46,35 +34,14 @@
     return isNaN(date.getTime()) ? "" : date.toLocaleDateString();
   }
 
-  // Escapes all non-token text and wraps comments/strings/keywords/numbers.
-  function highlight(code, language) {
-    var lang = (language || "").toLowerCase();
-    var keywords = KEYWORDS[lang] || KEYWORDS.default;
-    var kw = keywords.length ? keywords.map(escapeRegExp).join("|") : "$^";
-    var pattern = new RegExp(
-      "\\/\\/[^\\n]*|#[^\\n]*|\\/\\*[\\s\\S]*?\\*\\/" +
-        "|\"(?:\\\\.|[^\"\\\\])*\"|'(?:\\\\.|[^'\\\\])*'|`(?:\\\\.|[^`\\\\])*`" +
-        "|\\b(?:" + kw + ")\\b" +
-        "|\\b\\d+(?:\\.\\d+)?\\b",
-      "g",
-    );
-
-    var out = "";
-    var last = 0;
-    var match;
-    while ((match = pattern.exec(code)) !== null) {
-      out += escapeHtml(code.slice(last, match.index));
-      var token = match[0];
-      var cls = "tok-keyword";
-      if (/^(\/\/|#|\/\*)/.test(token)) cls = "tok-comment";
-      else if (/^["'`]/.test(token)) cls = "tok-string";
-      else if (/^\d/.test(token)) cls = "tok-number";
-      out += '<span class="' + cls + '">' + escapeHtml(token) + "</span>";
-      last = match.index + token.length;
-      if (token.length === 0) pattern.lastIndex += 1; // guard against zero-width
-    }
-    out += escapeHtml(code.slice(last));
-    return out;
+  // Render the file through the shared highlighter: a `pre > code.language-*`
+  // node that `AICASyntaxHighlight.apply` recognizes. It uses the real
+  // highlight.js grammar when one is vendored, and a small built-in tokenizer
+  // otherwise, so every stored language highlights consistently (issue #94).
+  function renderContent(content, language) {
+    var codeClass = language ? ' class="language-' + escapeHtml(language) + '"' : "";
+    contentEl.innerHTML = "<code" + codeClass + ">" + escapeHtml(content || "") + "</code>";
+    if (window.AICASyntaxHighlight) window.AICASyntaxHighlight.apply(contentEl);
   }
 
   function get(url) {
@@ -182,7 +149,7 @@
         if (data.is_binary || !data.searchable) {
           contentEl.textContent = "This file is binary or too large to display.";
         } else {
-          contentEl.innerHTML = highlight(data.content || "", data.language);
+          renderContent(data.content, data.language);
         }
       })
       .catch(function (error) {
