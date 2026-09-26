@@ -22,6 +22,7 @@ from app.models.workspace_member import (
     STATUS_ACTIVE,
 )
 from app.services.llm import LLMProviderError, get_provider
+from app.services.llm_cache import cached_complete
 from app.services.permissions import assert_content_access
 from app.services.stellar_detection import (
     SOROBAN_CRATES,
@@ -252,9 +253,16 @@ def _run(prompt: str, *, system: str = _PROJECT_SYSTEM) -> str:
     )
 
 
-def _complete(messages: list[dict]) -> str:
-    """Run a completion over a full message list with the configured provider."""
+def _complete(messages: list[dict], *, user=None, no_cache: bool = False) -> str:
+    """Run a completion over a full message list with the configured provider.
+
+    When ``user`` is supplied the request goes through the per-user response
+    cache (issue #18); analyses without an authenticated user call the provider
+    directly.
+    """
     try:
+        if user is not None:
+            return cached_complete(user, messages, no_cache=no_cache)
         provider = get_provider()
         return provider.complete(messages)
     except LLMProviderError as exc:
@@ -683,12 +691,16 @@ def chat_with_project(
     question: str,
     attachments: list[str] | None = None,
     history: list | None = None,
+    *,
+    user=None,
+    no_cache: bool = False,
 ) -> dict:
     """Answer ``question`` about ``project`` using bounded retrieved context.
 
     ``history`` is the bounded prior conversation for this chat session. It is
     folded into retrieval so a follow-up resolves files discussed earlier
-    without having to re-mention them.
+    without having to re-mention them. ``user`` enables the per-user response
+    cache (issue #18); ``no_cache`` bypasses it for this request.
     """
     _assert_accessible(project)
     history = history or []
@@ -697,7 +709,7 @@ def chat_with_project(
     messages = build_messages(project, question, history, attachments=pinned)
     return {
         "context_paths": context["paths"],
-        "analysis": _complete(messages),
+        "analysis": _complete(messages, user=user, no_cache=no_cache),
     }
 
 

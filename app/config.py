@@ -90,6 +90,14 @@ class Config:
     CHAT_IMAGE_MAX_BYTES = int(os.getenv("CHAT_IMAGE_MAX_BYTES", str(5 * 1024 * 1024)))
     CHAT_IMAGE_MAX_PER_MESSAGE = int(os.getenv("CHAT_IMAGE_MAX_PER_MESSAGE", "4"))
 
+    # LLM response cache (issue #18). Identical non-streaming completions for the
+    # same user/provider/model/prompt/params are served from memory. Disabled
+    # when LLM_CACHE_ENABLED is "0"; entries expire after LLM_CACHE_TTL seconds
+    # and the store keeps at most LLM_CACHE_MAX_ENTRIES (LRU).
+    LLM_CACHE_ENABLED = os.getenv("LLM_CACHE_ENABLED", "1") == "1"
+    LLM_CACHE_TTL = int(os.getenv("LLM_CACHE_TTL", "300"))
+    LLM_CACHE_MAX_ENTRIES = int(os.getenv("LLM_CACHE_MAX_ENTRIES", "256"))
+
     # Prompt library (Phase 3): version history. Every prompt save is recorded
     # as a version; when a prompt is deleted its history is retained for this
     # many days before being purged.
