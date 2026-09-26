@@ -1187,10 +1187,15 @@ def api_project_chat(project_id: int):
         return jsonify({"error": "A message is required."}), 400
 
     session = _get_chat_session(project, data.get("session_id"))
+    history = (
+        ProjectMessage.query.filter_by(session_id=session.id)
+        .order_by(ProjectMessage.created_at)
+        .all()
+    )
     db.session.add(
         ProjectMessage(project_id=project.id, session=session, role="user", content=content)
     )
-    result = project_analysis.chat_with_project(project, content, attachments)
+    result = project_analysis.chat_with_project(project, content, attachments, history=history)
     message = ProjectMessage(
         project_id=project.id, session=session, role="assistant", content=result["analysis"]
     )
@@ -1251,7 +1256,9 @@ def api_project_chat_stream(project_id: int):
             return
 
         try:
-            reply = project_analysis.chat_with_project(project, content, attachments)["analysis"]
+            reply = project_analysis.chat_with_project(
+                project, content, attachments, history=history
+            )["analysis"]
         except LLMProviderError as exc:
             yield f"data: {json.dumps({'type': 'error', 'error': str(exc)})}\n\n"
             return

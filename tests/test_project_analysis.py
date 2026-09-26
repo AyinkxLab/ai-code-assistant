@@ -54,6 +54,14 @@ def _ready_project(files):
     return project
 
 
+class _HistoryMessage:
+    """Minimal stand-in for a persisted chat message (role + content)."""
+
+    def __init__(self, role, content):
+        self.role = role
+        self.content = content
+
+
 class TestBoundedContext:
     def test_context_is_bounded(self, app):
         big_file = "line = 'x' * 10\n" * 2000
@@ -138,6 +146,69 @@ class TestChat:
         assert messages[0]["role"] == "system"
         assert "untrusted DATA" in messages[0]["content"]
         assert messages[-1]["role"] == "user"
+
+
+class TestMultiTurnChat:
+    """Follow-up questions should keep context from earlier turns."""
+
+    def _project(self):
+        return _ready_project(
+            [
+                ("src/handler.py", "def handle():\n    return 1\n"),
+                ("README.md", "About this project\n"),
+            ]
+        )
+
+    def test_follow_up_resolves_previously_discussed_file(self, app):
+        project = self._project()
+        history = [
+            _HistoryMessage("user", "What does src/handler.py do?"),
+            _HistoryMessage("assistant", "`src/handler.py` defines handle() [CONFIRMED]."),
+        ]
+        with _authorized_context(app, project):
+            result = project_analysis.chat_with_project(project, "and its tests?", history=history)
+        assert "src/handler.py" in result["context_paths"]
+
+    def test_follow_up_without_history_does_not_pin_the_file(self, app):
+        project = self._project()
+        with _authorized_context(app, project):
+            result = project_analysis.chat_with_project(project, "and its tests?")
+        assert "src/handler.py" not in result["context_paths"]
+
+    def test_history_is_bounded_in_provider_messages(self, app):
+        project = _ready_project([("app.py", "x")])
+        history = [_HistoryMessage("user", f"msg {i}") for i in range(20)]
+        with _authorized_context(app, project):
+            messages = project_analysis.build_messages(project, "hello", history)
+        # system + bounded history + the current user turn
+        assert len(messages) == 1 + project_analysis.MAX_HISTORY_MESSAGES + 1
+        assert messages[1]["content"] == "msg 8"
+        assert messages[-1]["role"] == "user"
+
+    def test_history_paths_ignore_files_not_in_current_snapshot(self, app):
+        project = _ready_project([("app.py", "x")])
+        history = [_HistoryMessage("assistant", "See `removed.py` for details.")]
+        with _authorized_context(app, project):
+            pinned = project_analysis._history_paths(project, history)
+        assert pinned == []
+
+    def test_history_paths_are_deduplicated_and_capped(self, app):
+        project = _ready_project(
+            [
+                ("a.py", "x"),
+                ("b.py", "x"),
+                ("c.py", "x"),
+                ("d.py", "x"),
+            ]
+        )
+        history = [
+            _HistoryMessage("user", "a.py b.py"),
+            _HistoryMessage("assistant", "`a.py` and c.py and d.py"),
+        ]
+        with _authorized_context(app, project):
+            pinned = project_analysis._history_paths(project, history)
+        assert pinned == ["b.py", "c.py", "d.py"]
+        assert len(pinned) <= project_analysis.MAX_HISTORY_PATHS
 
 
 class TestAnalyzeProject:
