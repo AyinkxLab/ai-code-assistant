@@ -228,3 +228,67 @@ class TestDependencyInventory:
     def test_no_manifests_returns_empty(self, app):
         project = _ready_project([("app.py", "x")])
         assert project_analysis.dependency_inventory(project) == []
+
+
+class TestSorobanDependencyAnalysis:
+    def _capture_prompt(self, monkeypatch):
+        captured = {}
+
+        def fake_run(prompt):
+            captured["prompt"] = prompt
+            return "analysis"
+
+        monkeypatch.setattr(project_analysis, "_run", fake_run)
+        return captured
+
+    def test_stellar_project_gets_soroban_context(self, app, monkeypatch):
+        captured = self._capture_prompt(monkeypatch)
+        project = _ready_project(
+            [
+                ("Cargo.toml", '[dependencies]\nsoroban-sdk = "21.0.0"\nserde = "1.0"\n'),
+                ("src/lib.rs", "#[contractimpl]\npub struct Contract;"),
+            ]
+        )
+        with _authorized_context(app, project):
+            result = project_analysis.analyze_project(project, "dependencies")
+
+        assert result["kind"] == "dependencies"
+        prompt = captured["prompt"]
+        assert "Soroban dependency context" in prompt
+        assert "soroban-sdk =21.0.0" in prompt
+        assert "[SUGGESTION]" in prompt
+        assert "registry" in prompt.lower()
+
+    def test_non_stellar_project_prompt_is_unchanged(self, app, monkeypatch):
+        captured = self._capture_prompt(monkeypatch)
+        project = _ready_project([("requirements.txt", "requests==2.31.0\n")])
+        with _authorized_context(app, project):
+            project_analysis.analyze_project(project, "dependencies")
+
+        prompt = captured["prompt"]
+        assert "Soroban dependency context" not in prompt
+        assert "requests ==2.31.0" in prompt
+
+    def test_stellar_project_without_soroban_crates_still_gets_context(self, app, monkeypatch):
+        captured = self._capture_prompt(monkeypatch)
+        project = _ready_project(
+            [
+                ("package.json", '{"dependencies": {"@stellar/stellar-sdk": "^11.0.0"}}'),
+            ]
+        )
+        with _authorized_context(app, project):
+            project_analysis.analyze_project(project, "dependencies")
+
+        prompt = captured["prompt"]
+        assert "Soroban dependency context" in prompt
+        assert "(no Soroban crates were found in the dependency inventory)" in prompt
+
+    def test_soroban_context_lists_only_soroban_crates(self):
+        inventory = [
+            {"file": "Cargo.toml", "name": "soroban-sdk", "constraint": "=21.0.0"},
+            {"file": "Cargo.toml", "name": "serde", "constraint": "=1.0"},
+        ]
+        context = project_analysis._soroban_dependency_context(inventory)
+        assert "soroban-sdk =21.0.0" in context
+        assert "serde" not in context
+        assert "[SUGGESTION]" in context
