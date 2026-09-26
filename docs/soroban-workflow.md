@@ -29,7 +29,7 @@ Related reading: [docs/stellar.md](stellar.md) (tooling reference) and
 1. Open **Workspaces** in the top navigation (`/workspaces/`) and create or open
    a workspace.
 2. In the workspace page, under **Import a project** you can:
-   - **Upload** an archive (`.zip`, `.tar`, `.tar.gz`, `.tgz`), or
+   - **Upload** an archive (`.zip`, `.tar`, `.tar.gz`, `.tgz`, `.7z`, `.rar`), or
    - paste an `owner/name` GitHub repository and click **Import from GitHub**.
 
 Once the import finishes, the import feedback shows the result. A detected
