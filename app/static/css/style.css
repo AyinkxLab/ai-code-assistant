@@ -1521,6 +1521,46 @@ a:hover {
   border-radius: 0 0 6px 6px;
 }
 
+/* Commit detail page (issue #65) --------------------------------------- */
+.commit-row {
+  text-decoration: none;
+  color: inherit;
+}
+
+.commit-detail-message {
+  white-space: pre-wrap;
+  font-weight: 500;
+  margin-bottom: 8px;
+}
+
+.commit-files {
+  margin-top: 16px;
+}
+
+.diff-line {
+  display: block;
+  white-space: pre-wrap;
+}
+
+.diff-added {
+  background: rgba(46, 160, 67, 0.15);
+  color: #2ea043;
+}
+
+.diff-removed {
+  background: rgba(248, 81, 73, 0.15);
+  color: #f85149;
+}
+
+.diff-hunk {
+  background: var(--bg-elevated);
+  color: var(--text-muted);
+}
+
+.diff-meta {
+  color: var(--text-muted);
+}
+
 .pull-files {
   margin-top: 16px;
 }

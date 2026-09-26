@@ -131,5 +131,22 @@
       pre.innerHTML = html;
       container.appendChild(pre);
     },
+
+    // Render a unified diff patch with per-line color coding.
+    // Added/removed lines get their own class; hunk headers and file headers
+    // are dimmed. Every line is HTML-escaped before insertion.
+    renderPatch: function (patch) {
+      if (!patch) return '<div class="code-view diff">(no inline diff available)</div>';
+      var lines = String(patch).replace(/\r\n/g, "\n").split("\n");
+      var html = lines.map(function (line) {
+        var cls = "diff-line";
+        if (line.indexOf("@@") === 0) cls += " diff-hunk";
+        else if (line.indexOf("+++") === 0 || line.indexOf("---") === 0) cls += " diff-meta";
+        else if (line.charAt(0) === "+") cls += " diff-added";
+        else if (line.charAt(0) === "-") cls += " diff-removed";
+        return '<span class="' + cls + '">' + this.escapeHtml(line) + "</span>";
+      }, this).join("");
+      return '<div class="code-view diff">' + html + "</div>";
+    },
   };
 })();

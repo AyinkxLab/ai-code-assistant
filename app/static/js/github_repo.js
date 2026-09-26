@@ -219,8 +219,10 @@
         return;
       }
       commits.forEach(function (commit) {
-        var row = document.createElement("div");
+        var row = document.createElement("a");
         row.className = "commit-row";
+        row.href = "/github/repos/" + encodeURIComponent(OWNER) + "/" + encodeURIComponent(REPO) +
+          "/commits/" + encodeURIComponent(commit.sha);
         row.innerHTML =
           '<span class="commit-sha">' + GH.escapeHtml(commit.short_sha) + "</span>" +
           '<span class="commit-message">' + GH.escapeHtml(commit.message) + "</span>" +
@@ -375,6 +377,14 @@
         if (tab.dataset.tab === "pulls") loadPulls();
       });
     });
+
+    // Open the tab named in ?tab=... (used by the commit detail "Back to
+    // commit list" link), defaulting to the Files tab.
+    var requestedTab = new URLSearchParams(window.location.search).get("tab");
+    if (requestedTab) {
+      var requestedButton = document.querySelector('.repo-tab[data-tab="' + requestedTab + '"]');
+      if (requestedButton) requestedButton.click();
+    }
 
     var branchSelect = document.getElementById("branch-select");
     if (branchSelect) {

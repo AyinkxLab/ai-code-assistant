@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+
+{% block title %}Commit {{ sha[:7] }} - {{ owner }}/{{ repo }} - {{ config.APP_NAME }}{% endblock %}
+
+{% block content %}
+<div class="github-header">
+  <div>
+    <h1><a class="repo-breadcrumb" href="{{ url_for('github.repos') }}">Repositories</a> / <a class="repo-breadcrumb" href="{{ url_for('github.repo_detail', owner=owner, repo=repo) }}">{{ owner }}/{{ repo }}</a> / <a class="repo-breadcrumb" href="{{ url_for('github.repo_detail', owner=owner, repo=repo, tab='commits') }}">Commits</a> / {{ sha[:7] }}</h1>
+  </div>
+</div>
+
+<p class="github-hint"><a class="repo-breadcrumb" href="{{ url_for('github.repo_detail', owner=owner, repo=repo, tab='commits') }}">&larr; Back to commit list</a></p>
+
+<div id="commit-detail" class="commit-detail" data-owner="{{ owner }}" data-repo="{{ repo }}" data-sha="{{ sha }}">
+  <p class="sidebar-empty">Loading commit...</p>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/github.js') }}"></script>
+<script src="{{ url_for('static', filename='js/github_commit.js') }}"></script>
+{% endblock %}
