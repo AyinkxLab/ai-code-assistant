@@ -118,6 +118,29 @@
       container.appendChild(next);
     },
 
+    // Render a "Load more" control that appends the next page (issue #66).
+    // `meta` is a list envelope with `has_next`; the button is removed once the
+    // last page has been reached. `onLoadMore()` is invoked to fetch + append.
+    renderLoadMore: function (container, meta, onLoadMore) {
+      if (!container) return;
+      var existing = container.querySelector(".load-more-row");
+      if (existing) existing.remove();
+      if (!meta || !meta.has_next) return;
+      var row = document.createElement("div");
+      row.className = "load-more-row";
+      var button = document.createElement("button");
+      button.type = "button";
+      button.className = "btn btn-ghost btn-sm";
+      button.textContent = "Load more";
+      button.addEventListener("click", function () {
+        button.disabled = true;
+        button.textContent = "Loading...";
+        onLoadMore();
+      });
+      row.appendChild(button);
+      container.appendChild(row);
+    },
+
     // Render an AI analysis block that highlights [CONFIRMED] / [SUGGESTION].
     renderAnalysis: function (container, analysis) {
       container.hidden = false;

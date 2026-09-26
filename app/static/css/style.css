@@ -1387,6 +1387,22 @@ a:hover {
   font-size: 0.8rem;
 }
 
+.commit-filter {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 10px;
+  color: var(--text-muted);
+  font-size: 0.8rem;
+}
+
+.load-more-row {
+  display: flex;
+  justify-content: center;
+  padding: 10px;
+}
+
 .issue-number {
   font-family: var(--font-mono);
   color: var(--accent);
