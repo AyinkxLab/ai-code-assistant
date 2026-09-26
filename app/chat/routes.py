@@ -30,6 +30,7 @@ from app.models import (
 from app.models.message_attachment import ALLOWED_IMAGE_TYPES
 from app.models.project import STATUS_READY
 from app.services.llm import LLMProviderError, provider_status
+from app.services.llm_cache import cached_complete
 from app.services.notifications import notify
 from app.services.provider_config import (
     DEFAULT_TEMPERATURE,
@@ -446,6 +447,8 @@ def send_message(conversation_id: int):
     if not status["configured"]:
         return jsonify(_provider_not_configured_payload(status)), 503
 
+    # ``no_cache`` lets a client force a fresh provider call (issue #18).
+    no_cache = bool(data.get("no_cache"))
     user_message = Message(role="user", content=content)
     conversation.messages.append(user_message)
     error = _link_attachments(conversation, user_message, attachment_ids)
@@ -457,7 +460,15 @@ def send_message(conversation_id: int):
 
     try:
         provider = RetryingProvider(build_provider(current_user, conversation.provider))
-        reply = provider.chat(messages, **_generation_kwargs(conversation)).content
+        generation = _generation_kwargs(conversation)
+        reply = cached_complete(
+            current_user,
+            messages,
+            provider=provider,
+            model=generation.get("model"),
+            params=generation.get("params"),
+            no_cache=no_cache,
+        )
     except LLMProviderError as exc:
         db.session.rollback()
         return jsonify({"error": str(exc)}), 502

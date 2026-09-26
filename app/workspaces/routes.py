@@ -1186,6 +1186,8 @@ def api_project_chat(project_id: int):
     if not content:
         return jsonify({"error": "A message is required."}), 400
 
+    # ``no_cache`` lets a client force a fresh provider call (issue #18).
+    no_cache = bool(data.get("no_cache"))
     session = _get_chat_session(project, data.get("session_id"))
     history = (
         ProjectMessage.query.filter_by(session_id=session.id)
@@ -1195,7 +1197,9 @@ def api_project_chat(project_id: int):
     db.session.add(
         ProjectMessage(project_id=project.id, session=session, role="user", content=content)
     )
-    result = project_analysis.chat_with_project(project, content, attachments, history=history)
+    result = project_analysis.chat_with_project(
+        project, content, attachments, history=history, user=current_user, no_cache=no_cache
+    )
     message = ProjectMessage(
         project_id=project.id, session=session, role="assistant", content=result["analysis"]
     )

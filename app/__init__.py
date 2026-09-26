@@ -38,6 +38,11 @@ def create_app(config_name: str | None = None) -> Flask:
     login_manager.init_app(app)
     csrf.init_app(app)
 
+    # Per-user LLM response cache (issue #18).
+    from app.services.llm_cache import configure_cache
+
+    configure_cache(app)
+
     # Register blueprints.
     from app.auth import bp as auth_bp
     from app.chat import bp as chat_bp
