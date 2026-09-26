@@ -1316,6 +1316,34 @@ a:hover {
   background: var(--bg-elevated);
 }
 
+.file-row .file-path {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.file-row .file-size {
+  flex: 0 0 auto;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.file-row .file-commit {
+  flex: 0 1 auto;
+  max-width: 45%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-muted);
+  font-size: 0.75rem;
+}
+
+.file-row .file-commit-sha {
+  color: var(--accent);
+}
+
 .commit-list,
 .issue-list,
 .pull-list {

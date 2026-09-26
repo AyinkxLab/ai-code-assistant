@@ -13,6 +13,7 @@ them into user-facing responses without swallowing failures.
 from __future__ import annotations
 
 import base64
+import json
 import logging
 import re
 import time
@@ -503,6 +504,78 @@ class GitHubClient:
 
     def get_commit(self, full_name: str, sha: str) -> dict:
         return self._get(f"/repos/{full_name}/commits/{sha}")
+
+    def _graphql(self, query: str, variables: dict) -> dict:
+        """Execute a GraphQL query against the GitHub GraphQL API."""
+        url = f"{self.api_url}/graphql"
+        try:
+            response = self.session.request(
+                "POST",
+                url,
+                json={"query": query, "variables": variables},
+                timeout=self.timeout,
+            )
+        except requests.RequestException as exc:
+            raise GitHubNetworkError(
+                "Could not reach the GitHub API. Please try again.", detail=str(exc)
+            ) from exc
+        if response.status_code == 401:
+            raise GitHubAuthError(
+                "Your GitHub connection is no longer valid. Reconnect your account."
+            )
+        if response.status_code >= 400:
+            raise GitHubError(
+                "The GitHub request failed. Please try again.",
+                detail=_parse_error_body(response),
+            )
+        try:
+            payload = response.json()
+        except ValueError as exc:
+            raise GitHubError("GitHub API returned an unexpected response.") from exc
+        if payload.get("errors"):
+            raise GitHubError("The GitHub request failed. Please try again.")
+        return payload.get("data") or {}
+
+    def get_last_commits(self, full_name: str, paths: list[str], ref: str) -> dict[str, dict]:
+        """Return the last commit touching each path in a single request.
+
+        GitHub's REST API can only answer "last commit for this path" one path
+        at a time. Batching the per-path history lookups into one GraphQL query
+        keeps this to a single API call regardless of how many files are shown.
+        Files whose history cannot be resolved are simply omitted from the
+        result.
+        """
+        if not paths:
+            return {}
+        owner, _, name = full_name.partition("/")
+        fields = []
+        for index, path in enumerate(paths):
+            literal = json.dumps(path)  # safe GraphQL string literal
+            fields.append(
+                f"f{index}: object(expression: $ref) {{ ... on Commit {{ "
+                f"history(first: 1, path: {literal}) {{ nodes {{ oid messageHeadline "
+                f"committedDate author {{ name }} }} }} }} }}"
+            )
+        query = (
+            "query($owner: String!, $name: String!, $ref: String!) { "
+            "repository(owner: $owner, name: $name) {" + "\n".join(fields) + "}}"
+        )
+        data = self._graphql(query, {"owner": owner, "name": name, "ref": ref})
+        repository = data.get("repository") or {}
+        commits: dict[str, dict] = {}
+        for index, path in enumerate(paths):
+            node = repository.get(f"f{index}") or {}
+            nodes = (node.get("history") or {}).get("nodes") or []
+            if not nodes:
+                continue
+            commit = nodes[0]
+            commits[path] = {
+                "sha": commit.get("oid"),
+                "message": commit.get("messageHeadline"),
+                "author": (commit.get("author") or {}).get("name"),
+                "date": commit.get("committedDate"),
+            }
+        return commits
 
     # -- Issues -------------------------------------------------------------
 

@@ -476,12 +476,66 @@ class TestApiEndpoints:
                 "GET",
                 "/git/trees/",
                 200,
-                {"tree": [{"path": "app/__init__.py", "type": "blob"}], "truncated": False},
-            )
+                {
+                    "tree": [
+                        {"path": "app/__init__.py", "type": "blob", "size": 2048},
+                        {"path": "app", "type": "tree"},
+                    ],
+                    "truncated": False,
+                },
+            ),
+            (
+                "POST",
+                "/graphql",
+                200,
+                {
+                    "data": {
+                        "repository": {
+                            "f0": {
+                                "history": {
+                                    "nodes": [
+                                        {
+                                            "oid": "abc1234567890",
+                                            "messageHeadline": "Fix the bug",
+                                            "committedDate": "2026-01-01T00:00:00Z",
+                                            "author": {"name": "Alice"},
+                                        }
+                                    ]
+                                }
+                            }
+                        }
+                    }
+                },
+            ),
+        ]
+        self._script_client(client, app, script, monkeypatch)
+        data = client.get("/github/api/repos/owner/repo/tree?ref=main").get_json()
+        blob = data["entries"][0]
+        assert blob["path"] == "app/__init__.py"
+        assert blob["size"] == 2048
+        assert blob["last_commit"]["sha"] == "abc1234567890"
+        assert blob["last_commit"]["message"] == "Fix the bug"
+        assert blob["last_commit"]["author"] == "Alice"
+        # Directories carry no last-commit metadata.
+        assert data["entries"][1]["last_commit"] is None
+
+    def test_tree_survives_commit_lookup_failure(self, client, app, monkeypatch):
+        script = [
+            (
+                "GET",
+                "/git/trees/",
+                200,
+                {
+                    "tree": [{"path": "app/__init__.py", "type": "blob", "size": 10}],
+                    "truncated": False,
+                },
+            ),
+            ("POST", "/graphql", 500, {"message": "boom"}),
         ]
         self._script_client(client, app, script, monkeypatch)
         data = client.get("/github/api/repos/owner/repo/tree?ref=main").get_json()
         assert data["entries"][0]["path"] == "app/__init__.py"
+        assert data["entries"][0]["last_commit"] is None
 
     def test_commits_returns_summary(self, client, app, monkeypatch):
         script = [
