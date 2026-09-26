@@ -1137,6 +1137,23 @@ a:hover {
   margin-top: 6px;
 }
 
+.repo-stat,
+.repo-homepage {
+  color: var(--text-muted);
+  font-size: 0.85rem;
+}
+
+.repo-homepage {
+  color: var(--accent);
+}
+
+.repo-topics {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  vertical-align: middle;
+}
+
 .repo-breadcrumb {
   color: var(--text-muted);
 }

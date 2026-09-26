@@ -606,6 +606,16 @@ class GitHubClient:
 # -- Payload normalization ---------------------------------------------------
 
 
+def _license_label(license_data: dict | None) -> str | None:
+    """Return a short license label, preferring the SPDX id."""
+    if not license_data:
+        return None
+    spdx = license_data.get("spdx_id")
+    if spdx and spdx != "NOASSERTION":
+        return spdx
+    return license_data.get("name")
+
+
 def repo_payload(repo: dict) -> dict:
     """Normalize a repository dict into the shape consumed by the UI."""
     return {
@@ -621,6 +631,12 @@ def repo_payload(repo: dict) -> dict:
         "html_url": repo.get("html_url"),
         "size": repo.get("size"),
         "fork": bool(repo.get("fork")),
+        "stars": repo.get("stargazers_count") or 0,
+        "forks": repo.get("forks_count") or 0,
+        "open_issues_count": repo.get("open_issues_count") or 0,
+        "license": _license_label(repo.get("license")),
+        "topics": repo.get("topics") or [],
+        "homepage": repo.get("homepage") or "",
     }
 
 
