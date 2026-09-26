@@ -69,6 +69,8 @@ class TestChatProjectFilesApi:
         assert by_path["app.py"]["language"] == "python"
         assert by_path["app.py"]["created_at"]
         assert by_path["app.py"]["project_id"] == project.id
+        assert by_path["app.py"]["is_binary"] is False
+        assert by_path["app.py"]["searchable"] is True
 
     def test_indexing_project_listed_without_files(self, client, make_user, login):
         _seed(make_user, login, ready=False, files=())
@@ -113,3 +115,57 @@ class TestFileView:
         # language-tagged code node it recognizes (issue #94).
         assert b"AICASyntaxHighlight" in response.data
         assert b'class="language-' in response.data
+
+    def test_binary_and_oversized_files_are_flagged(self, client, make_user, login):
+        user = make_user(username="chatuser", email="chatuser@example.com")
+        login(email="chatuser@example.com")
+        workspace = Workspace(user_id=user.id, name="Badge workspace")
+        db.session.add(workspace)
+        db.session.commit()
+        project = Project(
+            workspace_id=workspace.id,
+            user_id=user.id,
+            name="Badge project",
+            source=SOURCE_ARCHIVE,
+            status=STATUS_READY,
+        )
+        db.session.add(project)
+        db.session.commit()
+        db.session.add_all(
+            [
+                ProjectFile(
+                    project_id=project.id, path="logo.png", size=2048, is_binary=True, content=None
+                ),
+                ProjectFile(
+                    project_id=project.id,
+                    path="huge.py",
+                    size=999999,
+                    is_binary=False,
+                    content=None,
+                ),
+                ProjectFile(
+                    project_id=project.id,
+                    path="app.py",
+                    size=10,
+                    is_binary=False,
+                    content="print(1)",
+                ),
+            ]
+        )
+        db.session.commit()
+
+        files = client.get("/chat/api/project-files").get_json()[0]["projects"][0]["files"]
+        by_path = {f["path"]: f for f in files}
+        assert by_path["logo.png"]["is_binary"] is True
+        assert by_path["logo.png"]["searchable"] is False
+        assert by_path["huge.py"]["is_binary"] is False
+        assert by_path["huge.py"]["searchable"] is False
+        assert by_path["app.py"]["searchable"] is True
+
+    def test_viewers_render_file_badges(self, client, make_user, login):
+        make_user()
+        login()
+        for asset in ("chat_files.js", "project.js"):
+            response = client.get(f"/static/js/{asset}")
+            assert response.status_code == 200
+            assert b"file-badge" in response.data, asset

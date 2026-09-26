@@ -1784,6 +1784,30 @@ a:hover {
   font-size: 0.7rem;
 }
 
+.file-badge {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 0 6px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  font-size: 0.65rem;
+  line-height: 1.5;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+  vertical-align: middle;
+}
+
+.file-badge-binary {
+  color: var(--warning);
+  border-color: var(--warning);
+}
+
+.file-badge-oversized {
+  color: var(--error);
+  border-color: var(--error);
+}
+
 .tree-empty {
   color: var(--text-muted);
   font-size: 0.8rem;

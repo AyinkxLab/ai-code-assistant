@@ -185,6 +185,7 @@
       li.innerHTML =
         '<button class="tree-file-label" type="button">' +
         escapeHtml(file.path.split("/").pop()) +
+        fileBadges(file) +
         '<span class="tree-file-size">' + humanSize(file.size) + "</span></button>";
       li.addEventListener("click", function () {
         loadFile(file.path);
@@ -205,6 +206,17 @@
     if (size < 1024) return size + " B";
     if (size < 1048576) return (size / 1024).toFixed(1) + " KB";
     return (size / 1048576).toFixed(1) + " MB";
+  }
+
+  // Binary/oversized badges shown on tree rows and the viewer header (#95).
+  function fileBadges(file) {
+    if (file.is_binary) {
+      return '<span class="file-badge file-badge-binary">binary</span>';
+    }
+    if (file.searchable === false) {
+      return '<span class="file-badge file-badge-oversized">oversized</span>';
+    }
+    return "";
   }
 
   function loadDir(fullPath, containerUl) {
@@ -284,18 +296,25 @@
     viewerEl.innerHTML = '<p class="sidebar-empty">Loading file...</p>';
     api("/workspaces/api/projects/" + PROJECT_ID + "/file?path=" + encodeURIComponent(path))
       .then(function (data) {
+        var meta = [];
+        if (data.language) meta.push('<span class="tag">' + escapeHtml(data.language) + "</span>");
+        var sizeText = humanSize(data.size);
+        if (sizeText) meta.push('<span class="tag">' + sizeText + "</span>");
+        meta.push(fileBadges(data));
+        var header =
+          '<div class="file-viewer-header"><code>' + escapeHtml(data.path) + "</code>" +
+          meta.join("") +
+          "</div>";
+
         if (!data.searchable) {
+          var reason = data.is_binary ? "binary" : "too large to display or search";
           viewerEl.innerHTML =
-            '<p class="repo-meta">' + escapeHtml(data.path) +
-            " — this file is binary or too large to display/search (size: " + humanSize(data.size) + ").</p>";
+            header + '<p class="repo-meta">This file is ' + reason + " — its contents are unavailable.</p>";
           return;
         }
         var codeClass = data.language ? ' class="language-' + escapeHtml(data.language) + '"' : "";
         viewerEl.innerHTML =
-          '<div class="file-viewer-header">' +
-          '<code>' + escapeHtml(data.path) + "</code>" +
-          '<span class="tag">' + escapeHtml(data.language || "text") + "</span>" +
-          "</div>" +
+          header +
           '<pre class="code-view"><code' + codeClass + ">" + escapeHtml(data.content) + "</code></pre>";
         if (window.AICASyntaxHighlight) window.AICASyntaxHighlight.apply(viewerEl);
       })

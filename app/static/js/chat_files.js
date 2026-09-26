@@ -28,6 +28,17 @@
     return (value / (1024 * 1024)).toFixed(1) + " MB";
   }
 
+  // Binary/oversized badges shown on tree rows and the viewer header (#95).
+  function fileBadges(file) {
+    if (file.is_binary) {
+      return '<span class="file-badge file-badge-binary">binary</span>';
+    }
+    if (file.searchable === false) {
+      return '<span class="file-badge file-badge-oversized">oversized</span>';
+    }
+    return "";
+  }
+
   function formatDate(iso) {
     if (!iso) return "";
     var date = new Date(iso);
@@ -106,6 +117,7 @@
             li.dataset.language = file.language || "";
             li.innerHTML =
               '<span class="file-tree-name">' + escapeHtml(file.path) + "</span>" +
+              fileBadges(file) +
               '<span class="file-tree-meta">' + humanSize(file.size) +
               (file.created_at ? " · " + formatDate(file.created_at) : "") + "</span>";
             filesEl.appendChild(li);
@@ -144,10 +156,14 @@
       "/workspaces/api/projects/" + projectId + "/file?path=" + encodeURIComponent(path),
     )
       .then(function (data) {
-        metaEl.textContent =
-          data.path + " · " + humanSize(data.size) + (data.language ? " · " + data.language : "");
+        metaEl.innerHTML =
+          escapeHtml(data.path) + " · " + humanSize(data.size) +
+          (data.language ? " · " + escapeHtml(data.language) : "") +
+          " " + fileBadges(data);
         if (data.is_binary || !data.searchable) {
-          contentEl.textContent = "This file is binary or too large to display.";
+          contentEl.textContent = data.is_binary
+            ? "This file is binary; its contents are unavailable."
+            : "This file is too large to display; its contents are unavailable.";
         } else {
           renderContent(data.content, data.language);
         }
