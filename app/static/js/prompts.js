@@ -60,6 +60,27 @@
     listEl.prepend(el);
   }
 
+  function showImportStatus(message, isError) {
+    var el = document.getElementById("prompt-import-status");
+    if (!el) return;
+    el.textContent = message;
+    el.className = isError ? "field-hint flash-error" : "field-hint";
+  }
+
+  function importFile(file) {
+    var form = new FormData();
+    form.append("file", file);
+    api("/prompts/api/prompts/import", { method: "POST", body: form })
+      .then(function (result) {
+        showImportStatus(result.message, false);
+        refresh();
+        loadCategories();
+      })
+      .catch(function (error) {
+        showImportStatus(error.message, true);
+      });
+  }
+
   function refresh() {
     var params = [];
     var query = searchEl.value.trim();
@@ -239,6 +260,15 @@
     searchEl.addEventListener("input", refresh);
     categoryEl.addEventListener("change", refresh);
     favEl.addEventListener("change", refresh);
+    var importInput = document.getElementById("prompt-import-file");
+    if (importInput) {
+      importInput.addEventListener("change", function () {
+        var file = importInput.files && importInput.files[0];
+        if (!file) return;
+        importFile(file);
+        importInput.value = "";
+      });
+    }
     document.getElementById("new-prompt").addEventListener("click", function () {
       openEditor(null);
     });
