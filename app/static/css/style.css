@@ -643,12 +643,28 @@ a:hover {
   font-family: inherit;
   font-size: 0.95rem;
   padding: 12px;
-  resize: vertical;
+  resize: none;
+  overflow-y: auto;
+  max-height: 200px;
 }
 
 .chat-composer textarea:focus {
   outline: none;
   border-color: var(--accent);
+}
+
+.chat-composer textarea[aria-invalid="true"] {
+  border-color: var(--error);
+}
+
+.composer-error {
+  color: var(--error);
+  font-size: 0.8rem;
+  margin-top: 8px;
+}
+
+.composer-error[hidden] {
+  display: none;
 }
 
 .composer-actions {
