@@ -626,6 +626,112 @@ class TestMetrics:
         assert client.get("/reviews/api/metrics").get_json()["findings_trend"] == []
 
 
+class TestExportReview:
+    def _make_review(self, user, with_finding=True):
+        review = Review(
+            user_id=user.id,
+            source="project",
+            kind="quality",
+            status="completed",
+            findings_count=1 if with_finding else 0,
+        )
+        review.summary = json.dumps({"overall_assessment": "Looks fine."})
+        db.session.add(review)
+        db.session.commit()
+        if with_finding:
+            db.session.add(
+                ReviewFinding(
+                    review_id=review.id,
+                    file="app/main.py",
+                    line=2,
+                    severity="high",
+                    category="bug",
+                    explanation="Unchecked input.",
+                    recommendation="Validate it.",
+                    confidence="confirmed",
+                )
+            )
+            db.session.commit()
+        return review
+
+    def test_export_json(self, client, make_user, login):
+        user = make_user()
+        login()
+        review = self._make_review(user)
+
+        response = client.get(f"/reviews/api/reviews/{review.id}/export?format=json")
+
+        assert response.status_code == 200
+        assert response.mimetype == "application/json"
+        assert "attachment" in response.headers["Content-Disposition"]
+        assert f"review-{review.id}.json" in response.headers["Content-Disposition"]
+        payload = json.loads(response.get_data(as_text=True))
+        assert payload["review"]["id"] == review.id
+        assert payload["findings"][0]["severity"] == "high"
+        assert payload["findings"][0]["confidence_label"] == "[CONFIRMED]"
+
+    def test_export_defaults_to_json(self, client, make_user, login):
+        user = make_user()
+        login()
+        review = self._make_review(user)
+
+        response = client.get(f"/reviews/api/reviews/{review.id}/export")
+
+        assert response.status_code == 200
+        assert response.mimetype == "application/json"
+        assert f"review-{review.id}.json" in response.headers["Content-Disposition"]
+
+    def test_export_markdown(self, client, make_user, login):
+        user = make_user()
+        login()
+        review = self._make_review(user)
+
+        response = client.get(f"/reviews/api/reviews/{review.id}/export?format=markdown")
+
+        assert response.status_code == 200
+        assert response.mimetype == "text/markdown"
+        assert f"review-{review.id}.md" in response.headers["Content-Disposition"]
+        text = response.get_data(as_text=True)
+        assert f"# Review #{review.id}" in text
+        assert "## Summary" in text
+        assert "Looks fine." in text
+        assert "## Findings" in text
+        assert "[HIGH] bug - app/main.py:2" in text
+        assert "[CONFIRMED]" in text
+        assert "**Recommendation:** Validate it." in text
+
+    def test_export_markdown_without_findings(self, client, make_user, login):
+        user = make_user()
+        login()
+        review = self._make_review(user, with_finding=False)
+
+        response = client.get(f"/reviews/api/reviews/{review.id}/export?format=md")
+
+        assert response.status_code == 200
+        assert "_No findings were recorded for this review._" in response.get_data(as_text=True)
+
+    def test_export_rejects_unknown_format(self, client, make_user, login):
+        user = make_user()
+        login()
+        review = self._make_review(user)
+
+        response = client.get(f"/reviews/api/reviews/{review.id}/export?format=pdf")
+
+        assert response.status_code == 400
+        assert response.get_json()["error"]
+
+    def test_export_is_owner_scoped(self, client, make_user, login):
+        owner = make_user()
+        review = self._make_review(owner)
+        make_user(username="intruder", email="intruder@example.com")
+        login(email="intruder@example.com")
+
+        assert client.get(f"/reviews/api/reviews/{review.id}/export").status_code == 404
+
+    def test_export_requires_login(self, client):
+        assert client.get("/reviews/api/reviews/1/export").status_code == 302
+
+
 class TestReviewRetry:
     """Retrying a failed review run with its configuration snapshot (#133)."""
 

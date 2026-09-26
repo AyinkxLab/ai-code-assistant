@@ -11,6 +11,7 @@ Pages (HTML)
 API (JSON, all scoped to the current user)
     /reviews/api/reviews                         list / run a review
     /reviews/api/reviews/<id>                    detail / delete
+    /reviews/api/reviews/<id>/export             export as JSON or Markdown
     /reviews/api/reviews/<id>/findings           findings list
     /reviews/api/reviews/findings/<id>           update a finding (addressed)
     /reviews/api/projects/<pid>/config           get / update project config
@@ -21,7 +22,7 @@ from __future__ import annotations
 
 import json
 
-from flask import jsonify, render_template, request
+from flask import Response, jsonify, render_template, request
 from flask_login import current_user, login_required
 
 from app.extensions import db
@@ -457,6 +458,33 @@ def api_review_detail(review_id: int):
     # offer a category filter (#118).
     payload["categories"] = list(CATEGORIES_BY_KIND.get(review.kind, ("other",)))
     return jsonify(payload)
+
+
+@bp.route("/api/reviews/<int:review_id>/export", methods=["GET"])
+@login_required
+def api_export_review(review_id: int):
+    """Export a review (summary + findings) as JSON or Markdown.
+
+    ``format`` is ``json`` (default) or ``markdown`` (``md`` is accepted as an
+    alias). The response is a downloadable attachment scoped to the owner.
+    """
+    review = _get_review(review_id)
+    fmt = (request.args.get("format") or "json").strip().lower()
+    if fmt in ("md", "markdown"):
+        body = reviews_service.render_review_markdown(review)
+        filename = f"review-{review.id}.md"
+        mimetype = "text/markdown"
+    elif fmt == "json":
+        body = json.dumps(reviews_service.review_export_payload(review), indent=2)
+        filename = f"review-{review.id}.json"
+        mimetype = "application/json"
+    else:
+        return jsonify({"error": "Unsupported export format. Use 'json' or 'markdown'."}), 400
+    return Response(
+        body,
+        mimetype=mimetype,
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 @bp.route("/api/reviews/<int:review_id>", methods=["DELETE"])

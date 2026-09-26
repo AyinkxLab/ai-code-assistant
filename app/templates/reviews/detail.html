@@ -8,6 +8,8 @@
     <h1><a class="repo-breadcrumb" href="{{ url_for('reviews.index') }}">Reviews</a> / #{{ review_id }}</h1>
     <div class="repo-toolbar">
       <a class="btn btn-ghost btn-sm" href="{{ url_for('reviews.index') }}">&larr; All reviews</a>
+      <a class="btn btn-ghost btn-sm" href="{{ url_for('reviews.api_export_review', review_id=review_id, format='json') }}">Export JSON</a>
+      <a class="btn btn-ghost btn-sm" href="{{ url_for('reviews.api_export_review', review_id=review_id, format='markdown') }}">Export Markdown</a>
       <button id="delete-review" class="btn btn-danger btn-sm" type="button">Delete</button>
     </div>
   </div>
