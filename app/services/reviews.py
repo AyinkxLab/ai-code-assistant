@@ -583,3 +583,87 @@ def review_project(project, kind: str, config: dict) -> dict:
         "otherwise use 'potential' or 'suggestion'.\n" + _JSON_SCHEMA
     )
     return _run_json(prompt, kind="security", threshold=config.get("severity_threshold"))
+
+
+# --------------------------------------------------------------------------
+# Review export
+# --------------------------------------------------------------------------
+
+
+def _humanize_key(key: str) -> str:
+    """Turn a summary key like ``important_findings`` into ``Important Findings``."""
+    return str(key).replace("_", " ").strip().title()
+
+
+def review_export_payload(review) -> dict:
+    """Build the JSON export document for a review (summary + findings)."""
+    return {
+        "review": review.to_dict(),
+        "findings": [finding.to_dict() for finding in review.findings],
+    }
+
+
+def render_review_markdown(review) -> str:
+    """Render a review (summary + findings) as a portable Markdown document."""
+    lines = [f"# Review #{review.id}", ""]
+
+    repository = None
+    if review.owner and review.repo:
+        repository = f"{review.owner}/{review.repo}"
+    pull_request = None
+    if review.pr_number:
+        title = (review.pr_title or "").strip()
+        pull_request = f"#{review.pr_number} {title}".strip()
+
+    meta = [
+        ("Source", review.source),
+        ("Kind", review.kind),
+        ("Status", review.status),
+        ("Project", f"#{review.project_id}" if review.project_id else None),
+        ("Repository", repository),
+        ("Pull request", pull_request),
+        ("Created", review.created_at.isoformat() if review.created_at else None),
+        ("Findings", str(review.findings_count)),
+    ]
+    for label, value in meta:
+        if value:
+            lines.append(f"- **{label}:** {value}")
+    if review.error_message:
+        lines.append(f"- **Error:** {review.error_message}")
+    lines.append("")
+
+    summary = review.summary_dict
+    if summary:
+        lines += ["## Summary", ""]
+        for key, value in summary.items():
+            lines.append(f"### {_humanize_key(key)}")
+            lines.append("")
+            if isinstance(value, list):
+                for item in value:
+                    lines.append(f"- {item}")
+            elif isinstance(value, dict):
+                for sub_key, sub_value in value.items():
+                    lines.append(f"- **{_humanize_key(sub_key)}:** {sub_value}")
+            elif value not in (None, ""):
+                lines.append(str(value))
+            lines.append("")
+
+    lines += ["## Findings", ""]
+    if not review.findings:
+        lines += ["_No findings were recorded for this review._", ""]
+    for finding in review.findings:
+        location = finding.file or "n/a"
+        if finding.line:
+            location = f"{location}:{finding.line}"
+        lines.append(f"### [{finding.severity.upper()}] {finding.category} - {location}")
+        lines.append("")
+        lines.append(f"- **Confidence:** {finding.confidence_label}")
+        lines.append(f"- **Addressed:** {'yes' if finding.addressed else 'no'}")
+        lines.append("")
+        lines.append(finding.explanation or "")
+        lines.append("")
+        if finding.recommendation:
+            lines.append(f"**Recommendation:** {finding.recommendation}")
+            lines.append("")
+
+    return "\n".join(lines).rstrip() + "\n"
