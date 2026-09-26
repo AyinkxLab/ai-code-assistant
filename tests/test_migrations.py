@@ -126,7 +126,33 @@ class TestMigrationHead:
     def test_head_is_latest_revision(self):
         result = _run_flask(["db", "heads"], {"DATABASE_URL": "sqlite:///:memory:"})
         assert result.returncode == 0, result.stderr
-        assert "f1a2b3c4d5e6" in (result.stdout + result.stderr)
+        assert "9a8b7c6d5e4f" in (result.stdout + result.stderr)
+
+    def test_audit_logs_table_upgraded(self):
+        expected = {
+            "id",
+            "user_id",
+            "action",
+            "target_type",
+            "target_id",
+            "metadata",
+            "created_at",
+        }
+        with _migration_db() as db_url, _inspect(db_url) as insp:
+            tables = set(insp.get_table_names())
+            assert "audit_logs" in tables
+            columns = {col["name"] for col in insp.get_columns("audit_logs")}
+            assert columns == expected
+
+    def test_audit_logs_downgrade_removed(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            db_url = f"sqlite:///{os.path.join(tmp, 'mig_audit.db')}"
+            up = _run_flask(["db", "upgrade"], {"DATABASE_URL": db_url})
+            assert up.returncode == 0, up.stderr
+            down = _run_flask(["db", "downgrade", "f1a2b3c4d5e6"], {"DATABASE_URL": db_url})
+            assert down.returncode == 0, down.stderr
+            with _inspect(db_url) as insp:
+                assert "audit_logs" not in set(insp.get_table_names())
 
     def test_message_attachments_table_upgraded(self):
         expected = {
