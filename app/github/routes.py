@@ -55,6 +55,12 @@ from app.services.github import (
     validate_path,
 )
 
+#: Cap on the number of files whose last commit is resolved for the browser.
+#: The lookups are batched into one GraphQL request, but keeping the count
+#: bounded avoids pathological query sizes on very large repositories.
+MAX_TREE_LAST_COMMITS = 100
+
+
 # --------------------------------------------------------------------------
 # OAuth connection
 # --------------------------------------------------------------------------
@@ -486,8 +492,23 @@ def api_tree(owner: str, repo: str):
                 "type": entry.get("type"),
                 "mode": entry.get("mode"),
                 "size": entry.get("size"),
+                "last_commit": None,
             }
         )
+
+    # Attach the last commit per file in one batched request (issue #63). This
+    # is best-effort: a GraphQL failure must never break the file browser, and
+    # only the first ``MAX_TREE_LAST_COMMITS`` files are resolved so large
+    # directories stay responsive.
+    blob_paths = [e["path"] for e in entries if e["type"] == "blob" and e["path"]]
+    if blob_paths:
+        try:
+            commits = client.get_last_commits(full_name, blob_paths[:MAX_TREE_LAST_COMMITS], ref)
+        except GitHubError:
+            commits = {}
+        for entry in entries:
+            entry["last_commit"] = commits.get(entry["path"])
+
     return jsonify(
         {
             "ref": ref,

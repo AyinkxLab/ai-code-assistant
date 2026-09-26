@@ -104,9 +104,39 @@
     });
   }
 
+  // Render a byte count in the largest sensible unit (B/KB/MB/GB).
+  function humanFileSize(bytes) {
+    var value = Number(bytes);
+    if (bytes === null || bytes === undefined || !isFinite(value) || value < 0) return "";
+    var units = ["B", "KB", "MB", "GB"];
+    var index = 0;
+    while (value >= 1024 && index < units.length - 1) {
+      value /= 1024;
+      index += 1;
+    }
+    var rounded = value >= 10 || index === 0 ? Math.round(value) : Math.round(value * 10) / 10;
+    return rounded + " " + units[index];
+  }
+
   function renderFileRow(file) {
+    var size = humanFileSize(file.size);
+    var commit = file.last_commit;
+    var commitHtml = "";
+    if (commit) {
+      var sha = (commit.sha || "").slice(0, 7);
+      var message = commit.message || "";
+      var author = commit.author ? commit.author + ": " : "";
+      commitHtml =
+        '<span class="file-commit" title="' + GH.escapeHtml(message) + '">' +
+        (sha ? '<code class="file-commit-sha">' + GH.escapeHtml(sha) + "</code> " : "") +
+        GH.escapeHtml(author + message) +
+        "</span>";
+    }
     return '<div class="file-row" data-path="' + GH.escapeHtml(file.path) + '">' +
-      "<span>" + GH.escapeHtml(file.path) + "</span>" +
+      '<span class="file-path" title="' + GH.escapeHtml(file.path) + '">' +
+      GH.escapeHtml(file.path) + "</span>" +
+      (size ? '<span class="file-size">' + GH.escapeHtml(size) + "</span>" : "") +
+      commitHtml +
       '<button class="btn btn-ghost btn-sm" data-action="open">Open</button>' +
       "</div>";
   }
