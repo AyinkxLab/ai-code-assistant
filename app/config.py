@@ -100,6 +100,13 @@ class Config:
     PLUGIN_TRUST_POLICY = os.getenv("PLUGIN_TRUST_POLICY", "if-present")
     PLUGIN_TRUSTED_KEYS = _trusted_plugin_keys()
 
+    # Directory scanned by the read-only plugin discovery endpoint (#172).
+    # Discovery only reads ``manifest.json`` files from plugin subdirectories
+    # and never installs, loads, or mutates anything. Defaults to the repo's
+    # ``plugins/`` directory; point it at a local directory to advertise
+    # discoverable plugins.
+    PLUGIN_DISCOVERY_DIR = os.getenv("PLUGIN_DISCOVERY_DIR", str(BASE_DIR / "plugins"))
+
     # Plugin outbound network policy (#193). Every plugin-triggered request must
     # pass ``app.services.plugin_network``: it is https-only, denies
     # private/loopback/link-local/reserved targets by default, and only reaches

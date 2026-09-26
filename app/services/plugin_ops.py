@@ -28,6 +28,7 @@ from app.services.plugins import (
     ManifestValidationError,
     PluginError,
     PluginManifest,
+    PluginRegistry,
 )
 
 #: Anything with a URL scheme is refused as a "local path".
@@ -47,6 +48,36 @@ class PluginDependencyResolutionError(ValueError):
 def list_plugins() -> list[Plugin]:
     """Return all registered plugins, ordered by id."""
     return Plugin.query.order_by(Plugin.id).all()
+
+
+def discover_plugins() -> list[dict]:
+    """Return discoverable-but-not-registered plugin manifests (#172).
+
+    Reads ``PLUGIN_DISCOVERY_DIR`` (a local directory of plugin folders, each
+    containing a ``manifest.json``), validates each manifest, and returns only
+    the plugins that are not already registered in the database. The operation
+    is read-only: it never installs, loads, or mutates plugin state, and an
+    absent/unreadable directory simply yields an empty list.
+    """
+    configured = current_app.config.get("PLUGIN_DISCOVERY_DIR")
+    if not configured:
+        return []
+
+    manifest_list = PluginRegistry().discover(Path(configured))
+    registered_ids = {row.id for row in Plugin.query.all()}
+    discovered = [
+        {
+            "id": manifest.id,
+            "name": manifest.name,
+            "version": manifest.version,
+            "description": manifest.description,
+            "capabilities": list(manifest.capabilities or []),
+        }
+        for manifest in manifest_list
+        if manifest.id not in registered_ids
+    ]
+    discovered.sort(key=lambda item: item["id"])
+    return discovered
 
 
 def get_plugin(plugin_id: str) -> Plugin:
@@ -169,6 +200,7 @@ __all__ = [
     "PluginError",
     "PluginManifest",
     "PluginNotFoundError",
+    "discover_plugins",
     "get_plugin",
     "install_from_local_dir",
     "list_plugins",

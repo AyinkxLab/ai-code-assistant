@@ -6,6 +6,9 @@ workspace isolation, capability safety, and integration with the #164
 dispatch-time enforcement.
 """
 
+import json
+from pathlib import Path
+
 from app.extensions import db
 from app.models import (
     CapabilityGrant,
@@ -463,3 +466,84 @@ class TestIdentityBindingNoSubscriptions:
         # Installing a plugin must never register a trusted/internal handler.
         assert after == before
         assert "test-plugin" not in dispatcher.list_subscribers("project.created")
+
+
+def _write_manifest(directory, plugin_id, *, name="Discoverable Plugin"):
+    """Create ``<directory>/<plugin_id>/manifest.json`` and return its data."""
+    plugin_dir = Path(directory) / plugin_id
+    plugin_dir.mkdir()
+    manifest = dict(VALID_MANIFEST, id=plugin_id, name=name)
+    (plugin_dir / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+    return manifest
+
+
+class TestPluginDiscovery:
+    """Read-only plugin discovery endpoint (#172)."""
+
+    def test_discovery_requires_login(self, client):
+        assert client.get("/plugins/discover").status_code == 302
+
+    def test_discovers_manifests_from_configured_directory(
+        self, app, client, make_user, login, tmp_path
+    ):
+        make_user()
+        login()
+        _write_manifest(tmp_path, "discoverable", name="Discoverable Plugin")
+        app.config["PLUGIN_DISCOVERY_DIR"] = str(tmp_path)
+
+        resp = client.get("/plugins/discover")
+
+        assert resp.status_code == 200
+        plugins = resp.get_json()["plugins"]
+        assert [p["id"] for p in plugins] == ["discoverable"]
+        assert plugins[0] == {
+            "id": "discoverable",
+            "name": "Discoverable Plugin",
+            "version": VALID_MANIFEST["version"],
+            "description": VALID_MANIFEST["description"],
+            "capabilities": VALID_MANIFEST["capabilities"],
+        }
+
+    def test_skips_invalid_manifests(self, app, client, make_user, login, tmp_path):
+        make_user()
+        login()
+        _write_manifest(tmp_path, "discoverable")
+        bad_dir = tmp_path / "broken"
+        bad_dir.mkdir()
+        (bad_dir / "manifest.json").write_text('{"id": "broken"}', encoding="utf-8")
+        app.config["PLUGIN_DISCOVERY_DIR"] = str(tmp_path)
+
+        plugins = client.get("/plugins/discover").get_json()["plugins"]
+
+        assert [p["id"] for p in plugins] == ["discoverable"]
+
+    def test_excludes_already_registered_plugins(self, app, client, make_user, login, tmp_path):
+        owner = make_user()
+        login()
+        ws = _workspace(db, owner)
+        assert _install(client, ws.id, VALID_MANIFEST).status_code == 201
+        _write_manifest(tmp_path, VALID_MANIFEST["id"], name=VALID_MANIFEST["name"])
+        app.config["PLUGIN_DISCOVERY_DIR"] = str(tmp_path)
+
+        assert client.get("/plugins/discover").get_json()["plugins"] == []
+
+    def test_missing_directory_returns_empty(self, app, client, make_user, login, tmp_path):
+        make_user()
+        login()
+        app.config["PLUGIN_DISCOVERY_DIR"] = str(tmp_path / "missing")
+
+        resp = client.get("/plugins/discover")
+
+        assert resp.status_code == 200
+        assert resp.get_json()["plugins"] == []
+
+    def test_discovery_has_no_side_effects(self, app, client, make_user, login, tmp_path):
+        make_user()
+        login()
+        _write_manifest(tmp_path, "discoverable")
+        app.config["PLUGIN_DISCOVERY_DIR"] = str(tmp_path)
+        before = Plugin.query.count()
+
+        client.get("/plugins/discover")
+
+        assert Plugin.query.count() == before
