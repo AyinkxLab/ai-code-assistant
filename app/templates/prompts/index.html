@@ -17,7 +17,11 @@
     <input type="checkbox" id="prompt-fav-only">
     Favorites only
   </label>
+  <label class="btn btn-ghost btn-sm" for="prompt-import-file">Import</label>
+  <input id="prompt-import-file" type="file" accept=".json,.csv" hidden>
+  <a class="btn btn-ghost btn-sm" href="{{ url_for('prompts.export_prompts') }}" download>Export</a>
 </div>
+<p id="prompt-import-status" class="field-hint" role="status" aria-live="polite"></p>
 
 <div id="prompt-list" class="prompt-grid"></div>
 
