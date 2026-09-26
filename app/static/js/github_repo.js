@@ -15,6 +15,8 @@
     filePath: "",
     issuePage: 1,
     pullPage: 1,
+    commitPage: 1,
+    commitPath: "",
   };
 
   // -- Repo metadata -------------------------------------------------------
@@ -207,30 +209,75 @@
 
   // -- Commits -------------------------------------------------------------
 
-  function loadCommits() {
+  function renderCommitFilter(container) {
+    if (!state.commitPath) return;
+    var bar = document.createElement("div");
+    bar.className = "commit-filter";
+    bar.innerHTML =
+      '<span>History for <code>' + GH.escapeHtml(state.commitPath) + "</code></span>";
+    var clear = document.createElement("button");
+    clear.type = "button";
+    clear.className = "btn btn-ghost btn-sm";
+    clear.textContent = "Clear filter";
+    clear.addEventListener("click", function () {
+      state.commitPath = "";
+      loadCommits(true);
+    });
+    bar.appendChild(clear);
+    container.appendChild(bar);
+  }
+
+  function renderCommitRow(commit) {
+    var row = document.createElement("a");
+    row.className = "commit-row";
+    row.href = "/github/repos/" + encodeURIComponent(OWNER) + "/" + encodeURIComponent(REPO) +
+      "/commits/" + encodeURIComponent(commit.sha);
+    row.innerHTML =
+      '<span class="commit-sha">' + GH.escapeHtml(commit.short_sha) + "</span>" +
+      '<span class="commit-message">' + GH.escapeHtml(commit.message) + "</span>" +
+      '<span class="commit-meta">' + GH.escapeHtml(commit.author || "") + " &middot; " + GH.relativeDate(commit.date) + "</span>";
+    return row;
+  }
+
+  // `reset` starts a new list (page 1); otherwise the next page is appended.
+  function loadCommits(reset) {
     var container = document.getElementById("commit-list");
-    container.innerHTML = '<p class="sidebar-empty">Loading commits...</p>';
-    var url = "/github/api/repos/" + encodeURIComponent(OWNER) + "/" + encodeURIComponent(REPO) +
-      "/commits?ref=" + encodeURIComponent(state.ref);
-    GH.api(url).then(function (commits) {
+    if (reset) {
+      state.commitPage = 1;
       container.innerHTML = "";
-      if (!commits.length) {
-        container.innerHTML = '<p class="sidebar-empty">No commits found.</p>';
+      renderCommitFilter(container);
+    }
+    var loading = document.createElement("p");
+    loading.className = "sidebar-empty";
+    loading.textContent = "Loading commits...";
+    container.appendChild(loading);
+
+    var url = "/github/api/repos/" + encodeURIComponent(OWNER) + "/" + encodeURIComponent(REPO) +
+      "/commits?ref=" + encodeURIComponent(state.ref) + "&page=" + state.commitPage;
+    if (state.commitPath) url += "&path=" + encodeURIComponent(state.commitPath);
+
+    GH.api(url).then(function (result) {
+      loading.remove();
+      var commits = result.items || [];
+      if (state.commitPage === 1 && !commits.length) {
+        container.innerHTML = "";
+        renderCommitFilter(container);
+        var empty = document.createElement("p");
+        empty.className = "sidebar-empty";
+        empty.textContent = "No commits found.";
+        container.appendChild(empty);
         return;
       }
       commits.forEach(function (commit) {
-        var row = document.createElement("a");
-        row.className = "commit-row";
-        row.href = "/github/repos/" + encodeURIComponent(OWNER) + "/" + encodeURIComponent(REPO) +
-          "/commits/" + encodeURIComponent(commit.sha);
-        row.innerHTML =
-          '<span class="commit-sha">' + GH.escapeHtml(commit.short_sha) + "</span>" +
-          '<span class="commit-message">' + GH.escapeHtml(commit.message) + "</span>" +
-          '<span class="commit-meta">' + GH.escapeHtml(commit.author || "") + " &middot; " + GH.relativeDate(commit.date) + "</span>";
-        container.appendChild(row);
+        container.appendChild(renderCommitRow(commit));
+      });
+      // The button disappears once GitHub reports no further pages.
+      GH.renderLoadMore(container, result, function () {
+        state.commitPage = (result.page || state.commitPage) + 1;
+        loadCommits(false);
       });
     }).catch(function (error) {
-      container.innerHTML = '<p class="sidebar-empty">Could not load commits.</p>';
+      loading.remove();
       GH.flashError(error.message);
     });
   }
@@ -372,7 +419,7 @@
         document.querySelectorAll(".repo-tab-panel").forEach(function (p) { p.hidden = true; });
         document.getElementById("tab-" + tab.dataset.tab).hidden = false;
         if (tab.dataset.tab === "files") loadTree();
-        if (tab.dataset.tab === "commits") loadCommits();
+        if (tab.dataset.tab === "commits") loadCommits(true);
         if (tab.dataset.tab === "issues") loadIssues();
         if (tab.dataset.tab === "pulls") loadPulls();
       });
@@ -391,6 +438,7 @@
       branchSelect.addEventListener("change", function () {
         state.ref = branchSelect.value;
         if (!document.getElementById("tab-tree").hidden) loadTree();
+        if (!document.getElementById("tab-commits").hidden) loadCommits(true);
       });
     }
 
@@ -412,6 +460,16 @@
     document.getElementById("file-question").addEventListener("keydown", function (event) {
       if (event.key === "Enter") analyzeFile();
     });
+    var historyBtn = document.getElementById("file-history");
+    if (historyBtn) {
+      historyBtn.addEventListener("click", function () {
+        // Filter the commits tab to this file's history (pagination follows).
+        state.commitPath = state.filePath || "";
+        document.getElementById("file-modal").hidden = true;
+        var commitsTab = document.querySelector('.repo-tab[data-tab="commits"]');
+        if (commitsTab) commitsTab.click();
+      });
+    }
     document.getElementById("analyze-repo").addEventListener("click", analyzeRepo);
     document.getElementById("analyze-repo-structure").addEventListener("click", analyzeRepoStructure);
 

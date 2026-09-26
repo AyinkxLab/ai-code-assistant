@@ -574,34 +574,47 @@ def api_contents(owner: str, repo: str):
 # --------------------------------------------------------------------------
 
 
+def _commit_summary(commit: dict) -> dict:
+    """Normalize a GitHub commit entry for the browser list."""
+    commit_data = commit.get("commit") or {}
+    author = commit_data.get("author") or {}
+    return {
+        "sha": commit.get("sha"),
+        "short_sha": (commit.get("sha") or "")[:7],
+        "message": (commit_data.get("message") or "").splitlines()[0],
+        "author": author.get("name") or (commit.get("author") or {}).get("login"),
+        "date": author.get("date"),
+        "html_url": commit.get("html_url"),
+    }
+
+
 @bp.route("/api/repos/<owner>/<repo>/commits")
 @login_required
 def api_commits(owner: str, repo: str):
-    """Return commit history for a ref and/or path."""
+    """Return one page of commit history for a ref and/or path (issue #66)."""
     full_name = validate_full_name(f"{owner}/{repo}")
     ref = request.args.get("ref", "").strip() or None
     path = request.args.get("path", "").strip() or None
+    page = request.args.get("page", 1, type=int) or 1
+    per_page = request.args.get("per_page", PAGE_SIZE_DEFAULT, type=int) or PAGE_SIZE_DEFAULT
     try:
         client = _client()
-        data = client.list_commits(full_name, ref=ref, path=path)
+        result = client.list_commits_page(
+            full_name, ref=ref, path=path, page=page, per_page=per_page
+        )
     except GitHubError as exc:
         return jsonify(github_error_payload(exc)), 502
 
-    items = []
-    for commit in data:
-        commit_data = commit.get("commit") or {}
-        author = commit_data.get("author") or {}
-        items.append(
-            {
-                "sha": commit.get("sha"),
-                "short_sha": (commit.get("sha") or "")[:7],
-                "message": (commit_data.get("message") or "").splitlines()[0],
-                "author": author.get("name") or (commit.get("author") or {}).get("login"),
-                "date": author.get("date"),
-                "html_url": commit.get("html_url"),
-            }
-        )
-    return jsonify(items)
+    return jsonify(
+        {
+            "items": [_commit_summary(commit) for commit in result.items],
+            "page": result.page,
+            "per_page": result.per_page,
+            "has_next": result.has_next,
+            "has_prev": result.has_prev,
+            "total_pages": result.total_pages,
+        }
+    )
 
 
 @bp.route("/api/repos/<owner>/<repo>/commits/<sha>")

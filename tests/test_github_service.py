@@ -247,6 +247,33 @@ class TestPagination:
         page = client.list_issues_page("owner/repo")
         assert [i["number"] for i in page.items] == [2]
 
+    def test_commits_page_preserves_ref_and_path_filters(self, ok_client):
+        client, session = ok_client
+        session.responses = [
+            FakeResponse.from_json(
+                200,
+                [{"sha": "abc1234567890", "commit": {"message": "m", "author": {"name": "A"}}}],
+                headers={
+                    "Link": (
+                        '<https://api.github.com/repos/o/r/commits?page=2>; rel="next", '
+                        '<https://api.github.com/repos/o/r/commits?page=5>; rel="last"'
+                    )
+                },
+            )
+        ]
+        page = client.list_commits_page(
+            "owner/repo", ref="main", path="app/x.py", page=1, per_page=30
+        )
+        assert isinstance(page, GitHubPage)
+        assert [c["sha"] for c in page.items] == ["abc1234567890"]
+        assert page.has_next is True
+        assert page.total_pages == 5
+        params = session.calls[0]["params"]
+        assert params["sha"] == "main"
+        assert params["path"] == "app/x.py"
+        assert params["page"] == 1
+        assert params["per_page"] == 30
+
     def test_pulls_page_passes_page_and_clamps_per_page(self, ok_client):
         client, session = ok_client
         session.responses = [FakeResponse.from_json(200, [{"number": 5, "title": "pr"}])]

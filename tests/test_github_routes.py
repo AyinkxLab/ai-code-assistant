@@ -37,7 +37,8 @@ def _make_fake_session(script):
             for entry in ordered:
                 if entry[0] in (method, "*") and (entry[1] == "*" or entry[1] in url_path):
                     status, data = entry[2], entry[3]
-                    return FakeResponse(status, data)
+                    headers = entry[4] if len(entry) > 4 else None
+                    return FakeResponse(status, data, headers=headers)
             raise AssertionError(f"Unhandled request: {method} {url_path}")
 
         def get(self, url, params=None, timeout=None, **kwargs):
@@ -556,8 +557,36 @@ class TestApiEndpoints:
         ]
         self._script_client(client, app, script, monkeypatch)
         data = client.get("/github/api/repos/owner/repo/commits").get_json()
-        assert data[0]["short_sha"] == "abc123"
-        assert data[0]["message"] == "Fix the bug"
+        assert data["items"][0]["short_sha"] == "abc123"
+        assert data["items"][0]["message"] == "Fix the bug"
+        assert data["page"] == 1
+        assert data["has_next"] is False
+
+    def test_commits_pagination_envelope_from_link_header(self, client, app, monkeypatch):
+        script = [
+            (
+                "GET",
+                "/commits",
+                200,
+                [
+                    {
+                        "sha": "abc1234567890",
+                        "commit": {
+                            "message": "Fix the bug\n",
+                            "author": {"name": "Alice", "date": "2026-01-01T00:00:00Z"},
+                        },
+                    }
+                ],
+                {"Link": '<https://api.github.com/repos/owner/repo/commits?page=2>; rel="next"'},
+            )
+        ]
+        self._script_client(client, app, script, monkeypatch)
+        data = client.get(
+            "/github/api/repos/owner/repo/commits?ref=main&path=app/x.py&page=1"
+        ).get_json()
+        assert data["has_next"] is True
+        assert data["page"] == 1
+        assert data["items"][0]["short_sha"] == "abc1234"
 
     def test_issues_excludes_pulls(self, client, app, monkeypatch):
         script = [

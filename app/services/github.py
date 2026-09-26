@@ -502,6 +502,33 @@ class GitHubClient:
             params["path"] = path
         return self._get(f"/repos/{full_name}/commits", params=params)
 
+    def list_commits_page(
+        self,
+        full_name: str,
+        *,
+        ref: str | None = None,
+        path: str | None = None,
+        page: int = 1,
+        per_page: int = PAGE_SIZE_DEFAULT,
+    ) -> GitHubPage:
+        """Fetch one page of a repository's commit history (issue #66).
+
+        Uses the ``Link`` header GitHub returns so the caller can offer
+        "load more" without guessing where the next page is. ``ref`` and
+        ``path`` filter the history and are preserved across pages.
+        """
+        params: dict = {}
+        if ref:
+            params["sha"] = ref
+        if path:
+            params["path"] = path
+        return self._get_page(
+            f"/repos/{full_name}/commits",
+            params=params or None,
+            page=page,
+            per_page=per_page,
+        )
+
     def get_commit(self, full_name: str, sha: str) -> dict:
         return self._get(f"/repos/{full_name}/commits/{sha}")
 
