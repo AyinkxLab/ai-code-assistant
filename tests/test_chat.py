@@ -42,6 +42,17 @@ class TestChatPage:
         assert b"Conversations" in response.data
         assert b"chat-input" in response.data
 
+    def test_composer_exposes_shortcuts_and_validation_hooks(self, client):
+        _register(client)
+        html = client.get("/chat/").get_data(as_text=True)
+        assert 'id="chat-input"' in html
+        assert 'aria-label="Message"' in html
+        assert 'aria-describedby="composer-error chat-composer-hint"' in html
+        assert 'id="composer-error"' in html
+        assert 'role="alert"' in html
+        assert 'aria-label="Send message"' in html
+        assert "Press Enter to send, Shift+Enter for a new line" in html
+
     def test_conversation_list_is_accessible(self, client, db):
         _register(client)
         _create_conversation(client, title="Accessible chat")
