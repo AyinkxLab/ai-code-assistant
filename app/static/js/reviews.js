@@ -31,7 +31,12 @@
   }
 
   function statusLabel(review) {
-    var cls = review.status === "completed" ? "tag-public" : review.status === "failed" ? "tag-private" : "";
+    var cls =
+      review.status === "completed"
+        ? "tag-public"
+        : review.status === "failed"
+          ? "tag-private"
+          : "tag-running";
     return '<span class="tag ' + cls + '">' + GH.escapeHtml(review.status) + "</span>";
   }
 
@@ -298,6 +303,9 @@
         '<div class="issue-meta">' +
         statusLabel(review) + " " + GH.escapeHtml(review.kind) + " &middot; " +
         (review.findings_count || 0) + " findings &middot; " + GH.relativeDate(review.created_at) +
+        (review.status === "failed"
+          ? ' <button id="retry-review" class="btn btn-primary btn-sm" type="button">Retry review</button>'
+          : "") +
         "</div>" +
         (review.error_message ? '<p class="flash flash-error">' + GH.escapeHtml(review.error_message) + "</p>" : "") +
         "</div>" +
@@ -338,6 +346,21 @@
         }).then(function () {
           loadFindings(id);
         }).catch(function (error) { GH.flashError(error.message); });
+        return;
+      }
+      var retry = event.target.closest("#retry-review");
+      if (retry) {
+        retry.disabled = true;
+        retry.textContent = "Retrying...";
+        GH.api("/reviews/api/reviews/" + id + "/retry", { method: "POST" })
+          .then(function (created) {
+            window.location.href = "/reviews/" + created.id;
+          })
+          .catch(function (error) {
+            retry.disabled = false;
+            retry.textContent = "Retry review";
+            GH.flashError(error.message);
+          });
       }
     });
     if (deleteBtn) {

@@ -24,6 +24,7 @@ from app.models.workspace_member import (
 from app.services.llm import LLMProviderError, get_provider
 from app.services.permissions import assert_content_access
 from app.services.stellar_detection import (
+    SOROBAN_CRATES,
     _is_config_file,
     detect_stellar_network,
     detect_stellar_project,
@@ -602,6 +603,33 @@ def dependency_inventory(project) -> list[dict]:
     return inventory
 
 
+def _soroban_dependency_context(inventory: list[dict]) -> str:
+    """Add a Soroban-aware section to a Stellar project's dependency prompt."""
+    crates = [
+        item for item in inventory if (item.get("name") or "").strip().lower() in SOROBAN_CRATES
+    ]
+    if crates:
+        lines = "\n".join(
+            f"- {_escape(item['file'])}: {_escape(item['name'])} "
+            f"{_escape(item.get('constraint') or '')}".rstrip()
+            for item in crates[:100]
+        )
+    else:
+        lines = "(no Soroban crates were found in the dependency inventory)"
+    return (
+        "\n\nSoroban dependency context (Stellar project detected):\n"
+        f"{lines}\n\n"
+        "Beyond the general analysis above, review the listed Soroban crate "
+        "versions for signs of mismatched Soroban SDK / environment / host "
+        "versions (for example soroban-sdk, soroban-env-host, soroban-spec, or "
+        "stellar-xdr pinned to incompatible releases) and describe the likely "
+        "compatibility implications. Do NOT claim knowledge of registries, "
+        "release notes, or advisories; mark every compatibility statement as "
+        "[SUGGESTION] and recommend verifying it against the official Soroban "
+        "SDK compatibility matrix."
+    )
+
+
 # --------------------------------------------------------------------------
 # Chat and analyses
 # --------------------------------------------------------------------------
@@ -744,6 +772,9 @@ be directly supported by the inventory.
                 "in the indexed files, so a dependency analysis is not possible. "
                 "State that clearly and do not fabricate a dependency list."
             )
+        signals = detect_stellar_project(project.files.all())
+        if signals.is_stellar:
+            prompt += _soroban_dependency_context(inventory)
 
     return {"kind": kind, "analysis": _run(prompt)}
 

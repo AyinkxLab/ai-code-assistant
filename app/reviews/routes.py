@@ -339,6 +339,116 @@ def _save_result(review: Review, result: dict, config: dict) -> None:
     db.session.commit()
 
 
+@bp.route("/api/reviews/<int:review_id>/retry", methods=["POST"])
+@login_required
+def api_retry_review(review_id: int):
+    """Retry a failed review run, reusing its stored configuration snapshot.
+
+    A retry creates a new review run of the same source/kind/target and passes
+    the ``config`` snapshot captured by the failed run (rather than the
+    project's current configuration), so a retry reproduces the original run.
+    Only failed reviews may be retried.
+    """
+    review = _get_review(review_id)
+    if review.status != STATUS_FAILED:
+        return jsonify({"error": "Only failed reviews can be retried."}), 409
+
+    config = _snapshot_config(review)
+    if review.source == SOURCE_GITHUB_PR:
+        return _retry_pr_review(review, config)
+    return _retry_project_review(review, config)
+
+
+def _snapshot_config(review: Review) -> dict:
+    """Return the review's stored config snapshot, falling back to defaults."""
+    if review.config:
+        try:
+            snapshot = json.loads(review.config)
+        except (ValueError, TypeError):
+            snapshot = None
+        if isinstance(snapshot, dict):
+            return snapshot
+    if review.project_id:
+        project = db.session.get(Project, review.project_id)
+        if project is not None:
+            return _effective_config(project)
+    return _config_payload(None)
+
+
+def _retry_project_review(previous: Review, config: dict):
+    project = db.session.get(Project, previous.project_id) if previous.project_id else None
+    if project is None:
+        return jsonify({"error": "The project for this review no longer exists."}), 404
+    if project.status != STATUS_READY:
+        return jsonify({"error": "This project has not finished indexing."}), 409
+
+    review = Review(
+        user_id=current_user.id,
+        project_id=project.id,
+        source=SOURCE_PROJECT,
+        kind=previous.kind,
+        status=STATUS_RUNNING,
+    )
+    db.session.add(review)
+    db.session.commit()
+    try:
+        result = reviews_service.review_project(project, previous.kind, config)
+    except Exception as exc:
+        result = {"summary": {}, "findings": [], "raw": "", "error": str(exc)}
+    _save_result(review, result, config)
+    emit_event(
+        "review.completed",
+        data={"review_id": review.id, "kind": review.kind, "status": review.status},
+        workspace_id=project.workspace_id,
+        user_id=current_user.id,
+    )
+    return jsonify(review.to_dict()), 201
+
+
+def _retry_pr_review(previous: Review, config: dict):
+    full_name = f"{previous.owner}/{previous.repo}"
+    try:
+        client = get_github_client()
+    except GitHubError as exc:
+        return jsonify(github_error_payload(exc)), 400
+
+    try:
+        pr_raw = client.get_pull_request(full_name, previous.pr_number)
+        files = client.list_pull_request_files(full_name, previous.pr_number)
+    except GitHubError as exc:
+        return jsonify(github_error_payload(exc)), 502
+
+    pr = pull_request_payload(pr_raw)
+    project = db.session.get(Project, previous.project_id) if previous.project_id else None
+    review = Review(
+        user_id=current_user.id,
+        project_id=project.id if project else None,
+        source=SOURCE_GITHUB_PR,
+        kind="pr",
+        status=STATUS_RUNNING,
+        owner=previous.owner,
+        repo=previous.repo,
+        pr_number=previous.pr_number,
+        pr_title=pr.get("title"),
+        base_ref=pr.get("base"),
+        head_ref=pr.get("head"),
+    )
+    db.session.add(review)
+    db.session.commit()
+    try:
+        result = reviews_service.review_pull_request(pr, files, config)
+    except Exception as exc:
+        result = {"summary": {}, "findings": [], "raw": "", "error": str(exc)}
+    _save_result(review, result, config)
+    emit_event(
+        "review.completed",
+        data={"review_id": review.id, "kind": review.kind, "status": review.status},
+        workspace_id=project.workspace_id if project else None,
+        user_id=current_user.id,
+    )
+    return jsonify(review.to_dict()), 201
+
+
 @bp.route("/api/reviews/<int:review_id>", methods=["GET"])
 @login_required
 def api_review_detail(review_id: int):

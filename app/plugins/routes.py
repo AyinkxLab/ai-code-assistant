@@ -27,6 +27,7 @@ from app.services.plugin_audit import record_plugin_audit
 from app.services.plugin_compat import compatibility_status
 from app.services.plugin_config import validate_plugin_config
 from app.services.plugin_errors import list_workspace_error_reports
+from app.services.plugin_ops import discover_plugins
 from app.services.plugins import ManifestValidationError, PluginError, PluginManifest
 
 
@@ -150,6 +151,23 @@ def api_inspect_plugin(workspace_id: int, plugin_id: str):
     if plugin is None:
         return jsonify({"error": "Plugin not found."}), 404
     return jsonify(_serialize(plugin, workspace_id))
+
+
+# --------------------------------------------------------------------------
+# API: plugin discovery (read-only, local-directory based)
+# --------------------------------------------------------------------------
+
+
+@bp.route("/discover", methods=["GET"])
+@login_required
+def api_discover_plugins():
+    """List plugins found in the configured discovery directory (#172).
+
+    Read-only: returns the id/name/version/description/capabilities of each
+    manifest discovered in ``PLUGIN_DISCOVERY_DIR`` that is not already
+    registered, without installing or loading anything.
+    """
+    return jsonify({"plugins": discover_plugins()})
 
 
 # --------------------------------------------------------------------------

@@ -411,6 +411,54 @@ class TestRepositoryApi:
         assert response.status_code == 404
         assert response.get_json()["kind"] == "not_found"
 
+    def test_repo_detail_includes_extended_metadata(self, client, app, monkeypatch):
+        _logged_in_client(client)
+        _create_account(app)
+
+        def fake_repo(self_, full_name):
+            return {
+                "full_name": full_name,
+                "name": "repo",
+                "description": "A demo repository",
+                "owner": {"login": "owner"},
+                "private": False,
+                "language": "Python",
+                "updated_at": "2026-01-01T00:00:00Z",
+                "stargazers_count": 42,
+                "forks_count": 7,
+                "open_issues_count": 3,
+                "license": {"spdx_id": "MIT", "name": "MIT License"},
+                "topics": ["stellar", "flask"],
+                "homepage": "https://example.com",
+            }
+
+        monkeypatch.setattr(GitHubClient, "get_repository", fake_repo)
+        monkeypatch.setattr(GitHubClient, "get_readme", lambda self_, full_name: None)
+
+        data = client.get("/github/api/repos/owner/repo").get_json()
+        assert data["stars"] == 42
+        assert data["forks"] == 7
+        assert data["open_issues_count"] == 3
+        assert data["license"] == "MIT"
+        assert data["topics"] == ["stellar", "flask"]
+        assert data["homepage"] == "https://example.com"
+
+    def test_repo_payload_defaults_for_missing_fields(self):
+        from app.services.github import repo_payload
+
+        payload = repo_payload(
+            {
+                "full_name": "owner/repo",
+                "license": {"spdx_id": "NOASSERTION", "name": "Other"},
+            }
+        )
+        assert payload["stars"] == 0
+        assert payload["forks"] == 0
+        assert payload["open_issues_count"] == 0
+        assert payload["license"] == "Other"
+        assert payload["topics"] == []
+        assert payload["homepage"] == ""
+
 
 class TestApiEndpoints:
     def _script_client(self, client, app, script, monkeypatch):

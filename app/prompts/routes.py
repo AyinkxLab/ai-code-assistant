@@ -7,6 +7,7 @@ from sqlalchemy import func
 from app.extensions import db
 from app.models import Prompt
 from app.prompts import bp
+from app.services import prompt_import
 from app.services import prompt_versions as prompt_versions_service
 
 
@@ -56,6 +57,35 @@ def list_categories():
         .all()
     )
     return jsonify([row[0] for row in rows])
+
+
+@bp.route("/api/prompts/export", methods=["GET"])
+@login_required
+def export_prompts():
+    """Export the current user's prompts as a JSON array (import-compatible)."""
+    prompts = Prompt.query.filter_by(user_id=current_user.id).order_by(Prompt.id).all()
+    payload = [{"title": p.title, "content": p.content, "category": p.category} for p in prompts]
+    response = jsonify(payload)
+    response.headers["Content-Disposition"] = "attachment; filename=prompts.json"
+    return response
+
+
+@bp.route("/api/prompts/import", methods=["POST"])
+@login_required
+def import_prompts_route():
+    """Bulk import prompts from an uploaded ``.json`` or ``.csv`` file.
+
+    Each row is validated independently; valid rows are imported and invalid
+    rows are reported per-row. A payload that cannot be parsed at all is a 400.
+    """
+    upload = request.files.get("file")
+    if upload is None or not upload.filename:
+        return jsonify({"error": "A .json or .csv file is required."}), 400
+    try:
+        result = prompt_import.import_prompts(current_user.id, upload.filename, upload.read())
+    except prompt_import.PromptImportError as exc:
+        return jsonify({"error": str(exc)}), 400
+    return jsonify(result)
 
 
 @bp.route("/api/prompts", methods=["POST"])

@@ -8,6 +8,7 @@
   var messagesEl = document.getElementById("chat-messages");
   var inputEl = document.getElementById("chat-input");
   var sendBtn = document.getElementById("send-message");
+  var composerErrorEl = document.getElementById("composer-error");
   var listEl = document.getElementById("conversation-list");
   var searchEl = document.getElementById("conversation-search");
   var actionsEl = document.getElementById("conversation-actions");
@@ -185,6 +186,9 @@
             '<div class="chat-placeholder"><p>Ask the AI assistant for help with your code.</p></div>';
         }
         applySettingsToPanel(data);
+        clearComposerError();
+        autoGrowComposer();
+        inputEl.focus();
       })
       .catch(function (error) {
         flashError(error.message);
@@ -195,7 +199,30 @@
     currentId = null;
     messagesEl.innerHTML = '<div class="chat-placeholder"><p>Start a new conversation.</p></div>';
     actionsEl.hidden = true;
+    clearComposerError();
+    autoGrowComposer();
     inputEl.focus();
+  }
+
+  // Grow the textarea with its content, up to a cap, then scroll internally.
+  function autoGrowComposer() {
+    if (!inputEl) return;
+    inputEl.style.height = "auto";
+    inputEl.style.height = Math.min(inputEl.scrollHeight, 200) + "px";
+  }
+
+  function showComposerError(message) {
+    if (!composerErrorEl) return;
+    composerErrorEl.textContent = message;
+    composerErrorEl.hidden = false;
+    inputEl.setAttribute("aria-invalid", "true");
+  }
+
+  function clearComposerError() {
+    if (!composerErrorEl || composerErrorEl.hidden) return;
+    composerErrorEl.textContent = "";
+    composerErrorEl.hidden = true;
+    inputEl.removeAttribute("aria-invalid");
   }
 
   // Toggle the composer button between Send (idle) and Stop (while streaming).
@@ -298,8 +325,14 @@
   }
 
   async function startStream() {
+    if (streaming) return;
     var content = inputEl.value.trim();
-    if ((!content && pendingAttachments.length === 0) || streaming) return;
+    if (!content && pendingAttachments.length === 0) {
+      showComposerError("Please enter a message before sending.");
+      inputEl.focus();
+      return;
+    }
+    clearComposerError();
     if (onboardingEl && !onboardingEl.hidden) {
       flashError("Add a provider API key before sending a message.");
       onboardingEl.scrollIntoView({ behavior: "smooth", block: "center" });
@@ -319,6 +352,7 @@
     inputEl.value = "";
     pendingAttachments = [];
     renderPendingAttachments();
+    autoGrowComposer();
     streaming = true;
     cancelRequested = false;
     currentController = new AbortController();
@@ -419,6 +453,7 @@
       streaming = false;
       setComposerState("idle");
       sendBtn.disabled = !!(onboardingEl && !onboardingEl.hidden);
+      inputEl.focus();
     }
   }
 
@@ -629,6 +664,8 @@
 
   document.addEventListener("DOMContentLoaded", function () {
     updateTimestamps();
+    autoGrowComposer();
+    inputEl.focus();
 
     listEl.addEventListener("click", function (event) {
       var item = event.target.closest(".conversation-item");
@@ -677,6 +714,10 @@
         event.preventDefault();
         loadConversation(item.dataset.id);
       }
+    });
+    inputEl.addEventListener("input", function () {
+      autoGrowComposer();
+      clearComposerError();
     });
     inputEl.addEventListener("keydown", function (event) {
       if (event.key === "Enter" && !event.shiftKey) {

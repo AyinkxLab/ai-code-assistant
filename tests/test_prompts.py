@@ -1,6 +1,8 @@
 """Tests for the prompts blueprint: CRUD, favorites, categories, search,
 and version history (create/list/revert/retention)."""
 
+import io
+import json
 from datetime import UTC, datetime, timedelta
 
 from app.models import Prompt, PromptVersion
@@ -274,3 +276,148 @@ class TestPromptVersioning:
             ).status_code
             == 404
         )
+
+
+def _import_file(client, filename, content):
+    return client.post(
+        "/prompts/api/prompts/import",
+        data={"file": (io.BytesIO(content), filename)},
+        content_type="multipart/form-data",
+        headers={"X-CSRFToken": "ignored"},
+    )
+
+
+class TestPromptImport:
+    def test_import_valid_json(self, client, db):
+        _register(client)
+        payload = json.dumps(
+            [
+                {"title": "Summarize", "content": "Summarize this.", "category": "Explain"},
+                {"title": "No category", "content": "Body"},
+            ]
+        ).encode()
+
+        response = _import_file(client, "prompts.json", payload)
+
+        assert response.status_code == 200
+        body = response.get_json()
+        assert body["imported"] == 2
+        assert body["skipped"] == 0
+        assert body["errors"] == []
+        assert Prompt.query.count() == 2
+        assert Prompt.query.filter_by(title="No category").one().category == "General"
+        assert PromptVersion.query.count() == 2
+
+    def test_import_valid_csv(self, client, db):
+        _register(client)
+        csv_bytes = b"title,content,category\nAlpha,a,One\nBeta,b,\n"
+
+        response = _import_file(client, "prompts.csv", csv_bytes)
+
+        assert response.status_code == 200
+        assert response.get_json()["imported"] == 2
+        assert Prompt.query.filter_by(title="Beta").one().category == "General"
+
+    def test_import_partially_invalid_reports_per_row(self, client, db):
+        _register(client)
+        payload = json.dumps(
+            [
+                {"title": "Good", "content": "ok"},
+                {"title": "No content", "content": "   "},
+                {"content": "missing title"},
+                {"title": "Also good", "content": "ok", "category": "X"},
+            ]
+        ).encode()
+
+        response = _import_file(client, "prompts.json", payload)
+
+        assert response.status_code == 200
+        body = response.get_json()
+        assert body["imported"] == 2
+        assert body["skipped"] == 2
+        assert {item["row"]: item["error"] for item in body["errors"]} == {
+            2: "missing content",
+            3: "missing title",
+        }
+        assert "2 imported, 2 skipped" in body["message"]
+        assert Prompt.query.count() == 2
+
+    def test_import_malformed_json_rejected(self, client, db):
+        _register(client)
+
+        response = _import_file(client, "prompts.json", b"{not json")
+
+        assert response.status_code == 400
+        assert "valid JSON" in response.get_json()["error"]
+        assert Prompt.query.count() == 0
+
+    def test_import_json_must_be_array(self, client, db):
+        _register(client)
+
+        response = _import_file(client, "prompts.json", b'{"title": "A", "content": "a"}')
+
+        assert response.status_code == 400
+        assert "array" in response.get_json()["error"]
+
+    def test_import_csv_requires_title_and_content_columns(self, client, db):
+        _register(client)
+
+        response = _import_file(client, "prompts.csv", b"foo,bar\n1,2\n")
+
+        assert response.status_code == 400
+        assert "title" in response.get_json()["error"]
+
+    def test_import_unsupported_type_rejected(self, client, db):
+        _register(client)
+
+        response = _import_file(client, "prompts.txt", b"whatever")
+
+        assert response.status_code == 400
+        assert "Unsupported" in response.get_json()["error"]
+
+    def test_import_scoped_to_current_user(self, client, db):
+        _register(client, username="owner", email="owner@example.com")
+        payload = json.dumps([{"title": "Mine", "content": "x"}]).encode()
+        _import_file(client, "prompts.json", payload)
+        client.post("/auth/logout")
+        _register(client, username="intruder", email="intruder@example.com")
+
+        assert client.get("/prompts/api/prompts").get_json() == []
+
+
+class TestPromptExport:
+    def test_export_returns_importable_payload(self, client, db):
+        _register(client)
+        _create_prompt(client, title="Export me", content="body", category="Cat")
+
+        response = client.get("/prompts/api/prompts/export")
+
+        assert response.status_code == 200
+        assert response.headers["Content-Disposition"].startswith("attachment")
+        assert response.get_json() == [{"title": "Export me", "content": "body", "category": "Cat"}]
+
+    def test_export_is_owner_scoped(self, client, db):
+        _register(client, username="owner", email="owner@example.com")
+        _create_prompt(client, title="Private", content="body")
+        client.post("/auth/logout")
+        _register(client, username="intruder", email="intruder@example.com")
+
+        assert client.get("/prompts/api/prompts/export").get_json() == []
+
+    def test_export_import_round_trip(self, client, db):
+        _register(client, username="owner", email="owner@example.com")
+        _create_prompt(client, title="Round trip", content="body", category="Cat")
+        exported = json.dumps(client.get("/prompts/api/prompts/export").get_json()).encode()
+        client.post("/auth/logout")
+        _register(client, username="second", email="second@example.com")
+
+        response = _import_file(client, "prompts.json", exported)
+
+        assert response.status_code == 200
+        assert response.get_json()["imported"] == 1
+        assert Prompt.query.filter_by(title="Round trip").count() == 2
+        prompt = Prompt.query.order_by(Prompt.id.desc()).first()
+        assert prompt.title == "Round trip"
+        assert prompt.content == "body"
+        assert prompt.category == "Cat"
+        assert prompt.user_id is not None

@@ -643,12 +643,28 @@ a:hover {
   font-family: inherit;
   font-size: 0.95rem;
   padding: 12px;
-  resize: vertical;
+  resize: none;
+  overflow-y: auto;
+  max-height: 200px;
 }
 
 .chat-composer textarea:focus {
   outline: none;
   border-color: var(--accent);
+}
+
+.chat-composer textarea[aria-invalid="true"] {
+  border-color: var(--error);
+}
+
+.composer-error {
+  color: var(--error);
+  font-size: 0.8rem;
+  margin-top: 8px;
+}
+
+.composer-error[hidden] {
+  display: none;
 }
 
 .composer-actions {
@@ -1115,6 +1131,11 @@ a:hover {
   border-color: var(--warning);
 }
 
+.tag-running {
+  color: var(--info);
+  border-color: var(--info);
+}
+
 .tag-confirmed {
   color: var(--error);
   border-color: var(--error);
@@ -1135,6 +1156,23 @@ a:hover {
   color: var(--text-muted);
   font-size: 0.9rem;
   margin-top: 6px;
+}
+
+.repo-stat,
+.repo-homepage {
+  color: var(--text-muted);
+  font-size: 0.85rem;
+}
+
+.repo-homepage {
+  color: var(--accent);
+}
+
+.repo-topics {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  vertical-align: middle;
 }
 
 .repo-breadcrumb {

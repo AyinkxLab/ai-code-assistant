@@ -19,16 +19,60 @@
 
   // -- Repo metadata -------------------------------------------------------
 
+  // Only allow http(s) links, which keeps a hostile homepage value from
+  // injecting a javascript: URL into an anchor.
+  function safeHttpUrl(url) {
+    if (typeof url !== "string") return "";
+    var trimmed = url.trim();
+    return /^https?:\/\//i.test(trimmed) ? trimmed : "";
+  }
+
   function loadMeta() {
     GH.api("/github/api/repos/" + encodeURIComponent(OWNER) + "/" + encodeURIComponent(REPO))
       .then(function (repo) {
         var meta = document.getElementById("repo-meta");
-        var description = repo.description ? GH.escapeHtml(repo.description) + " " : "";
-        var visibility = repo.private ? "Private" : "Public";
-        meta.innerHTML = description +
-          '<span class="tag ' + (repo.private ? "tag-private" : "tag-public") + '">' + visibility + "</span> " +
-          (repo.language ? '<span class="repo-language">' + GH.escapeHtml(repo.language) + "</span> " : "") +
-          '<span class="repo-updated">Updated ' + GH.relativeDate(repo.updated_at) + "</span>";
+        var parts = [];
+        if (repo.description) parts.push(GH.escapeHtml(repo.description));
+        parts.push(
+          '<span class="tag ' + (repo.private ? "tag-private" : "tag-public") + '">' +
+            (repo.private ? "Private" : "Public") + "</span>"
+        );
+        if (repo.language) {
+          parts.push('<span class="repo-language">' + GH.escapeHtml(repo.language) + "</span>");
+        }
+        if (repo.stars) {
+          parts.push('<span class="repo-stat" title="Stars">' + repo.stars + " stars</span>");
+        }
+        if (repo.forks) {
+          parts.push('<span class="repo-stat" title="Forks">' + repo.forks + " forks</span>");
+        }
+        if (repo.open_issues_count) {
+          parts.push(
+            '<span class="repo-stat" title="Open issues">' +
+              repo.open_issues_count + " open issues</span>"
+          );
+        }
+        if (repo.license) {
+          parts.push('<span class="repo-stat" title="License">' + GH.escapeHtml(repo.license) + "</span>");
+        }
+        var homepage = safeHttpUrl(repo.homepage);
+        if (homepage) {
+          parts.push(
+            '<a class="repo-homepage" href="' + GH.escapeHtml(homepage) +
+              '" target="_blank" rel="noopener">' + GH.escapeHtml(homepage) + "</a>"
+          );
+        }
+        if (repo.topics && repo.topics.length) {
+          parts.push(
+            '<span class="repo-topics">' +
+              repo.topics.map(function (topic) {
+                return '<span class="tag">' + GH.escapeHtml(topic) + "</span>";
+              }).join(" ") +
+              "</span>"
+          );
+        }
+        parts.push('<span class="repo-updated">Updated ' + GH.relativeDate(repo.updated_at) + "</span>");
+        meta.innerHTML = parts.join(" ");
         if (repo.readme) {
           meta.innerHTML += '<details class="readme"><summary>README</summary><div class="readme-body">' + GH.renderMarkdownish(repo.readme.slice(0, 3000)) + "</div></details>";
         }
