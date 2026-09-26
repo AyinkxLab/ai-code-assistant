@@ -29,6 +29,7 @@ from app.models import (
 )
 from app.models.message_attachment import ALLOWED_IMAGE_TYPES
 from app.models.project import STATUS_READY
+from app.services import audit
 from app.services.llm import LLMProviderError, provider_status
 from app.services.llm_cache import cached_complete
 from app.services.notifications import notify
@@ -281,7 +282,16 @@ def api_options():
 def delete_conversation(conversation_id: int):
     """Delete a conversation and all of its messages."""
     conversation = _get_conversation(conversation_id)
+    conversation_id_value = conversation.id
+    title = conversation.title
     db.session.delete(conversation)
+    audit.record(
+        audit.CONVERSATION_DELETED,
+        user=current_user,
+        target_type="conversation",
+        target_id=conversation_id_value,
+        metadata={"title": title},
+    )
     db.session.commit()
     return jsonify({"ok": True})
 

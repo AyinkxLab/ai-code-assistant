@@ -44,6 +44,7 @@ def create_app(config_name: str | None = None) -> Flask:
     configure_cache(app)
 
     # Register blueprints.
+    from app.admin import bp as admin_bp
     from app.auth import bp as auth_bp
     from app.chat import bp as chat_bp
     from app.collaboration import bp as collaboration_bp
@@ -69,6 +70,7 @@ def create_app(config_name: str | None = None) -> Flask:
     app.register_blueprint(collaboration_bp)
     app.register_blueprint(reviews_bp)
     app.register_blueprint(stellar_bp)
+    app.register_blueprint(admin_bp)
 
     # Make the current time available to every template as ``now``.
     @app.context_processor

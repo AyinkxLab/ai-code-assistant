@@ -7,7 +7,7 @@ from sqlalchemy import func
 from app.extensions import db
 from app.models import Prompt
 from app.prompts import bp
-from app.services import prompt_import
+from app.services import audit, prompt_import
 from app.services import prompt_versions as prompt_versions_service
 
 
@@ -205,8 +205,17 @@ def get_prompt_version(prompt_id: int, version_id: int):
 def delete_prompt(prompt_id: int):
     """Delete a prompt template, retaining its version history for a period."""
     prompt = _get_prompt(prompt_id)
+    prompt_id_value = prompt.id
+    title = prompt.title
     prompt_versions_service.mark_prompt_deleted(prompt.id)
     db.session.delete(prompt)
+    audit.record(
+        audit.PROMPT_DELETED,
+        user=current_user,
+        target_type="prompt",
+        target_id=prompt_id_value,
+        metadata={"title": title},
+    )
     db.session.commit()
     prompt_versions_service.purge_expired_versions()
     db.session.commit()

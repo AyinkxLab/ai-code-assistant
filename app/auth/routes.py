@@ -13,6 +13,7 @@ from flask_login import current_user, login_required, login_user, logout_user
 from app.auth import bp
 from app.extensions import db
 from app.models import User
+from app.services import audit
 
 
 def _is_safe_redirect_target(target: str) -> bool:
@@ -65,6 +66,14 @@ def register():
             user.set_password(password)
             db.session.add(user)
             db.session.commit()
+            audit.record(
+                audit.USER_CREATED,
+                user=user,
+                target_type="user",
+                target_id=user.id,
+                metadata={"username": user.username, "email": user.email},
+            )
+            db.session.commit()
             login_user(user)
             flash("Welcome! Your account was created successfully.", "success")
             if next_url and _is_safe_redirect_target(next_url):
@@ -90,10 +99,27 @@ def login():
         user = User.query.filter_by(email=email).first()
         if user is None or not user.check_password(password):
             error = "Invalid email or password."
+            audit.record(audit.LOGIN_FAILURE, metadata={"email": email})
+            db.session.commit()
         elif not user.is_active:
             error = "This account has been disabled. Contact support."
+            audit.record(
+                audit.LOGIN_FAILURE,
+                user=user,
+                target_type="user",
+                target_id=user.id,
+                metadata={"email": email, "reason": "inactive"},
+            )
+            db.session.commit()
         else:
             user.touch_last_login()
+            audit.record(
+                audit.LOGIN_SUCCESS,
+                user=user,
+                target_type="user",
+                target_id=user.id,
+                metadata={"email": user.email},
+            )
             db.session.commit()
             login_user(user, remember=remember)
             flash(f"Welcome back, {user.username}!", "success")
