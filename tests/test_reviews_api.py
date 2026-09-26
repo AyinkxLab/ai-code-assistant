@@ -624,3 +624,115 @@ class TestMetrics:
         make_user()
         login()
         assert client.get("/reviews/api/metrics").get_json()["findings_trend"] == []
+
+
+class TestReviewRetry:
+    """Retrying a failed review run with its configuration snapshot (#133)."""
+
+    def test_retry_requires_login(self, client):
+        assert client.post("/reviews/api/reviews/1/retry").status_code == 302
+
+    def test_retry_failed_project_review_reuses_config_snapshot(
+        self, client, make_user, login, monkeypatch
+    ):
+        from app.services.llm import LLMProviderError
+
+        user = make_user()
+        login()
+        project = _make_project(user)
+
+        def boom(*args, **kwargs):
+            raise LLMProviderError("provider down")
+
+        monkeypatch.setattr("app.services.reviews.get_provider", boom)
+        failed = client.post(
+            "/reviews/api/reviews",
+            json={"source": "project", "project_id": project.id, "kind": "quality"},
+        ).get_json()
+        assert failed["status"] == "failed"
+        snapshot = json.loads(db.session.get(Review, failed["id"]).config)
+
+        captured = {}
+
+        def fake_review_project(proj, kind, config):
+            captured["config"] = config
+            return {"summary": {"overall_assessment": "retried"}, "findings": [], "raw": ""}
+
+        monkeypatch.setattr(
+            "app.reviews.routes.reviews_service.review_project", fake_review_project
+        )
+        # The project's current config differs from the failed run's snapshot;
+        # the retry must reproduce the snapshot, not the new config.
+        db.session.add(
+            ReviewConfig(user_id=user.id, project_id=project.id, severity_threshold="high")
+        )
+        db.session.commit()
+
+        response = client.post(f"/reviews/api/reviews/{failed['id']}/retry")
+
+        assert response.status_code == 201
+        payload = response.get_json()
+        assert payload["status"] == "completed"
+        assert payload["id"] != failed["id"]
+        assert captured["config"] == snapshot
+        assert json.loads(db.session.get(Review, payload["id"]).config) == snapshot
+
+    def test_retry_failed_pr_review_reuses_config_snapshot(
+        self, client, make_user, login, monkeypatch
+    ):
+        from app.services.llm import LLMProviderError
+
+        make_user()
+        login()
+        monkeypatch.setattr(
+            "app.reviews.routes.get_github_client",
+            lambda: FakeGithubClient(_pr_dict(), _pr_files()),
+        )
+
+        def boom(*args, **kwargs):
+            raise LLMProviderError("provider down")
+
+        monkeypatch.setattr("app.services.reviews.get_provider", boom)
+        failed = client.post(
+            "/reviews/api/reviews",
+            json={"source": "github_pr", "repo": "octocat/hello", "pr_number": 7},
+        ).get_json()
+        assert failed["status"] == "failed"
+        snapshot = json.loads(db.session.get(Review, failed["id"]).config)
+
+        captured = {}
+
+        def fake_review_pr(pr, files, config):
+            captured["config"] = config
+            return {"summary": {}, "findings": [], "raw": ""}
+
+        monkeypatch.setattr(
+            "app.reviews.routes.reviews_service.review_pull_request", fake_review_pr
+        )
+
+        response = client.post(f"/reviews/api/reviews/{failed['id']}/retry")
+
+        assert response.status_code == 201
+        assert response.get_json()["status"] == "completed"
+        assert captured["config"] == snapshot
+
+    def test_retry_completed_review_rejected(self, client, make_user, login):
+        user = make_user()
+        login()
+        review = Review(user_id=user.id, source="project", kind="quality", status="completed")
+        db.session.add(review)
+        db.session.commit()
+
+        response = client.post(f"/reviews/api/reviews/{review.id}/retry")
+
+        assert response.status_code == 409
+
+    def test_retry_other_users_review_forbidden(self, client, make_user, login):
+        other = make_user(username="other", email="other@example.com")
+        make_user()
+        login()
+        review = Review(user_id=other.id, source="project", kind="quality", status="failed")
+        db.session.add(review)
+        db.session.commit()
+
+        assert client.post(f"/reviews/api/reviews/{review.id}/retry").status_code == 404
