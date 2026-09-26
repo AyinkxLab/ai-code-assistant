@@ -41,6 +41,7 @@ def create_app(config_name: str | None = None) -> Flask:
     # Register blueprints.
     from app.auth import bp as auth_bp
     from app.chat import bp as chat_bp
+    from app.chat.api import bp as chat_api_bp
     from app.collaboration import bp as collaboration_bp
     from app.github import bp as github_bp
     from app.keys import bp as keys_bp
@@ -55,6 +56,7 @@ def create_app(config_name: str | None = None) -> Flask:
     app.register_blueprint(auth_bp)
     app.register_blueprint(main_bp)
     app.register_blueprint(chat_bp)
+    app.register_blueprint(chat_api_bp)
     app.register_blueprint(prompts_bp)
     app.register_blueprint(tools_bp)
     app.register_blueprint(github_bp)
