@@ -1115,6 +1115,11 @@ a:hover {
   border-color: var(--warning);
 }
 
+.tag-running {
+  color: var(--info);
+  border-color: var(--info);
+}
+
 .tag-confirmed {
   color: var(--error);
   border-color: var(--error);
