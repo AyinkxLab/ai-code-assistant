@@ -309,6 +309,13 @@ def repo_detail(owner: str, repo: str):
     return render_template("github/repo_detail.html", owner=owner, repo=repo)
 
 
+@bp.route("/repos/<owner>/<repo>/commits/<sha>")
+@login_required
+def commit_detail(owner: str, repo: str, sha: str):
+    """Single commit page with the full message and per-file diffs."""
+    return render_template("github/commit_detail.html", owner=owner, repo=repo, sha=sha)
+
+
 @bp.route("/repos/<owner>/<repo>/issues")
 @login_required
 def issues(owner: str, repo: str):

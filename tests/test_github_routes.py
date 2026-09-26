@@ -522,6 +522,17 @@ class TestApiEndpoints:
         assert client.get("/github/repos/owner/repo/issues/1").status_code == 200
         assert client.get("/github/repos/owner/repo/pulls").status_code == 200
         assert client.get("/github/repos/owner/repo/pulls/1").status_code == 200
+        assert client.get("/github/repos/owner/repo/commits/abc1234").status_code == 200
+
+    def test_commit_detail_renders_with_back_link(self, client, app, monkeypatch):
+        _logged_in_client(client)
+        _create_account(app)
+        response = client.get("/github/repos/owner/repo/commits/abc1234")
+        assert response.status_code == 200
+        body = response.get_data(as_text=True)
+        assert 'data-sha="abc1234"' in body
+        assert "Back to commit list" in body
+        assert "github_commit.js" in body
 
 
 class TestSecurity:
