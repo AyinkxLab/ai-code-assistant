@@ -21,6 +21,7 @@ from app.services.github import (
     validate_full_name,
 )
 from app.services.llm import LLMProviderError, get_provider
+from app.services.soroban_generation import generate_soroban_skeleton
 from app.tools import bp
 
 ALLOWED_EXTENSIONS = {
@@ -180,6 +181,23 @@ def analyze_file():
     system = ACTION_PROMPTS[action]
     result = _run_action(action, f"{system}\n\nFile: {filename}\n\nCode:\n{text}")
     return jsonify({"filename": filename, "action": action, "result": result})
+
+
+@bp.route("/soroban/skeleton", methods=["POST"])
+@login_required
+def soroban_skeleton():
+    """Generate a labeled Soroban contract skeleton from a description (#187).
+
+    The model output is post-processed so the result always has a valid
+    ``#[contractimpl]`` structure and the ``soroban-sdk`` dependency. It is
+    explicitly AI-generated and has not been compiled or verified.
+    """
+    data = request.get_json(silent=True) or {}
+    description = (data.get("description") or "").strip()
+    if not description:
+        return jsonify({"error": "A description is required."}), 400
+    name = (data.get("name") or "").strip() or None
+    return jsonify(generate_soroban_skeleton(description, name=name))
 
 
 @bp.route("/send-to-chat", methods=["POST"])
