@@ -174,16 +174,23 @@ class OpenAIProvider(LLMProvider):
         payload = self._payload(messages, model=model, params=params, stream=True)
         response = self._post(payload, stream=True)
         self._raise_for_status(response)
-        for line in response.iter_lines(decode_unicode=True):
-            if not line or not line.startswith("data: "):
-                continue
-            chunk_payload = line[len("data: ") :].strip()
-            if chunk_payload == "[DONE]":
-                break
-            try:
-                chunk = json.loads(chunk_payload)
-                delta = chunk["choices"][0]["delta"].get("content", "")
-            except (KeyError, IndexError, TypeError, ValueError):
-                delta = ""
-            if delta:
-                yield delta
+        try:
+            for line in response.iter_lines(decode_unicode=True):
+                if not line or not line.startswith("data: "):
+                    continue
+                chunk_payload = line[len("data: ") :].strip()
+                if chunk_payload == "[DONE]":
+                    break
+                try:
+                    chunk = json.loads(chunk_payload)
+                    delta = chunk["choices"][0]["delta"].get("content", "")
+                except (KeyError, IndexError, TypeError, ValueError):
+                    delta = ""
+                if delta:
+                    yield delta
+        except requests.RequestException as exc:
+            # A connection that drops mid-stream surfaces while reading the body,
+            # not from the initial POST, so it must be translated here too.
+            raise ProviderUnavailableError(
+                f"OpenAI stream failed: {exc}", provider=self.name
+            ) from exc

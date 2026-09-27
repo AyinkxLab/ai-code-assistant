@@ -6,6 +6,7 @@ and the OpenAI/Anthropic request/response handling with ``requests`` mocked.
 """
 
 import pytest
+import requests
 
 from app.services import providers
 from app.services.providers import (
@@ -209,6 +210,28 @@ class TestOpenAIProvider:
         )
         chunks = list(OpenAIProvider(api_key="k").stream([{"role": "user", "content": "hi"}]))
         assert chunks == ["he", "llo"]
+
+    def test_stream_mid_stream_failure_raises_typed_error(self, monkeypatch):
+        """A dropped connection while reading the body must not leak requests.*."""
+
+        class BrokenStream(FakeResponse):
+            def iter_lines(self, decode_unicode=False):
+                yield 'data: {"choices":[{"delta":{"content":"he"}}]}'
+                raise requests.exceptions.ChunkedEncodingError("connection dropped")
+
+        monkeypatch.setattr(
+            "app.services.providers.openai.requests.post",
+            lambda *a, **k: BrokenStream(200, {}),
+        )
+
+        received = []
+        with pytest.raises(ProviderUnavailableError):
+            for chunk in OpenAIProvider(api_key="k").stream(
+                [{"role": "user", "content": "hi"}]
+            ):
+                received.append(chunk)
+
+        assert received == ["he"]
 
 
 class TestAnthropicProvider:
