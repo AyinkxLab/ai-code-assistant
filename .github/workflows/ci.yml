@@ -55,6 +55,67 @@ jobs:
         run: |
           pytest --cov=app --cov-report=term-missing
 
+  test-postgres:
+    name: Tests (PostgreSQL)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: aica
+          POSTGRES_PASSWORD: aica
+          POSTGRES_DB: aica_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U aica -d aica_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      APP_ENV: testing
+      TEST_DATABASE_URL: postgresql://aica:aica@localhost:5432/aica_test
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-dev.txt
+
+      # Parity run for the chat module on PostgreSQL (issue #20). The chat
+      # suite must keep >=85% coverage of the chat service/API/model modules.
+      - name: Run chat tests on PostgreSQL
+        run: >
+          pytest
+          tests/test_chat.py
+          tests/test_chat_api.py
+          tests/test_chat_attachments.py
+          tests/test_chat_cancel_generation.py
+          tests/test_chat_settings.py
+          tests/test_chat_audit.py
+          tests/test_chat_onboarding.py
+          tests/test_chat_project_files.py
+          tests/test_chat_coverage.py
+          tests/test_token_usage.py
+          tests/test_api_keys.py
+          tests/test_providers.py
+          tests/test_crypto.py
+          tests/test_models.py
+          --cov=app.chat
+          --cov=app.models.message
+          --cov=app.models.conversation
+          --cov=app.services.llm_cache
+          --cov-report=term-missing
+          --cov-fail-under=85
+
   docker:
     name: Build Docker image
     runs-on: ubuntu-latest

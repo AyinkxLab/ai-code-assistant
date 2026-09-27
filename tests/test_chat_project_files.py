@@ -63,7 +63,9 @@ class TestChatProjectFilesApi:
         assert projects[0]["truncated"] is False
 
         files = projects[0]["files"]
-        assert [f["path"] for f in files] == ["README.md", "app.py"]
+        # Ordering depends on the database collation (SQLite vs PostgreSQL),
+        # so assert membership rather than a collation-specific order (#20).
+        assert {f["path"] for f in files} == {"README.md", "app.py"}
         by_path = {f["path"]: f for f in files}
         assert by_path["app.py"]["size"] == len("print(1)")
         assert by_path["app.py"]["language"] == "python"

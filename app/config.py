@@ -276,11 +276,16 @@ class TestingConfig(Config):
     SQLALCHEMY_DATABASE_URI = os.getenv("TEST_DATABASE_URL", "sqlite:///:memory:")
     # Run import jobs inline so tests can assert final status deterministically.
     IMPORT_JOBS_ASYNC = False
-    # Keep a single in-memory SQLite connection alive across the test run.
-    SQLALCHEMY_ENGINE_OPTIONS: ClassVar[dict] = {
-        "poolclass": StaticPool,
-        "connect_args": {"check_same_thread": False},
-    }
+    # In-memory SQLite needs a single shared connection, and ``check_same_thread``
+    # is a SQLite-only connect arg. A PostgreSQL test database (issue #20) must
+    # not receive either, or the driver rejects the DSN outright.
+    if SQLALCHEMY_DATABASE_URI.startswith("sqlite"):
+        SQLALCHEMY_ENGINE_OPTIONS: ClassVar[dict] = {
+            "poolclass": StaticPool,
+            "connect_args": {"check_same_thread": False},
+        }
+    else:
+        SQLALCHEMY_ENGINE_OPTIONS: ClassVar[dict] = {}
 
 
 class ProductionConfig(Config):
