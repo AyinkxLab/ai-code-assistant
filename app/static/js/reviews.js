@@ -136,7 +136,7 @@
 
   // ----- Index / history -------------------------------------------------
 
-  function loadReviewList(container, filter) {
+  function loadReviewList(container, filter, pagerEl, page) {
     var params = [];
     if (filter) {
       if (filter.source) params.push("source=" + encodeURIComponent(filter.source));
@@ -144,12 +144,15 @@
       if (filter.status) params.push("status=" + encodeURIComponent(filter.status));
       if (filter.project_id) params.push("project_id=" + encodeURIComponent(filter.project_id));
     }
-    var url = "/reviews/api/reviews" + (params.length ? "?" + params.join("&") : "");
-    GH.api(url).then(function (reviews) {
+    params.push("page=" + encodeURIComponent(page || 1));
+    var url = "/reviews/api/reviews?" + params.join("&");
+    GH.api(url).then(function (data) {
+      var reviews = data.items || [];
       container.innerHTML = "";
       if (!reviews.length) {
         container.innerHTML =
           '<p class="sidebar-empty">No reviews yet. Run a review from a project or a pull request.</p>';
+        renderPager(pagerEl, null);
         return;
       }
       reviews.forEach(function (review) {
@@ -157,10 +160,37 @@
         el.innerHTML = reviewCard(review);
         container.appendChild(el.firstChild);
       });
+      renderPager(pagerEl, data);
     }).catch(function (error) {
       container.innerHTML = '<p class="sidebar-empty">Could not load reviews.</p>';
       GH.flashError(error.message);
     });
+  }
+
+  // The pager is only rendered where a pager element exists; the project
+  // history section shows just the most recent page instead.
+  function renderPager(pagerEl, data) {
+    if (!pagerEl) return;
+    pagerEl.innerHTML = "";
+    if (!data || data.total_pages <= 1) return;
+
+    function pageLink(target, label) {
+      var link = document.createElement("a");
+      link.className = "btn btn-ghost btn-sm";
+      link.href = "#";
+      link.dataset.page = target;
+      link.textContent = label;
+      return link;
+    }
+
+    if (data.has_prev) pagerEl.appendChild(pageLink(data.page - 1, "Previous"));
+    var info = document.createElement("span");
+    info.className = "field-hint";
+    info.textContent =
+      "Page " + data.page + " of " + data.total_pages +
+      " (" + data.total + " review" + (data.total === 1 ? "" : "s") + ")";
+    pagerEl.appendChild(info);
+    if (data.has_next) pagerEl.appendChild(pageLink(data.page + 1, "Next"));
   }
 
   function reviewFilter() {
@@ -177,17 +207,36 @@
   function initIndex() {
     var metricsEl = document.getElementById("metrics-strip");
     var listEl = document.getElementById("review-list");
+    var pagerEl = document.getElementById("review-pager");
     if (!listEl) return;
+    var page = 1;
+
+    function refresh() {
+      loadReviewList(listEl, reviewFilter(), pagerEl, page);
+    }
+
     loadMetrics(metricsEl);
-    loadReviewList(listEl, reviewFilter());
+    refresh();
     ["review-source", "review-kind", "review-status"].forEach(function (id) {
       var select = document.getElementById(id);
       if (select) {
         select.addEventListener("change", function () {
-          loadReviewList(listEl, reviewFilter());
+          // A narrower filter usually has fewer pages; jumping back to the
+          // first one avoids landing on an empty out-of-range page.
+          page = 1;
+          refresh();
         });
       }
     });
+    if (pagerEl) {
+      pagerEl.addEventListener("click", function (event) {
+        var link = event.target.closest("a[data-page]");
+        if (!link) return;
+        event.preventDefault();
+        page = parseInt(link.dataset.page, 10) || 1;
+        refresh();
+      });
+    }
   }
 
   // ----- Detail ----------------------------------------------------------

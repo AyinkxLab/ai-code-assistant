@@ -85,21 +85,31 @@ returned.
 #### List reviews
 
 `GET /reviews/api/reviews` — optional query params `source` (`github_pr` /
-`project`), `kind`, `status`, and `project_id`. Returns the user's reviews,
-newest first.
+`project`), `kind`, `status`, and `project_id`. Results are paginated with
+`page` (default 1) and `per_page` (default 20, capped at 100), and ordered
+newest first with `id` breaking `created_at` ties so paging is stable. The
+response is a page envelope, not a bare array.
 
 ```json
-[
-  {
-    "id": 12,
-    "source": "project",
-    "kind": "security",
-    "status": "completed",
-    "findings_count": 3,
-    "summary": {"overview": "..."},
-    "created_at": "2026-01-01T00:00:00+00:00"
-  }
-]
+{
+  "items": [
+    {
+      "id": 12,
+      "source": "project",
+      "kind": "security",
+      "status": "completed",
+      "findings_count": 3,
+      "summary": {"overview": "..."},
+      "created_at": "2026-01-01T00:00:00+00:00"
+    }
+  ],
+  "total": 42,
+  "page": 1,
+  "per_page": 20,
+  "total_pages": 3,
+  "has_next": true,
+  "has_prev": false
+}
 ```
 
 #### Run a review
