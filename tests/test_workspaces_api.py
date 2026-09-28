@@ -1,6 +1,9 @@
-"""Tests for workspace API routes: CRUD, pinning, ownership isolation, and auth."""
+"""Tests for workspace API routes: CRUD, slugs, pinning, ownership isolation, auth."""
 
 from datetime import UTC, datetime, timedelta
+
+import pytest
+from sqlalchemy.exc import IntegrityError
 
 from app.extensions import db
 from app.models import Project, Workspace
@@ -83,6 +86,166 @@ class TestWorkspaceCRUD:
         workspace = _create_workspace(user.id)
         assert client.get("/workspaces/").status_code == 200
         assert client.get(f"/workspaces/{workspace.id}").status_code == 200
+
+
+class TestWorkspaceSlug:
+    """Slugs are stored, normalized, and unique per user."""
+
+    def test_slug_derived_from_name_on_create(self, client, make_user, login):
+        make_user()
+        login()
+        response = client.post("/workspaces/api/workspaces", json={"name": "My Cool  Workspace!"})
+        assert response.status_code == 201
+        assert response.get_json()["slug"] == "my-cool-workspace"
+
+    def test_slug_is_stored_not_derived_on_read(self, client, make_user, login, db):
+        user = make_user()
+        login()
+        workspace = _create_workspace(user.id, "Stored Slug")
+        assert workspace.slug == "stored-slug"
+        assert db.session.get(Workspace, workspace.id).slug == "stored-slug"
+
+    def test_rename_updates_slug(self, client, make_user, login, db):
+        user = make_user()
+        login()
+        workspace = _create_workspace(user.id, "Before")
+        response = client.patch(
+            f"/workspaces/api/workspaces/{workspace.id}",
+            json={"name": "After The Rename"},
+        )
+        assert response.status_code == 200
+        assert response.get_json()["slug"] == "after-the-rename"
+        db.session.expire_all()
+        assert db.session.get(Workspace, workspace.id).slug == "after-the-rename"
+
+    def test_create_duplicate_name_returns_400(self, client, make_user, login):
+        user = make_user()
+        login()
+        _create_workspace(user.id, "Taken")
+        response = client.post("/workspaces/api/workspaces", json={"name": "Taken"})
+        assert response.status_code == 400
+        assert "already have a workspace" in response.get_json()["error"]
+        assert Workspace.query.filter_by(user_id=user.id).count() == 1
+
+    def test_create_normalized_collision_returns_400(self, client, make_user, login):
+        """Different casing/punctuation normalizes to the same slug."""
+        user = make_user()
+        login()
+        _create_workspace(user.id, "My Workspace")
+        for variant in ("my workspace", "MY  WORKSPACE", "My-Workspace"):
+            response = client.post("/workspaces/api/workspaces", json={"name": variant})
+            assert response.status_code == 400, variant
+            assert "already have a workspace" in response.get_json()["error"]
+        assert Workspace.query.filter_by(user_id=user.id).count() == 1
+
+    def test_rename_collision_returns_400(self, client, make_user, login, db):
+        user = make_user()
+        login()
+        first = _create_workspace(user.id, "Alpha")
+        second = _create_workspace(user.id, "Beta")
+        response = client.patch(
+            f"/workspaces/api/workspaces/{second.id}",
+            json={"name": "alpha"},
+        )
+        assert response.status_code == 400
+        assert "already have a workspace" in response.get_json()["error"]
+        assert response.get_json()["conflicting_workspace_id"] == first.id
+        # The rejected rename must not partially apply.
+        db.session.expire_all()
+        assert db.session.get(Workspace, second.id).name == "Beta"
+        assert db.session.get(Workspace, second.id).slug == "beta"
+
+    def test_rename_to_same_name_is_allowed(self, client, make_user, login):
+        user = make_user()
+        login()
+        workspace = _create_workspace(user.id, "Stable")
+        response = client.patch(
+            f"/workspaces/api/workspaces/{workspace.id}",
+            json={"name": "Stable"},
+        )
+        assert response.status_code == 200
+        assert response.get_json()["slug"] == "stable"
+
+    def test_rename_to_variation_of_own_name_is_allowed(self, client, make_user, login):
+        """A workspace may be re-cased without colliding with itself."""
+        user = make_user()
+        login()
+        workspace = _create_workspace(user.id, "Stable Name")
+        response = client.patch(
+            f"/workspaces/api/workspaces/{workspace.id}",
+            json={"name": "STABLE NAME"},
+        )
+        assert response.status_code == 200
+        assert response.get_json()["slug"] == "stable-name"
+
+    def test_same_name_allowed_for_different_users(self, client, make_user, login):
+        alice = make_user(username="alice", email="alice@example.com")
+        _create_workspace(alice.id, "Shared Name")
+        make_user(username="bob", email="bob@example.com")
+        login(email="bob@example.com")
+        response = client.post("/workspaces/api/workspaces", json={"name": "Shared Name"})
+        assert response.status_code == 201
+        assert response.get_json()["slug"] == "shared-name"
+
+    def test_rename_only_checks_own_account(self, client, make_user, login):
+        alice = make_user(username="alice", email="alice@example.com")
+        bob = make_user(username="bob", email="bob@example.com")
+        _create_workspace(bob.id, "Bob Only")
+        bob_ws = _create_workspace(bob.id, "Bob Second")
+        _create_workspace(alice.id, "Alice One")
+        alice_ws = _create_workspace(alice.id, "Alice Two")
+        login(email="alice@example.com")
+        response = client.patch(
+            f"/workspaces/api/workspaces/{alice_ws.id}",
+            json={"name": "Bob Only"},
+        )
+        assert response.status_code == 200
+        assert response.get_json()["slug"] == "bob-only"
+        assert bob_ws.slug == "bob-second"
+
+    def test_name_without_slug_characters_stores_fallback(self, client, make_user, login):
+        user = make_user()
+        login()
+        # "!!!" normalizes to the shared fallback slug, so it stores only once.
+        first = client.post("/workspaces/api/workspaces", json={"name": "!!!"})
+        assert first.status_code == 201
+        assert first.get_json()["slug"] == "workspace"
+        second = client.post("/workspaces/api/workspaces", json={"name": "???"})
+        assert second.status_code == 400
+        assert second.get_json()["conflicting_slug"] == "workspace"
+
+    def test_patching_other_fields_after_rename(self, client, make_user, login):
+        user = make_user()
+        login()
+        workspace = _create_workspace(user.id, "Original")
+        client.patch(f"/workspaces/api/workspaces/{workspace.id}", json={"name": "New Name"})
+        response = client.patch(
+            f"/workspaces/api/workspaces/{workspace.id}",
+            json={"description": "updated"},
+        )
+        assert response.status_code == 200
+        assert response.get_json()["slug"] == "new-name"
+
+
+class TestWorkspaceSlugConstraint:
+    """The database is the source of truth for per-user slug uniqueness."""
+
+    def test_duplicate_slug_for_same_user_raises(self, app, db, make_user):
+        user = make_user()
+        db.session.add(Workspace(user_id=user.id, name="Dup One"))
+        db.session.commit()
+        db.session.add(Workspace(user_id=user.id, name="dup one"))
+        with pytest.raises(IntegrityError):
+            db.session.commit()
+        db.session.rollback()
+
+    def test_duplicate_slug_across_users_allowed(self, app, db, make_user):
+        alice = make_user(username="alice", email="alice@example.com")
+        bob = make_user(username="bob", email="bob@example.com")
+        db.session.add(Workspace(user_id=alice.id, name="Shared"))
+        db.session.add(Workspace(user_id=bob.id, name="Shared"))
+        db.session.commit()
+        assert Workspace.query.filter_by(slug="shared").count() == 2
 
 
 class TestWorkspacePin:
