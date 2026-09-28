@@ -55,4 +55,4 @@ def test_review_history_is_project_scoped(client, app, make_user, login):
     db.session.commit()
 
     data = client.get(f"/reviews/api/reviews?project_id={project.id}").get_json()
-    assert [row["id"] for row in data] == [review.id]
+    assert [row["id"] for row in data["items"]] == [review.id]

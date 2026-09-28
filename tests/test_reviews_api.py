@@ -275,13 +275,13 @@ class TestListDetailDelete:
         db.session.commit()
         response = client.get("/reviews/api/reviews")
         assert response.status_code == 200
-        assert len(response.get_json()) == 2
+        assert len(response.get_json()["items"]) == 2
 
         response = client.get("/reviews/api/reviews?kind=pr")
-        assert len(response.get_json()) == 1
+        assert len(response.get_json()["items"]) == 1
 
         response = client.get(f"/reviews/api/reviews?project_id={project.id}")
-        assert len(response.get_json()) == 1
+        assert len(response.get_json()["items"]) == 1
 
     def test_list_scoped_to_owner(self, client, make_user, login):
         other = make_user(username="other", email="other@example.com")
@@ -290,7 +290,7 @@ class TestListDetailDelete:
         db.session.add(Review(user_id=other.id, source="project", kind="security"))
         db.session.commit()
         response = client.get("/reviews/api/reviews")
-        assert response.get_json() == []
+        assert response.get_json()["items"] == []
 
     def test_detail_and_findings(self, client, make_user, login):
         user = make_user()
