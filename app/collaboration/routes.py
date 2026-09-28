@@ -265,6 +265,24 @@ def api_transfer_ownership(workspace_id: int):
     if target is None:
         return jsonify({"error": "The target must be an active member of this workspace."}), 400
 
+    # Transferring moves the workspace into the target's account, where slugs
+    # are unique. Reject the move when the target already owns a workspace with
+    # this one's slug instead of failing on the unique constraint at commit.
+    slug_clash = Workspace.query.filter_by(user_id=target.user_id, slug=workspace.slug).first()
+    if slug_clash is not None:
+        return (
+            jsonify(
+                {
+                    "error": (
+                        f"{target.user.username} already has a workspace named "
+                        f"{slug_clash.name!r} ('{workspace.slug}'). "
+                        "Rename one of them before transferring."
+                    )
+                }
+            ),
+            400,
+        )
+
     previous_owner = current_user
 
     old_membership = WorkspaceMember.query.filter_by(

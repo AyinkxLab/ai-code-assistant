@@ -55,6 +55,7 @@ from flask import (
     url_for,
 )
 from flask_login import current_user, login_required
+from sqlalchemy.exc import IntegrityError
 
 from app.extensions import db
 from app.models import Project, ProjectChatSession, ProjectMessage, User, Workspace, WorkspaceMember
@@ -73,6 +74,7 @@ from app.models.project import (
     STATUS_INDEXING,
     STATUS_READY,
 )
+from app.models.workspace import slugify_workspace_name
 from app.models.workspace_member import (
     MEMBER_ROLES,
     ROLE_OWNER,
@@ -153,6 +155,52 @@ def _member_role(workspace_id: int) -> str | None:
         workspace_id=workspace_id, user_id=current_user.id
     ).first()
     return membership.role if membership else None
+
+
+def _slug_conflict(user_id: int, slug: str, exclude_workspace_id: int | None = None):
+    """Return the user's workspace already holding ``slug``, or ``None``.
+
+    ``exclude_workspace_id`` lets a rename re-submit its own current slug
+    without matching itself.
+    """
+    query = Workspace.query.filter_by(user_id=user_id, slug=slug)
+    if exclude_workspace_id is not None:
+        query = query.filter(Workspace.id != exclude_workspace_id)
+    return query.first()
+
+
+def _workspace_name_payload(raw_name, user_id: int, exclude_workspace_id: int | None = None):
+    """Validate a submitted workspace name and return ``(name, slug, error)``.
+
+    Names are unique per user by normalized slug, so "My Workspace" and
+    "my  workspace" are the same workspace. On collision ``error`` is a
+    ready-to-return ``(jsonify(...), 400)`` pair naming the conflicting
+    workspace so the caller knows what to change.
+    """
+    name = (raw_name or "").strip()[:200]
+    if not name:
+        return None, None, (jsonify({"error": "A workspace name is required."}), 400)
+    slug = slugify_workspace_name(name)
+    clash = _slug_conflict(user_id, slug, exclude_workspace_id)
+    if clash is not None:
+        return (
+            None,
+            None,
+            (
+                jsonify(
+                    {
+                        "error": (
+                            f"You already have a workspace named {clash.name!r} "
+                            f"('{slug}'). Pick a different name."
+                        ),
+                        "conflicting_workspace_id": clash.id,
+                        "conflicting_slug": clash.slug,
+                    }
+                ),
+                400,
+            ),
+        )
+    return name, slug, None
 
 
 def _get_membership(workspace_id: int, user_id: int) -> WorkspaceMember:
@@ -281,16 +329,26 @@ def api_list_workspaces():
 @login_required
 def api_create_workspace():
     data = request.get_json(silent=True) or {}
-    name = (data.get("name") or "").strip()
-    if not name:
-        return jsonify({"error": "A workspace name is required."}), 400
+    name, slug, error = _workspace_name_payload(data.get("name"), current_user.id)
+    if error is not None:
+        return error
     workspace = Workspace(
         user_id=current_user.id,
-        name=name[:200],
+        name=name,
+        slug=slug,
         description=((data.get("description") or "").strip()[:2000] or None),
     )
     db.session.add(workspace)
-    db.session.commit()
+    try:
+        db.session.commit()
+    except IntegrityError:
+        # Backstop for the uq_workspaces_user_slug race; the pre-check above
+        # handles the common case and names the conflicting workspace.
+        db.session.rollback()
+        return (
+            jsonify({"error": f"A workspace named '{slug}' already exists. Pick a different name."}),
+            400,
+        )
     return jsonify(workspace.to_dict()), 201
 
 
@@ -299,16 +357,33 @@ def api_create_workspace():
 def api_update_workspace(workspace_id: int):
     workspace = _get_workspace(workspace_id)
     data = request.get_json(silent=True) or {}
+    new_slug = workspace.slug
     if "name" in data:
-        name = (data.get("name") or "").strip()
-        if not name:
-            return jsonify({"error": "A workspace name is required."}), 400
-        workspace.name = name[:200]
+        # Exclude this workspace so re-submitting its own name is a no-op
+        # rather than a self-collision.
+        name, new_slug, error = _workspace_name_payload(
+            data.get("name"), current_user.id, exclude_workspace_id=workspace.id
+        )
+        if error is not None:
+            return error
+        workspace.name = name
+        workspace.slug = new_slug
     if "description" in data:
         workspace.description = (data.get("description") or "").strip()[:2000] or None
     if "is_pinned" in data:
         workspace.is_pinned = bool(data["is_pinned"])
-    db.session.commit()
+    try:
+        db.session.commit()
+    except IntegrityError:
+        # Backstop for the uq_workspaces_user_slug race; the pre-check above
+        # handles the common case and names the conflicting workspace.
+        db.session.rollback()
+        return (
+            jsonify(
+                {"error": f"A workspace named '{new_slug}' already exists. Pick a different name."}
+            ),
+            400,
+        )
     return jsonify(workspace.to_dict())
 
 

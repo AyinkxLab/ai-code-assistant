@@ -99,6 +99,28 @@ class TestOwnershipTransfer:
         )
         assert outside_response.status_code == 400
 
+    def test_transfer_rejected_when_target_owns_same_slug(self, client, make_user, login):
+        """The target's account already uses this slug, so the move is refused."""
+        owner = make_user(username="owner", email="owner@example.com")
+        member = _create_user("member", "member@example.com")
+        workspace, _ = _setup(owner, member)
+        # A different workspace owned by the transfer target with the same
+        # normalized name; the old schema allowed this, the new one does not.
+        db.session.add(Workspace(user_id=member.id, name="transfer  workspace"))
+        db.session.commit()
+        assert workspace.slug == "transfer-workspace"
+
+        login(email="owner@example.com")
+        response = client.post(
+            f"/workspaces/api/workspaces/{workspace.id}/transfer",
+            json={"user_id": member.id},
+        )
+        assert response.status_code == 400
+        assert "already has a workspace" in response.get_json()["error"]
+        # Ownership is unchanged, so the workspace is still usable.
+        db.session.refresh(workspace)
+        assert workspace.user_id == owner.id
+
     def test_new_owner_can_manage_after_transfer(self, client, make_user, login):
         owner = make_user(username="owner", email="owner@example.com")
         member = _create_user("member", "member@example.com")
