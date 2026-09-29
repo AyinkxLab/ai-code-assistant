@@ -1,6 +1,7 @@
 """Tests for the chat blueprint: conversations, messages, streaming, export."""
 
-from app.models import Conversation, ConversationShare, Notification, User
+from app.extensions import db as database
+from app.models import Conversation, ConversationShare, Message, Notification, User
 
 
 def _register(client, username="tester", email="tester@example.com"):
@@ -66,6 +67,75 @@ class TestChatPage:
 
 
 class TestConversationApi:
+    def test_owner_can_revoke_public_share_link(self, client, db):
+        _register(client)
+        conversation = _create_conversation(client)
+        created = client.post(
+            f"/chat/conversations/{conversation['id']}/share-links",
+            json={},
+            headers={"X-CSRFToken": "ignored"},
+        ).get_json()
+        revoked = client.delete(
+            f"/chat/conversations/{conversation['id']}/share-links/{created['id']}",
+            headers={"X-CSRFToken": "ignored"},
+        )
+        assert revoked.status_code == 200
+        assert client.get(created["url"]).status_code == 404
+
+    def test_secure_share_link_is_read_only_and_revocable(self, client, db):
+        _register(client)
+        conversation_data = _create_conversation(client, title="Shared title")
+        conversation = database.session.get(Conversation, conversation_data["id"])
+        conversation.messages.append(Message(role="user", content="hello shared"))
+        conversation.messages.append(Message(role="assistant", content="private reply"))
+        database.session.commit()
+
+        response = client.post(
+            f"/chat/conversations/{conversation.id}/share-links",
+            json={"expires_in_hours": 24},
+            headers={"X-CSRFToken": "ignored"},
+        )
+        assert response.status_code == 201
+        payload = response.get_json()
+        share = database.session.get(ConversationShare, payload["id"])
+        listed = client.get(
+            f"/chat/conversations/{conversation.id}/share-links"
+        ).get_json()
+        assert [item["id"] for item in listed] == [share.id]
+        assert share.user_id is None
+        assert share.token_hash not in payload["url"]
+        assert payload["permission"] == "read_only"
+
+        _logout(client)
+        page = client.get(payload["url"])
+        assert page.status_code == 200
+        assert b"hello shared" in page.data
+        assert b"private reply" in page.data
+        assert b"workspace" not in page.data.lower()
+
+        _register(client, username="intruder", email="intruder@example.com")
+        denied = client.delete(
+            f"/chat/conversations/{conversation.id}/share-links/{share.id}",
+            headers={"X-CSRFToken": "ignored"},
+        )
+        assert denied.status_code == 404
+        _logout(client)
+        expired = share.expires_at
+        share.expires_at = expired.replace(year=expired.year - 1)
+        database.session.commit()
+        assert client.get(payload["url"]).status_code == 404
+
+    def test_share_link_expiry_is_validated(self, client, db):
+        _register(client)
+        conversation = _create_conversation(client)
+        for invalid in (0, 24 * 366):
+            response = client.post(
+                f"/chat/conversations/{conversation['id']}/share-links",
+                json={"expires_in_hours": invalid},
+                headers={"X-CSRFToken": "ignored"},
+            )
+            assert response.status_code == 400
+
     def test_create_conversation(self, client, db):
         _register(client)
         data = _create_conversation(client, title="First chat")

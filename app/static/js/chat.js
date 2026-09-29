@@ -303,6 +303,7 @@
     setActiveItem(id);
     messagesEl.innerHTML = "";
     actionsEl.hidden = false;
+    loadShareLinks(id);
     return api("/chat/conversations/" + id)
       .then(function (data) {
         data.messages.forEach(function (message) {
@@ -323,6 +324,27 @@
       .catch(function (error) {
         flashError(error.message);
       });
+  }
+
+  function loadShareLinks(id) {
+    var container = document.getElementById("share-links-list");
+    if (!container) return;
+    container.innerHTML = "";
+    api("/chat/conversations/" + id + "/share-links").then(function (links) {
+      links.forEach(function (link) {
+        var row = document.createElement("p");
+        var expiry = document.createElement("span");
+        expiry.textContent = "Read-only link expires " + new Date(link.expires_at).toLocaleString() + " ";
+        var revoke = document.createElement("button");
+        revoke.type = "button";
+        revoke.className = "btn btn-ghost btn-sm";
+        revoke.textContent = "Revoke";
+        revoke.dataset.revokeShareLinkId = link.id;
+        row.appendChild(expiry);
+        row.appendChild(revoke);
+        container.appendChild(row);
+      });
+    }).catch(function (error) { flashError(error.message); });
   }
 
   function newConversation() {
@@ -940,6 +962,29 @@
       var id = currentId;
       var button = event.target.closest("button");
       if (!button || id === null) return;
+      if (button.dataset.revokeShareLinkId) {
+        api("/chat/conversations/" + id + "/share-links/" + button.dataset.revokeShareLinkId, {
+          method: "DELETE",
+        }).then(function () { loadShareLinks(id); }).catch(function (error) { flashError(error.message); });
+        return;
+      }
+      if (button.id === "create-share-link") {
+        api("/chat/conversations/" + id + "/share-links", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({}),
+        }).then(function (share) {
+          if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(share.url).catch(function () {
+              window.prompt("Copy this read-only link:", share.url);
+            });
+          } else {
+            window.prompt("Copy this read-only link:", share.url);
+          }
+          loadShareLinks(id);
+        }).catch(function (error) { flashError(error.message); });
+        return;
+      }
       if (button.id === "rename-conversation") {
         var title = prompt("Rename conversation:", "");
         if (title === null) return;
