@@ -192,6 +192,9 @@ class GitHubClient:
         self.api_url = (api_url or Config.GITHUB_API_URL).rstrip("/")
         self.timeout = timeout or Config.GITHUB_REQUEST_TIMEOUT
         self.max_retries = max_retries
+        #: Scopes GitHub reports as actually granted (``X-OAuth-Scopes``).
+        #: Display-only hint; never used to make an authorization decision.
+        self._granted_scopes: list[str] = []
         self.session = requests.Session()
         self.session.headers.update(
             {
@@ -219,6 +222,8 @@ class GitHubClient:
                 raise GitHubNetworkError(
                     "Could not reach the GitHub API. Please try again.", detail=str(exc)
                 ) from exc
+
+            self._capture_scopes(response)
 
             if response.status_code == 404:
                 raise GitHubNotFoundError("The requested GitHub resource was not found.")
@@ -266,6 +271,22 @@ class GitHubClient:
         raise GitHubNetworkError(
             "Could not reach the GitHub API. Please try again.", detail=str(last_exc)
         )
+
+    def _capture_scopes(self, response: requests.Response) -> None:
+        """Record the granted OAuth scopes GitHub reports (issue #57).
+
+        GitHub returns the scopes the token actually holds in the
+        ``X-OAuth-Scopes`` response header. The value is a display hint only;
+        it is never used to make an authorization decision.
+        """
+        header = response.headers.get("X-OAuth-Scopes")
+        if header is not None:
+            self._granted_scopes = [scope.strip() for scope in header.split(",") if scope.strip()]
+
+    @property
+    def granted_scopes(self) -> list[str]:
+        """Scopes GitHub actually granted, as reported by ``X-OAuth-Scopes``."""
+        return list(self._granted_scopes)
 
     def _get(self, path: str, *, params: dict | None = None) -> dict | list:
         return self._request("GET", path, params=params)
