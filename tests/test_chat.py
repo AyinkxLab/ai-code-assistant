@@ -98,6 +98,10 @@ class TestConversationApi:
         assert response.status_code == 201
         payload = response.get_json()
         share = database.session.get(ConversationShare, payload["id"])
+        listed = client.get(
+            f"/chat/conversations/{conversation.id}/share-links"
+        ).get_json()
+        assert [item["id"] for item in listed] == [share.id]
         assert share.user_id is None
         assert share.token_hash not in payload["url"]
         assert payload["permission"] == "read_only"

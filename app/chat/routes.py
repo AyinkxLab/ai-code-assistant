@@ -479,10 +479,25 @@ def unshare_conversation(conversation_id: int, user_id: int):
     return jsonify({"ok": True})
 
 
-@bp.route("/conversations/<int:conversation_id>/share-links", methods=["POST"])
+@bp.route("/conversations/<int:conversation_id>/share-links", methods=["GET", "POST"])
 @login_required
 def create_share_link(conversation_id: int):
     """Create an expiring, read-only URL for a conversation owned by caller."""
+    if request.method == "GET":
+        conversation = _get_visible_conversation(conversation_id)
+        if conversation.user_id != current_user.id:
+            return jsonify([])
+        links = ConversationShare.query.filter_by(conversation_id=conversation.id).filter(
+            ConversationShare.token_hash.isnot(None)
+        ).order_by(ConversationShare.created_at.desc()).all()
+        return jsonify([
+            {
+                "id": link.id,
+                "expires_at": link.expires_at.isoformat(),
+                "permission": link.permission,
+            }
+            for link in links
+        ])
     conversation = _get_conversation(conversation_id)
     data = request.get_json(silent=True) or {}
     try:
