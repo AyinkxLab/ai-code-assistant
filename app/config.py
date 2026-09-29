@@ -9,6 +9,7 @@ file (see ``.env.example``).
 
 import json
 import os
+import tempfile
 from pathlib import Path
 from typing import ClassVar
 
@@ -72,6 +73,10 @@ class Config:
 
     # Maximum size of an uploaded file in bytes (configured for future phases).
     MAX_CONTENT_LENGTH = int(os.getenv("MAX_CONTENT_LENGTH", 16 * 1024 * 1024))
+
+    # Directory where persisted uploads are written (issue #42). Created on
+    # demand; must be writable by the application process.
+    UPLOAD_FOLDER = os.getenv("UPLOAD_FOLDER", str(BASE_DIR / "uploads"))
 
     # LLM provider backend: "mock" (default, offline) or "openai".
     LLM_PROVIDER = os.getenv("LLM_PROVIDER", "mock")
@@ -273,6 +278,8 @@ class TestingConfig(Config):
 
     TESTING = True
     WTF_CSRF_ENABLED = False
+    # Keep persisted uploads in a throwaway temp directory during tests.
+    UPLOAD_FOLDER = tempfile.mkdtemp(prefix="aica-test-uploads-")
     SQLALCHEMY_DATABASE_URI = os.getenv("TEST_DATABASE_URL", "sqlite:///:memory:")
     # Run import jobs inline so tests can assert final status deterministically.
     IMPORT_JOBS_ASYNC = False
