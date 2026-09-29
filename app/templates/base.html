@@ -23,6 +23,7 @@
         {% if current_user.is_authenticated %}
           <a class="nav-link" href="{{ url_for('chat.index') }}">Chat</a>
           <a class="nav-link" href="{{ url_for('prompts.index') }}">Prompts</a>
+          <a class="nav-link" href="{{ url_for('tools.analysis_history') }}">Analysis History</a>
           <a class="nav-link" href="{{ url_for('github.repos') }}">GitHub</a>
           <a class="nav-link" href="{{ url_for('workspaces.index') }}">Workspaces</a>
           <a class="nav-link" href="{{ url_for('plugins.index') }}">Plugins</a>
