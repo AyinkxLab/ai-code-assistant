@@ -31,6 +31,7 @@ from app.models.review_comment import ReviewComment
 from app.models.review_config import ReviewConfig
 from app.models.review_finding import ReviewFinding
 from app.models.stellar_security_finding import StellarSecurityFinding
+from app.models.uploaded_file import UploadedFile
 from app.models.user import User
 from app.models.workspace import Workspace
 from app.models.workspace_member import WorkspaceMember
@@ -65,6 +66,7 @@ __all__ = [
     "ReviewConfig",
     "ReviewFinding",
     "StellarSecurityFinding",
+    "UploadedFile",
     "User",
     "Workspace",
     "WorkspaceInvitation",

@@ -9,13 +9,14 @@ import hashlib
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
-from flask import current_app, jsonify, render_template, request
+from flask import abort, current_app, jsonify, render_template, request, send_file
 from flask_login import current_user, login_required
 from werkzeug.utils import secure_filename
 
 from app.extensions import db
-from app.models import AnalyzedFile, Conversation, FileAnalysis, Message
+from app.models import AnalyzedFile, Conversation, FileAnalysis, Message, UploadedFile, Workspace
 from app.services import analysis
+from app.services import uploads
 from app.services.github import (
     GitHubError,
     get_github_client,
@@ -26,33 +27,9 @@ from app.services.llm import LLMProviderError, get_provider
 from app.services.soroban_generation import generate_soroban_skeleton
 from app.tools import bp
 
-ALLOWED_EXTENSIONS = {
-    "py",
-    "js",
-    "ts",
-    "jsx",
-    "tsx",
-    "html",
-    "css",
-    "sql",
-    "java",
-    "go",
-    "rs",
-    "rb",
-    "php",
-    "c",
-    "cpp",
-    "h",
-    "hpp",
-    "cs",
-    "sh",
-    "json",
-    "yaml",
-    "yml",
-    "toml",
-    "md",
-    "txt",
-}
+# Source extensions accepted for analysis. Shared with persisted uploads so the
+# same files that can be analyzed inline can be uploaded and re-analyzed (#42).
+ALLOWED_EXTENSIONS = uploads.ALLOWED_EXTENSIONS
 
 ACTION_PROMPTS = {
     "generate": (
@@ -427,3 +404,125 @@ def repo_analyze():
         "truncated": len(paths) > REPO_ANALYZE_MAX_FILES,
     }
     return jsonify(result)
+
+
+# --------------------------------------------------------------------------
+# Persisted uploads (#42)
+# --------------------------------------------------------------------------
+
+
+def _owned_workspace(workspace_id: int | None) -> Workspace | None:
+    if workspace_id is None:
+        return None
+    return Workspace.query.filter_by(id=workspace_id, user_id=current_user.id).first()
+
+
+@bp.route("/files", methods=["POST"])
+@login_required
+def upload_file():
+    """Persist an uploaded file on disk and record it in the ``files`` table."""
+    workspace = _owned_workspace(request.form.get("workspace_id", type=int))
+    if workspace is None:
+        return jsonify({"error": "A valid workspace is required."}), 400
+
+    conversation = None
+    conversation_id = request.form.get("conversation_id", type=int)
+    if conversation_id is not None:
+        conversation = Conversation.query.filter_by(
+            id=conversation_id, user_id=current_user.id
+        ).first()
+        if conversation is None:
+            return jsonify({"error": "Conversation not found."}), 404
+
+    try:
+        record = uploads.save_upload(
+            request.files.get("file"),
+            workspace_id=workspace.id,
+            user_id=current_user.id,
+            conversation_id=conversation.id if conversation else None,
+        )
+    except uploads.UploadError as exc:
+        return jsonify({"error": str(exc)}), 400
+    return jsonify(record.to_dict()), 201
+
+
+@bp.route("/files", methods=["GET"])
+@login_required
+def list_files():
+    """List the current user's persisted uploads (owner-only)."""
+    query = UploadedFile.query.filter_by(user_id=current_user.id)
+    workspace_id = request.args.get("workspace_id", type=int)
+    if workspace_id is not None:
+        query = query.filter_by(workspace_id=workspace_id)
+    conversation_id = request.args.get("conversation_id", type=int)
+    if conversation_id is not None:
+        query = query.filter_by(conversation_id=conversation_id)
+    records = query.order_by(UploadedFile.created_at.desc(), UploadedFile.id.desc()).all()
+    return jsonify([record.to_dict() for record in records])
+
+
+@bp.route("/files/<int:file_id>", methods=["GET"])
+@login_required
+def get_file(file_id: int):
+    """Return metadata for one of the current user's uploads."""
+    record = UploadedFile.query.filter_by(id=file_id, user_id=current_user.id).first_or_404()
+    return jsonify(record.to_dict())
+
+
+@bp.route("/files/<int:file_id>/download", methods=["GET"])
+@login_required
+def download_file(file_id: int):
+    """Download one of the current user's uploads (owner-only)."""
+    record = UploadedFile.query.filter_by(id=file_id, user_id=current_user.id).first_or_404()
+    path = uploads.path_for(record)
+    if not path.exists():
+        abort(404)
+    return send_file(path, as_attachment=True, download_name=record.original_name)
+
+
+@bp.route("/files/<int:file_id>/attach", methods=["POST"])
+@login_required
+def attach_file(file_id: int):
+    """Associate a persisted upload with one of the user's conversations."""
+    record = UploadedFile.query.filter_by(id=file_id, user_id=current_user.id).first_or_404()
+    data = request.get_json(silent=True) or {}
+    conversation = Conversation.query.filter_by(
+        id=data.get("conversation_id"), user_id=current_user.id
+    ).first()
+    if conversation is None:
+        return jsonify({"error": "Conversation not found."}), 404
+    record.conversation_id = conversation.id
+    db.session.commit()
+    return jsonify(record.to_dict())
+
+
+@bp.route("/files/<int:file_id>/reanalyze", methods=["POST"])
+@login_required
+def reanalyze_file(file_id: int):
+    """Re-run an analysis over a persisted file without re-uploading (#42)."""
+    record = UploadedFile.query.filter_by(id=file_id, user_id=current_user.id).first_or_404()
+    data = request.get_json(silent=True) or {}
+    action = (data.get("action") or "explain").strip().lower()
+    if action not in ACTION_PROMPTS or action == "generate":
+        action = "explain"
+    try:
+        text = uploads.read_text(record)
+    except uploads.UploadError as exc:
+        return jsonify({"error": str(exc)}), 400
+    try:
+        provider = get_provider()
+        result = provider.complete(
+            [
+                {"role": "system", "content": "You are a helpful AI coding assistant."},
+                {
+                    "role": "user",
+                    "content": (
+                        f"{ACTION_PROMPTS[action]}\n\n"
+                        f"File: {record.original_name}\n\nCode:\n{text}"
+                    ),
+                },
+            ]
+        )
+    except LLMProviderError as exc:
+        return jsonify({"error": f"[provider error] {exc}"}), 502
+    return jsonify({"file": record.to_dict(), "action": action, "result": result})
