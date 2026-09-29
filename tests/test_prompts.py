@@ -5,7 +5,9 @@ import io
 import json
 from datetime import UTC, datetime, timedelta
 
-from app.models import Prompt, PromptVersion
+from app.extensions import db as database
+from app.models import Prompt, PromptVersion, User, Workspace, WorkspaceMember
+from app.models.workspace_member import ROLE_CONTRIBUTOR, ROLE_VIEWER
 from app.services import prompt_versions
 
 
@@ -42,6 +44,85 @@ class TestPromptsPage:
 
 
 class TestPromptCrud:
+    def test_team_prompts_are_scoped_to_active_workspace_members(self, client, db):
+        _register(client, username="owner", email="owner@example.com")
+        owner = User.query.filter_by(username="owner").first()
+        workspace = Workspace(user_id=owner.id, name="Shared workspace")
+        database.session.add(workspace)
+        database.session.flush()
+        team = client.post(
+            "/prompts/api/prompts",
+            json={
+                "title": "Team prompt",
+                "content": "Use safely",
+                "is_team": True,
+                "workspace_id": workspace.id,
+            },
+            headers={"X-CSRFToken": "ignored"},
+        )
+        assert team.status_code == 201
+        assert team.get_json()["is_team"] is True
+        team_list = client.get(
+            f"/prompts/api/prompts?scope=team&workspace_id={workspace.id}"
+        ).get_json()
+        assert team_list[0]["title"] == "Team prompt"
+
+        viewer = User(username="viewer", email="viewer@example.com")
+        viewer.set_password("supersecret123")
+        contributor = User(username="contributor", email="contributor@example.com")
+        contributor.set_password("supersecret123")
+        database.session.add_all([viewer, contributor])
+        database.session.flush()
+        database.session.add_all(
+            [
+                WorkspaceMember(workspace_id=workspace.id, user_id=viewer.id, role=ROLE_VIEWER),
+                WorkspaceMember(
+                    workspace_id=workspace.id,
+                    user_id=contributor.id,
+                    role=ROLE_CONTRIBUTOR,
+                ),
+            ]
+        )
+        database.session.commit()
+
+        client.post("/auth/logout")
+        client.post(
+            "/auth/login",
+            data={"email": "viewer@example.com", "password": "supersecret123"},
+        )
+        visible = client.get(
+            f"/prompts/api/prompts?scope=team&workspace_id={workspace.id}"
+        ).get_json()
+        assert visible[0]["id"] == team.get_json()["id"]
+        forbidden = client.post(
+            "/prompts/api/prompts",
+            json={
+                "title": "Not allowed",
+                "content": "x",
+                "is_team": True,
+                "workspace_id": workspace.id,
+            },
+            headers={"X-CSRFToken": "ignored"},
+        )
+        assert forbidden.status_code == 403
+
+        client.post("/auth/logout")
+        client.post(
+            "/auth/login",
+            data={"email": "contributor@example.com", "password": "supersecret123"},
+        )
+        allowed = client.post(
+            "/prompts/api/prompts",
+            json={
+                "title": "Contributor prompt",
+                "content": "x",
+                "is_team": True,
+                "workspace_id": workspace.id,
+            },
+            headers={"X-CSRFToken": "ignored"},
+        )
+        assert allowed.status_code == 201
+
     def test_create_prompt(self, client, db):
         _register(client)
         response = _create_prompt(client)

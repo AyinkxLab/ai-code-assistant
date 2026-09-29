@@ -18,6 +18,10 @@ class Prompt(db.Model):
     user_id = db.Column(
         db.Integer, db.ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
     )
+    is_team = db.Column(db.Boolean, nullable=False, default=False, index=True)
+    workspace_id = db.Column(
+        db.Integer, db.ForeignKey("workspaces.id", ondelete="CASCADE"), nullable=True, index=True
+    )
     title = db.Column(db.String(200), nullable=False)
     content = db.Column(db.Text, nullable=False)
     category = db.Column(db.String(80), nullable=False, default="General")
@@ -40,6 +44,8 @@ class Prompt(db.Model):
             "content": self.content,
             "category": self.category,
             "is_favorite": self.is_favorite,
+            "is_team": bool(self.is_team),
+            "workspace_id": self.workspace_id,
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "updated_at": self.updated_at.isoformat() if self.updated_at else None,
         }

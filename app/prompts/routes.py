@@ -5,15 +5,41 @@ from flask_login import current_user, login_required
 from sqlalchemy import func
 
 from app.extensions import db
-from app.models import Prompt
+from app.models import Prompt, Workspace, WorkspaceMember
+from app.models.workspace_member import ROLE_CONTRIBUTOR, ROLE_OWNER, STATUS_ACTIVE
 from app.prompts import bp
 from app.services import audit, prompt_import
 from app.services import prompt_versions as prompt_versions_service
+from app.services.permissions import role_for
 
 
 def _get_prompt(prompt_id: int) -> Prompt:
-    """Return the current user's prompt or abort with 404."""
-    return Prompt.query.filter_by(id=prompt_id, user_id=current_user.id).first_or_404()
+    """Return an owned personal prompt or a team prompt the user may manage."""
+    prompt = Prompt.query.filter_by(id=prompt_id).first_or_404()
+    if not prompt.is_team:
+        if prompt.user_id != current_user.id:
+            from flask import abort
+
+            abort(404)
+        return prompt
+    role = role_for(prompt.workspace_id, current_user)
+    if role not in {ROLE_OWNER, ROLE_CONTRIBUTOR}:
+        from flask import abort
+
+        abort(404)
+    return prompt
+
+
+def _team_workspace_ids():
+    """Workspace ids the current user can access through ownership or membership."""
+    owned = [row.id for row in Workspace.query.filter_by(user_id=current_user.id).all()]
+    joined = [
+        row.workspace_id
+        for row in WorkspaceMember.query.filter_by(
+            user_id=current_user.id, status=STATUS_ACTIVE
+        ).all()
+    ]
+    return sorted(set(owned + joined))
 
 
 @bp.route("/")
@@ -31,7 +57,19 @@ def list_prompts():
     category = request.args.get("category", "").strip()
     favorites_only = request.args.get("favorites") == "1"
 
-    base = Prompt.query.filter_by(user_id=current_user.id)
+    scope = request.args.get("scope", "personal").strip().lower()
+    if scope == "team":
+        try:
+            workspace_id = int(request.args.get("workspace_id", ""))
+        except ValueError:
+            return jsonify({"error": "A valid workspace_id is required for team prompts."}), 400
+        if workspace_id not in _team_workspace_ids():
+            return jsonify({"error": "Workspace not found."}), 404
+        base = Prompt.query.filter_by(is_team=True, workspace_id=workspace_id)
+    elif scope == "personal":
+        base = Prompt.query.filter_by(user_id=current_user.id, is_team=False)
+    else:
+        return jsonify({"error": "scope must be personal or team."}), 400
     if query:
         base = base.filter(
             func.lower(Prompt.title).contains(query)
@@ -45,6 +83,19 @@ def list_prompts():
 
     prompts = base.order_by(Prompt.is_favorite.desc(), Prompt.updated_at.desc()).all()
     return jsonify([p.to_dict() for p in prompts])
+
+
+@bp.route("/api/team-workspaces", methods=["GET"])
+@login_required
+def list_team_workspaces():
+    """List workspaces the caller can browse, with their current role."""
+    result = []
+    for workspace_id in _team_workspace_ids():
+        workspace = db.session.get(Workspace, workspace_id)
+        role = role_for(workspace_id, current_user)
+        if workspace is not None and role:
+            result.append({"id": workspace.id, "name": workspace.name, "role": role})
+    return jsonify(result)
 
 
 @bp.route("/api/categories", methods=["GET"])
@@ -105,6 +156,19 @@ def create_prompt():
         category=(data.get("category") or "General").strip()[:80] or "General",
         is_favorite=bool(data.get("is_favorite")),
     )
+    if data.get("is_team"):
+        try:
+            workspace_id = int(data.get("workspace_id"))
+        except (TypeError, ValueError):
+            return jsonify({"error": "A workspace is required for a team prompt."}), 400
+        if workspace_id not in _team_workspace_ids():
+            return jsonify({"error": "Workspace not found."}), 404
+        if role_for(workspace_id, current_user) not in {ROLE_OWNER, ROLE_CONTRIBUTOR}:
+            return jsonify(
+                {"error": "Only workspace owners and contributors can add team prompts."}
+            ), 403
+        prompt.is_team = True
+        prompt.workspace_id = workspace_id
     db.session.add(prompt)
     db.session.flush()
     prompt_versions_service.record_version(prompt, changed_by=current_user.id)
