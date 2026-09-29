@@ -193,14 +193,21 @@ class AnthropicProvider(LLMProvider):
         payload = self._payload(messages, model=model, params=params, stream=True)
         response = self._post(payload, stream=True)
         self._raise_for_status(response)
-        for line in response.iter_lines(decode_unicode=True):
-            if not line or not line.startswith("data: "):
-                continue
-            try:
-                event = json.loads(line[len("data: ") :].strip())
-            except ValueError:
-                continue
-            if event.get("type") == "content_block_delta":
-                text = (event.get("delta") or {}).get("text", "")
-                if text:
-                    yield text
+        try:
+            for line in response.iter_lines(decode_unicode=True):
+                if not line or not line.startswith("data: "):
+                    continue
+                try:
+                    event = json.loads(line[len("data: ") :].strip())
+                except ValueError:
+                    continue
+                if event.get("type") == "content_block_delta":
+                    text = (event.get("delta") or {}).get("text", "")
+                    if text:
+                        yield text
+        except requests.RequestException as exc:
+            # A connection that drops mid-stream surfaces while reading the body,
+            # not from the initial POST, so it must be translated here too.
+            raise ProviderUnavailableError(
+                f"Anthropic stream failed: {exc}", provider=self.name
+            ) from exc
