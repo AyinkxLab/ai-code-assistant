@@ -95,6 +95,7 @@
             <textarea id="project-chat-input" rows="3" placeholder="Ask about the project code, architecture, or bugs..."></textarea>
             <div class="composer-actions">
               <button id="project-chat-send" class="btn btn-primary" type="button">Send</button>
+              <button id="project-chat-stop" class="btn btn-ghost btn-danger" type="button" hidden>Stop</button>
             </div>
             <p id="project-chat-estimate" class="chat-hint" aria-live="polite"></p>
           </div>
@@ -113,6 +114,7 @@
         <button class="btn btn-ghost btn-sm analysis-btn" data-kind="stellar" type="button">Stellar</button>
         <button class="btn btn-ghost btn-sm analysis-btn" data-kind="stellar_security" type="button">Stellar Security</button>
         <button class="btn btn-ghost btn-sm analysis-btn" data-kind="stellar_config" type="button">Stellar Config</button>
+        <button id="analysis-stop" class="btn btn-ghost btn-sm btn-danger" type="button" hidden>Stop</button>
       </div>
       <div id="analysis-output" class="analysis-output">
         <p class="sidebar-empty">Choose an analysis to inspect the project.</p>
