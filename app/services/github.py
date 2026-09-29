@@ -676,6 +676,14 @@ class GitHubClient:
     def list_pull_request_files(self, full_name: str, number: int) -> list[dict]:
         return self._get(f"/repos/{full_name}/pulls/{number}/files", params={"per_page": 100})
 
+    def list_check_runs(self, full_name: str, ref: str) -> dict:
+        """Return check runs for a commit/ref."""
+        return self._get(f"/repos/{full_name}/commits/{ref}/check-runs", params={"per_page": 100})
+
+    def get_commit_status(self, full_name: str, ref: str) -> dict:
+        """Return combined commit status for a commit/ref."""
+        return self._get(f"/repos/{full_name}/commits/{ref}/status")
+
     def list_pull_request_reviews(self, full_name: str, number: int) -> list[dict]:
         return self._get(f"/repos/{full_name}/pulls/{number}/reviews")
 
@@ -794,7 +802,9 @@ def pull_request_payload(pr: dict) -> dict:
         "updated_at": pr.get("updated_at"),
         "merged": bool(pr.get("merged")),
         "mergeable": pr.get("mergeable"),
+        "mergeable_state": pr.get("mergeable_state"),
         "head": (pr.get("head") or {}).get("ref"),
+        "head_sha": (pr.get("head") or {}).get("sha"),
         "base": (pr.get("base") or {}).get("ref"),
         "additions": pr.get("additions"),
         "deletions": pr.get("deletions"),

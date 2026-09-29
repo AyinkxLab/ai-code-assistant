@@ -732,6 +732,41 @@ def api_pull_detail(owner: str, repo: str, number: int):
         return jsonify(github_error_payload(exc)), 404
 
     payload = pull_request_payload(pr)
+    head_sha = payload.get("head_sha")
+    payload["checks"] = {"available": False, "runs": [], "status": None}
+    if head_sha:
+        checks = payload["checks"]
+        try:
+            result = client.list_check_runs(full_name, head_sha)
+            checks["runs"] = [
+                {
+                    "name": item.get("name"),
+                    "status": item.get("status"),
+                    "conclusion": item.get("conclusion"),
+                    "details_url": item.get("details_url"),
+                }
+                for item in result.get("check_runs", [])
+            ]
+            checks["available"] = True
+        except GitHubError:
+            pass
+        try:
+            result = client.get_commit_status(full_name, head_sha)
+            checks["status"] = {
+                "state": result.get("state"),
+                "statuses": [
+                    {
+                        "context": item.get("context"),
+                        "state": item.get("state"),
+                        "description": item.get("description"),
+                        "target_url": item.get("target_url"),
+                    }
+                    for item in result.get("statuses", [])
+                ],
+            }
+            checks["available"] = True
+        except GitHubError:
+            pass
     payload["files"] = [
         {
             "filename": f.get("filename"),

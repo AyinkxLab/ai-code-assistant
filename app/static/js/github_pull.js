@@ -13,6 +13,7 @@
 
   var detailEl = document.getElementById("pull-detail");
   var filesEl = document.getElementById("pull-files");
+  var checksEl = document.getElementById("pull-checks");
   var analysisEl = document.getElementById("pr-analysis");
 
   function render(pr) {
@@ -22,12 +23,29 @@
       '<h2>#' + pr.number + " " + GH.escapeHtml(pr.title) + "</h2>" +
       '<div class="issue-meta">' +
       '<span class="tag ' + (status === "open" ? "tag-public" : "tag-private") + '">' + GH.escapeHtml(status) + "</span> " +
+      '<span class="tag">Mergeability: ' + GH.escapeHtml(pr.mergeable_state || (pr.mergeable === null ? "computing" : pr.mergeable ? "mergeable" : "conflicts")) + '</span> ' +
       GH.escapeHtml(pr.author || "") + " opened " + GH.relativeDate(pr.created_at) +
       " &middot; " + (pr.changed_files || 0) + " files, " +
       (pr.additions || 0) + "++ / " + (pr.deletions || 0) + "--" +
       "</div>" +
       "</div>" +
       '<div class="issue-body">' + GH.renderMarkdownish(pr.body) + "</div>";
+
+    var checks = pr.checks || {};
+    if (!checks.available) {
+      checksEl.innerHTML = "<h3>Checks</h3><p class=\"sidebar-empty\">Check-run information is currently unavailable.</p>";
+    } else {
+      var rows = (checks.runs || []).map(function (check) {
+        var label = check.conclusion || check.status || "unknown";
+        var name = GH.escapeHtml(check.name || "Unnamed check");
+        return '<li>' + (check.details_url ? '<a href="' + GH.escapeHtml(check.details_url) + '" target="_blank" rel="noopener">' + name + '</a>' : name) + ' — ' + GH.escapeHtml(label) + '</li>';
+      }).join("");
+      var statuses = checks.status && checks.status.statuses || [];
+      statuses.forEach(function (item) {
+        rows += '<li>' + GH.escapeHtml(item.context || "Status") + ' — ' + GH.escapeHtml(item.state || "unknown") + (item.description ? ': ' + GH.escapeHtml(item.description) : "") + '</li>';
+      });
+      checksEl.innerHTML = "<h3>Checks</h3>" + (rows ? "<ul>" + rows + "</ul>" : '<p class="sidebar-empty">No checks reported for this commit.</p>');
+    }
 
     filesEl.innerHTML = "";
     if (pr.files && pr.files.length) {
