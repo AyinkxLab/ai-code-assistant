@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+
+{% block title %}File Analysis History - {{ config.APP_NAME }}{% endblock %}
+
+{% block content %}
+<h1>File analysis history</h1>
+<p>Saved analyses are private to your account. Uploaded source contents are not retained.</p>
+{% if analyses %}
+<div class="prompt-grid">
+  {% for item in analyses %}
+  <article class="prompt-card">
+    <header><h2>{{ item.filename }}</h2><span class="prompt-category">{{ item.action }}</span></header>
+    <p>{{ item.created_at }}</p>
+    <p>Provider: {{ item.provider }}</p>
+    <details><summary>View result</summary><pre class="code-view">{{ item.result }}</pre></details>
+    <button class="btn btn-ghost btn-sm btn-danger" type="button" data-analysis-id="{{ item.id }}">Delete history entry</button>
+  </article>
+  {% endfor %}
+</div>
+{% else %}
+<p class="sidebar-empty">No file analyses yet.</p>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/analysis_history.js') }}"></script>
+{% endblock %}

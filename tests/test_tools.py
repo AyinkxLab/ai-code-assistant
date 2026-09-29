@@ -4,6 +4,9 @@ from io import BytesIO
 
 import pytest
 
+from app.extensions import db as database
+from app.models import FileAnalysis
+
 
 def _register(client, username="tester", email="tester@example.com"):
     client.post(
@@ -77,6 +80,22 @@ class TestCodeActions:
 
 
 class TestAnalyzeFile:
+    def test_analysis_history_is_private_to_owner(self, client, db):
+        _register(client, username="owner", email="owner@example.com")
+        created = client.post(
+            "/tools/analyze",
+            data={"file": (BytesIO(b"print('owner')"), "owner.py")},
+            content_type="multipart/form-data",
+        ).get_json()
+        client.post("/auth/logout")
+        _register(client, username="other", email="other@example.com")
+        assert client.get("/tools/api/analyses").get_json() == []
+        denied = client.delete(
+            f"/tools/api/analyses/{created['analysis_id']}",
+            headers={"X-CSRFToken": "ignored"},
+        )
+        assert denied.status_code == 404
+
     def test_analyze_python_file(self, client):
         _register(client)
         data = {
@@ -110,6 +129,36 @@ class TestAnalyzeFile:
         response = client.post("/tools/analyze", data=data, content_type="multipart/form-data")
         assert response.status_code == 200
         assert response.get_json()["action"] == "bugs"
+
+    def test_analysis_is_persisted_cached_and_deletable(self, client, db):
+        _register(client)
+        data = {"file": (BytesIO(b"print('persistent')"), "main.py")}
+        first = client.post(
+            "/tools/analyze", data=data, content_type="multipart/form-data"
+        ).get_json()
+        assert first["cached"] is False
+        record = database.session.get(FileAnalysis, first["analysis_id"])
+        assert record.file_id == first["file_id"]
+        assert record.user_id is not None
+        assert record.provider
+
+        again = client.post(
+            "/tools/analyze",
+            data={"file": (BytesIO(b"print('persistent')"), "main.py")},
+            content_type="multipart/form-data",
+        ).get_json()
+        assert again["cached"] is True
+        assert again["analysis_id"] == first["analysis_id"]
+        assert FileAnalysis.query.count() == 1
+
+        history = client.get("/tools/history")
+        assert history.status_code == 200
+        assert b"main.py" in history.data
+        removed = client.delete(
+            f"/tools/api/analyses/{record.id}", headers={"X-CSRFToken": "ignored"}
+        )
+        assert removed.status_code == 200
+        assert FileAnalysis.query.count() == 0
 
 
 class TestSendToChat:

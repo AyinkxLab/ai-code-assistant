@@ -5,10 +5,12 @@ can discover every table in the application.
 """
 
 from app.models.activity_event import ActivityEvent
+from app.models.analyzed_file import AnalyzedFile
 from app.models.api_key import ApiKey
 from app.models.audit_log import AuditLog
 from app.models.conversation import Conversation
 from app.models.conversation_share import ConversationShare
+from app.models.file_analysis import FileAnalysis
 from app.models.github_account import GithubAccount
 from app.models.invitation import WorkspaceInvitation
 from app.models.message import Message
@@ -36,11 +38,13 @@ from app.models.workspace_settings import WorkspaceSettings
 
 __all__ = [
     "ActivityEvent",
+    "AnalyzedFile",
     "ApiKey",
     "AuditLog",
     "CapabilityGrant",
     "Conversation",
     "ConversationShare",
+    "FileAnalysis",
     "GithubAccount",
     "Message",
     "MessageAttachment",
