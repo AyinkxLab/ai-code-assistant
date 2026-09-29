@@ -119,4 +119,10 @@ def create_app(config_name: str | None = None) -> Flask:
 
     register_plugins_cli(app)
 
+    # Read-only project detection CLI (issue #191): run Stellar/Soroban
+    # detection on a local directory without importing it as a project.
+    from app.services.project_cli import register_project_cli
+
+    register_project_cli(app)
+
     return app
