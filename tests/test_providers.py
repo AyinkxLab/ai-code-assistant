@@ -295,6 +295,28 @@ class TestAnthropicProvider:
         chunks = list(AnthropicProvider(api_key="k").stream([{"role": "user", "content": "hi"}]))
         assert chunks == ["He", "llo"]
 
+    def test_stream_mid_stream_failure_raises_typed_error(self, monkeypatch):
+        """A dropped connection while reading the body must not leak requests.*."""
+
+        class BrokenStream(FakeResponse):
+            def iter_lines(self, decode_unicode=False):
+                yield 'data: {"type":"content_block_delta","delta":{"text":"He"}}'
+                raise requests.exceptions.ChunkedEncodingError("connection dropped")
+
+        monkeypatch.setattr(
+            "app.services.providers.anthropic.requests.post",
+            lambda *a, **k: BrokenStream(200, {}),
+        )
+
+        received = []
+        with pytest.raises(ProviderUnavailableError):
+            for chunk in AnthropicProvider(api_key="k").stream(
+                [{"role": "user", "content": "hi"}]
+            ):
+                received.append(chunk)
+
+        assert received == ["He"]
+
 
 class TestCompatibilityShim:
     def test_llm_provider_error_alias(self):
