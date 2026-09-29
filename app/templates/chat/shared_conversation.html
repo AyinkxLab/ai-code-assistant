@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ title }} — Shared conversation</title>
+  <style>
+    body { max-width: 52rem; margin: 2rem auto; padding: 0 1rem; font: 1rem/1.6 system-ui, sans-serif; color: #202124; }
+    article { white-space: pre-wrap; overflow-wrap: anywhere; padding: 1rem; margin: 1rem 0; border: 1px solid #ddd; border-radius: .5rem; }
+    .role { font-weight: 700; text-transform: capitalize; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>{{ title }}</h1>
+    <p>This is a read-only shared conversation.</p>
+    {% for message in messages %}
+    <article><div class="role">{{ message.role }}</div>{{ message.content }}</article>
+    {% else %}
+    <p>No messages in this conversation.</p>
+    {% endfor %}
+  </main>
+</body>
+</html>
