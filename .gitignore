@@ -21,7 +21,6 @@ htmlcov/
 
 # IDE / editors
 .idea/
-.vscode/
 *.swp
 *.swo
 
@@ -41,3 +40,7 @@ logs/
 
 # Docker
 .docker/
+branch_structure.json
+temp_auto_push.bat
+temp_interactive_push.bat
+.gitignore

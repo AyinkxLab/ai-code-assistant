@@ -5,14 +5,16 @@ LLM provider. File analysis reads plain-text uploads and has the model explain,
 refactor, review, or comment on them.
 """
 
+import hashlib
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
-from flask import jsonify, request
+from flask import current_app, jsonify, render_template, request
 from flask_login import current_user, login_required
 from werkzeug.utils import secure_filename
 
 from app.extensions import db
-from app.models import Conversation, Message
+from app.models import AnalyzedFile, Conversation, FileAnalysis, Message
 from app.services import analysis
 from app.services.github import (
     GitHubError,
@@ -179,8 +181,84 @@ def analyze_file():
         action = "explain"
 
     system = ACTION_PROMPTS[action]
-    result = _run_action(action, f"{system}\n\nFile: {filename}\n\nCode:\n{text}")
-    return jsonify({"filename": filename, "action": action, "result": result})
+    content_hash = hashlib.sha256(text.encode("utf-8")).hexdigest()
+    cutoff = datetime.now(UTC) - timedelta(
+        hours=current_app.config.get("ANALYSIS_CACHE_TTL_HOURS", 24)
+    )
+    analyzed_file = AnalyzedFile.query.filter_by(
+        user_id=current_user.id, filename=filename, content_hash=content_hash
+    ).first()
+    if analyzed_file is not None:
+        cached = FileAnalysis.query.filter(
+            FileAnalysis.file_id == analyzed_file.id,
+            FileAnalysis.user_id == current_user.id,
+            FileAnalysis.action == action,
+            FileAnalysis.created_at >= cutoff,
+        ).order_by(FileAnalysis.created_at.desc()).first()
+        if cached is not None:
+            return jsonify({"filename": filename, "action": action, "result": cached.result,
+                            "cached": True, "analysis_id": cached.id, "file_id": analyzed_file.id})
+
+    try:
+        provider = get_provider()
+        result = provider.complete([
+            {"role": "system", "content": "You are a helpful AI coding assistant."},
+            {"role": "user", "content": f"{system}\n\nFile: {filename}\n\nCode:\n{text}"},
+        ])
+    except LLMProviderError as exc:
+        return jsonify(
+            {"filename": filename, "action": action, "result": f"[provider error] {exc}"}
+        )
+
+    if analyzed_file is None:
+        analyzed_file = AnalyzedFile(
+            user_id=current_user.id, filename=filename, content_hash=content_hash
+        )
+        db.session.add(analyzed_file)
+        db.session.flush()
+    record = FileAnalysis(
+        file_id=analyzed_file.id,
+        user_id=current_user.id,
+        action=action,
+        result=result,
+        provider=getattr(provider, "name", type(provider).__name__),
+    )
+    db.session.add(record)
+    db.session.commit()
+    return jsonify({"filename": filename, "action": action, "result": result,
+                    "cached": False, "analysis_id": record.id, "file_id": analyzed_file.id})
+
+
+@bp.route("/history")
+@login_required
+def analysis_history():
+    """Render only this user's persisted file analyses."""
+    records = FileAnalysis.query.filter_by(user_id=current_user.id).join(AnalyzedFile).order_by(
+        FileAnalysis.created_at.desc()
+    ).all()
+    return render_template("tools/analysis_history.html", analyses=[r.to_dict() for r in records])
+
+
+@bp.route("/api/analyses", methods=["GET"])
+@login_required
+def list_file_analyses():
+    records = FileAnalysis.query.filter_by(user_id=current_user.id).join(AnalyzedFile).order_by(
+        FileAnalysis.created_at.desc()
+    ).all()
+    return jsonify([record.to_dict() for record in records])
+
+
+@bp.route("/api/analyses/<int:analysis_id>", methods=["DELETE"])
+@login_required
+def delete_file_analysis(analysis_id: int):
+    record = FileAnalysis.query.filter_by(id=analysis_id, user_id=current_user.id).first_or_404()
+    analyzed_file = record.file
+    db.session.delete(record)
+    db.session.flush()
+    if not analyzed_file.analyses:
+        db.session.delete(analyzed_file)
+    db.session.commit()
+    return jsonify({"ok": True})
 
 
 @bp.route("/soroban/skeleton", methods=["POST"])
