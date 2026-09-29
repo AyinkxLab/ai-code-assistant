@@ -8,6 +8,10 @@
   var searchEl = document.getElementById("prompt-search");
   var categoryEl = document.getElementById("prompt-category-filter");
   var favEl = document.getElementById("prompt-fav-only");
+  var scopeEl = document.getElementById("prompt-scope");
+  var workspaceEl = document.getElementById("prompt-workspace");
+  var teamCheckboxEl = document.getElementById("prompt-is-team");
+  var editorWorkspaceEl = document.getElementById("prompt-editor-workspace");
   var editorEl = document.getElementById("prompt-editor");
   var titleEl = document.getElementById("prompt-title");
   var categoryInputEl = document.getElementById("prompt-category");
@@ -88,6 +92,10 @@
     if (query) params.push("q=" + encodeURIComponent(query));
     if (category) params.push("category=" + encodeURIComponent(category));
     if (favEl.checked) params.push("favorites=1");
+    params.push("scope=" + encodeURIComponent(scopeEl.value));
+    if (scopeEl.value === "team" && workspaceEl.value) {
+      params.push("workspace_id=" + encodeURIComponent(workspaceEl.value));
+    }
 
     var url = "/prompts/api/prompts" + (params.length ? "?" + params.join("&") : "");
     api(url).then(render).catch(function (error) {
@@ -123,7 +131,8 @@
       var star = prompt.is_favorite ? "★" : "☆";
       card.innerHTML =
         '<div class="prompt-card-header">' +
-        '<span class="prompt-category">' + escapeHtml(prompt.category) + "</span>" +
+      '<span class="prompt-category">' + escapeHtml(prompt.category) + "</span>" +
+      '<span class="prompt-category">' + (prompt.is_team ? "Team" : "Personal") + "</span>" +
         '<button class="prompt-star" data-action="toggle" title="Toggle favorite">' + star + "</button>" +
         "</div>" +
         '<h3 class="prompt-title">' + escapeHtml(prompt.title) + "</h3>" +
@@ -142,6 +151,9 @@
     titleEl.value = prompt ? prompt.title : "";
     categoryInputEl.value = prompt ? prompt.category : "";
     contentEl.value = prompt ? prompt.content : "";
+    teamCheckboxEl.checked = prompt ? !!prompt.is_team : scopeEl.value === "team";
+    editorWorkspaceEl.value = prompt && prompt.workspace_id ? String(prompt.workspace_id) : workspaceEl.value;
+    editorWorkspaceEl.hidden = !teamCheckboxEl.checked;
     document.getElementById("prompt-editor-title").textContent = prompt ? "Edit Prompt" : "New Prompt";
     if (prompt) {
       historyEl.hidden = false;
@@ -232,6 +244,8 @@
       title: titleEl.value.trim(),
       content: contentEl.value.trim(),
       category: categoryInputEl.value.trim() || "General",
+      is_team: teamCheckboxEl.checked,
+      workspace_id: editorWorkspaceEl.value || workspaceEl.value,
     };
     if (!payload.title || !payload.content) {
       flashError("Both title and content are required.");
@@ -254,6 +268,31 @@
   }
 
   document.addEventListener("DOMContentLoaded", function () {
+    api("/prompts/api/team-workspaces").then(function (workspaces) {
+      [workspaceEl, editorWorkspaceEl].forEach(function (select) {
+        select.innerHTML = "";
+        workspaces.forEach(function (workspace) {
+          var option = document.createElement("option");
+          option.value = workspace.id;
+          option.textContent = workspace.name;
+          select.appendChild(option);
+        });
+      });
+      if (!workspaces.length) {
+        scopeEl.querySelector('option[value="team"]').disabled = true;
+        teamCheckboxEl.disabled = true;
+      }
+    }).catch(function (error) { flashError(error.message); });
+    workspaceEl.hidden = scopeEl.value !== "team";
+    scopeEl.addEventListener("change", function () {
+      workspaceEl.hidden = scopeEl.value !== "team";
+      loadCategories();
+      refresh();
+    });
+    workspaceEl.addEventListener("change", function () { loadCategories(); refresh(); });
+    teamCheckboxEl.addEventListener("change", function () {
+      editorWorkspaceEl.hidden = !teamCheckboxEl.checked;
+    });
     refresh();
     loadCategories();
 
