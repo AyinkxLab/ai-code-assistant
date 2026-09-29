@@ -1269,22 +1269,30 @@ def api_project_chat_stream(project_id: int):
     messages = project_analysis.build_messages(project, content, history, attachments=attachments)
 
     def generate():
+        chunks: list[str] = []
+        stream = None
         try:
             provider = get_provider()
-            for chunk in provider.stream(messages):
+            stream = provider.stream(messages)
+            for chunk in stream:
+                chunks.append(chunk)
                 yield f"data: {json.dumps({'type': 'token', 'content': chunk})}\n\n"
+        except GeneratorExit:
+            # The client cancelled (Stop) or disconnected mid-stream. Close the
+            # upstream generator and stop without persisting a partial assistant
+            # message (issue #101).
+            if stream is not None:
+                stream.close()
+            raise
+        except (BrokenPipeError, ConnectionResetError):
+            # The response socket dropped while yielding a frame; nothing partial
+            # is persisted.
+            return
         except LLMProviderError as exc:
             yield f"data: {json.dumps({'type': 'error', 'error': str(exc)})}\n\n"
             return
 
-        try:
-            reply = project_analysis.chat_with_project(
-                project, content, attachments, history=history
-            )["analysis"]
-        except LLMProviderError as exc:
-            yield f"data: {json.dumps({'type': 'error', 'error': str(exc)})}\n\n"
-            return
-
+        reply = "".join(chunks)
         message = ProjectMessage(
             project_id=project.id, session=session, role="assistant", content=reply
         )

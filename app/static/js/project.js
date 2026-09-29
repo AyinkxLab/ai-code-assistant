@@ -15,10 +15,14 @@
   var newChatSessionBtn = document.getElementById("new-chat-session");
   var chatInputEl = document.getElementById("project-chat-input");
   var chatSendBtn = document.getElementById("project-chat-send");
+  var chatStopBtn = document.getElementById("project-chat-stop");
+  var analysisStopBtn = document.getElementById("analysis-stop");
   var chatAttachmentsEl = document.getElementById("project-chat-attachments");
   var chatEstimateEl = document.getElementById("project-chat-estimate");
   var reviewSummaryEl = document.getElementById("review-summary");
   var streaming = false;
+  var chatController = null;
+  var analysisController = null;
   var chatLoaded = false;
   var activeSessionId = null;
   var pendingAttachments = [];
@@ -540,6 +544,8 @@
     chatInputEl.value = "";
     chatSendBtn.disabled = true;
     streaming = true;
+    chatController = new AbortController();
+    if (chatStopBtn) chatStopBtn.hidden = false;
     addChatMessage("user", content);
 
     var typing = addTypingIndicator();
@@ -553,6 +559,7 @@
           "X-CSRFToken": getCsrf(),
         },
         body: JSON.stringify({ content: content, session_id: activeSessionId, attachments: attachments }),
+        signal: chatController.signal,
       });
 
       if (!response.ok) {
@@ -609,12 +616,17 @@
         });
       }
     } catch (error) {
-      flashError(error.message);
+      // An aborted fetch is an intentional Stop: don't surface it as a failure.
+      if (!error || error.name !== "AbortError") {
+        flashError(error.message);
+      }
     } finally {
       typing.classList.remove("typing", "streaming");
       if (!typing.querySelector(".message-body") || !typing.querySelector(".message-body").textContent) {
         typing.remove();
       }
+      chatController = null;
+      if (chatStopBtn) chatStopBtn.hidden = true;
       chatSendBtn.disabled = false;
       streaming = false;
     }
@@ -640,15 +652,24 @@
       /* estimation is best-effort; continue with the analysis */
     }
 
+    analysisController = new AbortController();
+    if (analysisStopBtn) analysisStopBtn.hidden = false;
     try {
       var data = await api("/workspaces/api/projects/" + PROJECT_ID + "/analyze", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ kind: kind }),
+        signal: analysisController.signal,
       });
       renderAnalysis(output, data.analysis);
     } catch (error) {
-      output.innerHTML = '<p class="sidebar-empty">' + escapeHtml(error.message) + "</p>";
+      // A client abort is an intentional Stop; keep whatever is on screen.
+      if (!error || error.name !== "AbortError") {
+        output.innerHTML = '<p class="sidebar-empty">' + escapeHtml(error.message) + "</p>";
+      }
+    } finally {
+      analysisController = null;
+      if (analysisStopBtn) analysisStopBtn.hidden = true;
     }
   }
 
@@ -1249,6 +1270,16 @@
     }
 
     chatSendBtn.addEventListener("click", startChat);
+    if (chatStopBtn) {
+      chatStopBtn.addEventListener("click", function () {
+        if (chatController) chatController.abort();
+      });
+    }
+    if (analysisStopBtn) {
+      analysisStopBtn.addEventListener("click", function () {
+        if (analysisController) analysisController.abort();
+      });
+    }
     newChatSessionBtn.addEventListener("click", createChatSession);
     chatInputEl.addEventListener("input", estimateChat);
     chatInputEl.addEventListener("keydown", function (event) {
