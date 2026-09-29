@@ -226,9 +226,7 @@ class TestOpenAIProvider:
 
         received = []
         with pytest.raises(ProviderUnavailableError):
-            for chunk in OpenAIProvider(api_key="k").stream(
-                [{"role": "user", "content": "hi"}]
-            ):
+            for chunk in OpenAIProvider(api_key="k").stream([{"role": "user", "content": "hi"}]):
                 received.append(chunk)
 
         assert received == ["he"]
