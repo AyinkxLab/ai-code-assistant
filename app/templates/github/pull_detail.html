@@ -1,4 +1,4 @@
-{% extends "base.html" %}
+<%extends "base.html" %}
 
 {% block title %}PR #{{ number }} - {{ owner }}/{{ repo }} - {{ config.APP_NAME }}{% endblock %}
 
@@ -10,6 +10,7 @@
 </div>
 
 <div id="pull-detail" class="issue-detail"><p class="sidebar-empty">Loading pull request...</p></div>
+<div id="pull-checks" class="pull-checks"><p class="sidebar-empty">Loading checks...</p></div>
 <div id="pull-files" class="pull-files"></div>
 
 <div class="analyze-panel">

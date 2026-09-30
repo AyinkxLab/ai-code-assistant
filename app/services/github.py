@@ -1,3 +1,4 @@
+
 """GitHub API service layer.
 
 A thin, retrying client for the GitHub REST API used by the repository
@@ -682,6 +683,55 @@ class GitHubClient:
     def list_pull_request_comments(self, full_name: str, number: int) -> list[dict]:
         return self._get(f"/repos/{full_name}/pulls/{number}/comments", params={"per_page": 100})
 
+    def get_pull_request_mergeable(self, full_name: str, number: int) -> str:
+        """Return the PR's mergeable state: ``mergeable``, ``conflict`` or ``unknown``.
+
+        GitHub computes mergeability lazily and may answer ``null`` on the first
+        request while it works in the background, so a single retry is made
+        before falling back to ``"unknown"``. Any GitHub error also degrades to
+        ``"unknown"`` so the PR detail page still renders.
+        """
+        for attempt in range(2):
+            try:
+                pull = self.get_pull_request(full_name, number)
+            except GitHubError:
+                return "unknown"
+            mergeable = pull.get("mergeable")
+            if mergeable is True:
+                return "mergeable"
+            if mergeable is False:
+                return "conflict"
+            if attempt == 0:
+                time.sleep(1)
+        return "unknown"
+
+    def list_pull_request_check_runs(self, full_name: str, number: int) -> list[dict]:
+        """Return the latest CI check runs for a pull request's head commit.
+
+        Uses the Checks API against the PR's head SHA. Returns an empty list
+        when checks are unavailable (no checks configured, missing permission,
+        or the head commit cannot be resolved) so the caller can degrade
+        gracefully instead of failing the whole page.
+        """
+        try:
+            pull = self.get_pull_request(full_name, number)
+        except GitHubError:
+            return []
+        head = pull.get("head") or {}
+        sha = head.get("sha")
+        if not sha:
+            return []
+        try:
+            data = self._get(
+                f"/repos/{full_name}/commits/{sha}/check-runs",
+                params={"per_page": 100},
+            )
+        except GitHubError:
+            return []
+        if not isinstance(data, dict):
+            return []
+        return data.get("check_runs") or []
+
     # -- README -------------------------------------------------------------
 
     def get_readme(self, full_name: str, ref: str | None = None) -> str | None:
@@ -802,6 +852,28 @@ def pull_request_payload(pr: dict) -> dict:
         "html_url": pr.get("html_url"),
         "diff_url": pr.get("diff_url"),
     }
+
+
+def check_run_payload(check_run: dict) -> dict:
+    """Normalize a GitHub check run into the shape consumed by the UI."""
+    return {
+        "name": check_run.get("name"),
+        "status": check_run.get("status"),
+        "conclusion": check_run.get("conclusion"),
+        "html_url": check_run.get("html_url"),
+        "started_at": check_run.get("started_at"),
+        "completed_at": check_run.get("completed_at"),
+    }
+
+
+def mergeable_state(pull: dict) -> str:
+    """Map a PR payload's ``mergeable`` field to ``mergeable``/``conflict``/``unknown``."""
+    mergeable = pull.get("mergeable")
+    if mergeable is True:
+        return "mergeable"
+    if mergeable is False:
+        return "conflict"
+    return "unknown"
 
 
 def validate_full_name(full_name: str) -> str:

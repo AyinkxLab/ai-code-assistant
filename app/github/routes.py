@@ -45,6 +45,7 @@ from app.services.github import (
     GitHubClient,
     GitHubError,
     GitHubPage,
+    check_run_payload,
     get_github_client,
     github_error_payload,
     issue_payload,
@@ -732,6 +733,13 @@ def api_pull_detail(owner: str, repo: str, number: int):
         return jsonify(github_error_payload(exc)), 404
 
     payload = pull_request_payload(pr)
+    payload["mergeable"] = pr.get("mergeable")
+    payload["mergeable_state"] = pr.get("mergeable_state")
+    try:
+        check_runs = client.list_check_runs(full_name, pr.get("head", {}).get("sha"))
+        payload["check_runs"] = [check_run_payload(run) for run in check_runs]
+    except GitHubError:
+        payload["check_runs"] = None
     payload["files"] = [
         {
             "filename": f.get("filename"),
