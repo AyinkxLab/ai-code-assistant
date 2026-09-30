@@ -1,6 +1,6 @@
-{% extends "base.html" %}
+{{ extends "base.html" %}
 
-{% block title %}Issue #{{ number }} - {{ owner }}/{{ repo }} - {{ config.APP_NAME }}{% endblock %}
+{{ block title %}Issue #{{ number }} - {{ owner }}/{{ repo }} - {{ config.APP_NAME }}{{ endblock %}
 
 {% block content %}
 <div class="github-header">
@@ -15,9 +15,19 @@
   <button id="analyze-issue" class="btn btn-primary" type="button">Analyze with AI</button>
   <div id="issue-analysis" class="analysis-output" hidden></div>
 </div>
-{% endblock %}
 
-{% block scripts %}
+<div id="issue-comments" class="issue-comments">
+  <h3>Comments</h3>
+  <div id="issue-comment-list" class="issue-comment-list"><p class="sidebar-empty">Loading comments...</p></div>
+  <form id="issue-comment-form" class="issue-comment-form">
+    <p id="issue-comment-notice" class="sidebar-empty" hidden></p>
+    <textarea id="issue-comment-body" class="prompt-filter" rows="4" placeholder="Leave a comment"></textarea>
+    <button id="issue-comment-submit" class="btn btn-primary" type="submit">Comment</button>
+  </form>
+</div>
+{%`endblock %}
+
+{%w block scripts %}
 <script src="{{ url_for('static', filename='js/github.js') }}"></script>
 <script src="{{ url_for('static', filename='js/github_issue.js') }}"></script>
-{% endblock %}
+{%`endblock %}

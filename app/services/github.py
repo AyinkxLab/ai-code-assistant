@@ -47,6 +47,8 @@ PAGE_SIZE_MAX = 100
 #: Matches one ``<url>; rel="name"`` entry of a GitHub ``Link`` header.
 _LINK_RE = re.compile(r'<([^>]+)>\s*;\s*rel="([^"]+)"')
 
+#: GitHub OAuth scopes that permit writing issues and comments.
+WRITE_SCOPES = ("repo", "public_repo")
 
 @dataclass(frozen=True)
 class GitHubPage:
@@ -130,6 +132,10 @@ class GitHubInvalidError(GitHubError):
     kind = "validation"
 
 
+class GitHubScopeError(GitHubError):
+    kind = "scope"
+
+
 #: Stable, sanitized messages shown to end users, keyed by error ``kind``.
 #: GitHub's raw response bodies are never surfaced: they can contain URLs,
 #: headers, rate-limit data, or implementation details. Those are kept on
@@ -143,6 +149,7 @@ ERROR_MESSAGES = {
     "network": "Could not reach the GitHub API. Please try again.",
     "validation": "The GitHub request was invalid.",
     "github_error": "The GitHub request failed. Please try again.",
+    "scope": "Your GitHub connection does not have permission to write. Reconnect with the repo scope.",
 }
 
 
@@ -188,6 +195,7 @@ class GitHubClient:
         api_url: str | None = None,
         timeout: int | None = None,
         max_retries: int = 3,
+        scopes: list[str] | None = None,
     ) -> None:
         self.api_url = (api_url or Config.GITHUB_API_URL).rstrip("/")
         self.timeout = timeout or Config.GITHUB_REQUEST_TIMEOUT
@@ -200,6 +208,7 @@ class GitHubClient:
                 "X-GitHub-Api-Version": API_VERSION,
             }
         )
+        self.scopes = list(scopes or [])
 
     # -- Core request machinery --------------------------------------------
 
@@ -207,6 +216,8 @@ class GitHubClient:
         """Perform a request with retries, raising typed errors on failure."""
         url = f"{self.api_url}{path}"
         last_exc: Exception | None = None
+        if method.upper() in ("POST", "PATCH", "PUT", "DELETE") and not self.can_write():
+            raise GitHubScopeError("Your GitHub connection does not have permission to write.")
         for attempt in range(self.max_retries):
             try:
                 response = self.session.request(method, url, params=params, timeout=self.timeout)
@@ -239,6 +250,11 @@ class GitHubClient:
                 logger.warning("GitHub permission error on %s: %s", path, detail)
                 raise GitHubPermissionError("GitHub denied access to this resource.", detail=detail)
 
+            if response.status_code == 422:
+                detail = _parse_error_body(response)
+                logger.warning("GitHub validation error on %s: %s", path, detail)
+                raise GitHubInvalidError("The GitHub request was invalid.", detail=detail)
+
             if response.status_code >= 500:
                 last_exc = GitHubError(f"GitHub API returned {response.status_code}.")
                 if attempt < self.max_retries - 1:
@@ -269,6 +285,13 @@ class GitHubClient:
 
     def _get(self, path: str, *, params: dict | None = None) -> dict | list:
         return self._request("GET", path, params=params)
+
+    def _post(self, path: str, *, json_body: dict | None = None) -> dict | list:
+        return self._request("POST", path, params=None, json_body=json_body)
+
+    def can_write(self) -> bool:
+        """Return True when the stored token's scopes permit issue writes."""
+        return any(scope in self.scopes for scope in WRITE_SCOPES)
 
     def _get_paginated(
         self, path: str, *, params: dict | None = None, max_items: int = 300
@@ -646,6 +669,23 @@ class GitHubClient:
     def get_issue(self, full_name: str, number: int) -> dict:
         return self._get(f"/repos/{full_name}/issues/{number}")
 
+    def create_issue(
+        self, full_name: str, *, title: str, body: str | None = None
+    ) -> dict:
+        """Open a new issue. Requires the token to carry a write scope."""
+        payload: dict = {"title": title}
+        if body:
+            payload["body"] = body
+        return self._request("POST", f"/repos/{full_name}/issues", json_body=payload)
+
+    def create_issue_comment(self, full_name: str, number: int, *, body: str) -> dict:
+        """Post a comment on an issue or pull request. Requires a write scope."""
+        return self._request(
+            "POST",
+            f"/repos/{full_name}/issues/{number}/comments",
+            json_body={"body": body},
+        )
+
     # -- Pull requests ------------------------------------------------------
 
     def list_pull_requests(self, full_name: str, *, state: str = "open") -> list[dict]:
@@ -908,7 +948,8 @@ def get_github_client(user=None) -> GitHubClient:
         )
         db.session.commit()
         token = refreshed["access_token"]
-    return GitHubClient(token)
+    scopes = list(getattr(account, "scopes", None) or [])
+    return GitHubClient(token, scopes=scopes)
 
 
 # -- Chat context references (issue #74) -------------------------------------
