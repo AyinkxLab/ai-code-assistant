@@ -48,6 +48,67 @@
     });
   }
 
+  function setupNewIssueForm() {
+    var form = document.getElementById("new-issue-form");
+    if (!form) return;
+    var titleInput = document.getElementById("new-issue-title");
+    var bodyInput = document.getElementById("new-issue-body");
+    var submitBtn = document.getElementById("new-issue-submit");
+    var notice = document.getElementById("new-issue-notice");
+    var canTrigger = document.getElementById("new-issue-toggle");
+
+    function applyPermissions(perms) {
+      var allowed = !!(perms && perms.can_write_issues);
+      [titleInput, bodyInput, submitBtn].forEach(function (el) {
+        if (!el) return;
+        el.disabled = !allowed;
+      });
+      if (notice) {
+        notice.hidden = allowed;
+        notice.textContent = allowed
+          ? ""
+          : "Your GitHub token lacks the scope required to open issues.";
+      }
+    }
+
+    GH.api("/github/api/repos/" + encodeURIComponent(OWNER) + "/" + encodeURIComponent(REPO) + "/permissions")
+      .then(function (perms) {
+        applyPermissions(perms);
+      })
+      .catch(function () {
+        applyPermissions({can_write_issues: false});
+      });
+
+    if (canTrigger) {
+      canTrigger.addEventListener("click", function () {
+        form.hidden = !form.hidden;
+      });
+    }
+
+    form.addEventListener("submit", function (event) {
+      event.preventDefault();
+      var title = (titleInput.value || "").trim();
+      if (!title) {
+        GH.flashError("An issue title is required.");
+        return;
+      }
+      submitBtn.disabled = true;
+      GH.api("/github/api/repos/" + encodeURIComponent(OWNER) + "/" + encodeURIComponent(REPO) + "/issues", {
+        method: "POST",
+        body: JSON.stringify({title: title, body: bodyInput ? bodyInput.value : ""}),
+      }).then(function (issue) {
+        titleInput.value = "";
+        if (bodyInput) bodyInput.value = "";
+        form.hidden = true;
+        window.location.href = "/github/repos/" + encodeURIComponent(OWNER) + "/" + encodeURIComponent(REPO) + "/issues/" + issue.number;
+      }).catch(function (error) {
+        GH.flashError(error.message);
+      }).finally(function () {
+        submitBtn.disabled = false;
+      });
+    });
+  }
+
   document.addEventListener("DOMContentLoaded", function () {
     if (!container || !stateSelect) return;
     refresh();
@@ -55,5 +116,6 @@
       page = 1;
       refresh();
     });
+    setupNewIssueForm();
   });
 })();

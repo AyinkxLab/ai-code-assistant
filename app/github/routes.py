@@ -21,6 +21,8 @@ API (JSON)
     /github/api/repos/.../commits           commit history
     /github/api/repos/.../issues            issue list
     /github/api/repos/.../issues/<n>        single issue + AI analysis
+    /github/api/repos/.../issues            create issue (POST)
+    /github/api/repos/.../issues/<n>/comments  add comment (POST)
     /github/api/repos/.../pulls             pull request list
     /github/api/repos/.../pulls/<n>         single PR + AI analysis
     /github/api/repos/.../analyze-file      AI analysis of one file
@@ -674,6 +676,35 @@ def api_issues(owner: str, repo: str):
     return jsonify(_paginated_payload(result, issue_payload))
 
 
+def _has_write_scope(account: GithubAccount | None) -> bool:
+    """Return whether the stored token grants issue-writing permission.
+
+    GitHub OAuth tokens carry a space-separated ``scope`` string. Writing
+    issues/comments requires the ``repo`` scope (private) or ``public_repo``
+    (public only). The check is intentionally conservative: an unknown or
+    empty scope set is treated as read-only so the app never attempts a
+    mutation the token cannot perform.
+    """
+    if account is None:
+        return False
+    scopes = {s.strip() for s in (account.scopes or "").split() if s.strip()}
+    return "repo" in scopes or "public_repo" in scopes
+
+
+def _write_scope_required():
+    """Return a ``403`` JSON response when the token cannot write issues."""
+    account = GithubAccount.query.filter_by(user_id=current_user.id).first()
+    if not _has_write_scope(account):
+        return jsonify(
+            {
+                "error": "Your GitHub connection does not grant permission to "
+                "create issues or comments. Reconnect with the 'repo' scope.",
+                "code": "insufficient_scope",
+            }
+        ), 403
+    return None
+
+
 @bp.route("/api/repos/<owner>/<repo>/issues/<int:number>")
 @login_required
 def api_issue_detail(owner: str, repo: str, number: int):
@@ -692,6 +723,70 @@ def api_issue_detail(owner: str, repo: str, number: int):
             payload, owner, repo, repo_files=_stellar_repo_context(client, full_name)
         )
     return jsonify(payload)
+
+
+@bp.route("/api/repos/<owner>/<repo>/issues", methods=["POST"])
+@login_required
+def api_create_issue(owner: str, repo: str):
+    """Create a new issue from the app UI (user-initiated only).
+
+    Gated on the stored token's scopes: a token without ``repo``/``public_repo``
+    receives a ``403`` and the UI keeps the form disabled. The app never opens
+    issues on its own — every call here originates from an explicit user
+    submission.
+    """
+    denied = _write_scope_required()
+    if denied is not None:
+        return denied
+
+    full_name = validate_full_name(f"{owner}/{repo}")
+    data = request.get_json(silent=True) or {}
+    title = (data.get("title") or "").strip()
+    body = (data.get("body") or "").strip()
+    if not title:
+        return jsonify({"error": "An issue title is required."}), 400
+
+    try:
+        client = _client()
+        created = client.create_issue(full_name, title, body=body)
+    except GitHubError as exc:
+        return jsonify(github_error_payload(exc)), 502
+    return jsonify(issue_payload(created)), 201
+
+
+@bp.route("/api/repos/<owner>/<repo>/issues/<int:number>/comments", methods=["POST"])
+@login_required
+def api_create_issue_comment(owner: str, repo: str, number: int):
+    """Post a comment on an issue (user-initiated only).
+
+    Gated on the stored token's scopes, mirroring :func:`api_create_issue`.
+    The app never comments automatically; the endpoint only ever runs in
+    response to an explicit user action.
+    """
+    denied = _write_scope_required()
+    if denied is not None:
+        return denied
+
+    full_name = validate_full_name(f"{owner}/{repo}")
+    data = request.get_json(silent=True) or {}
+    body = (data.get("body") or "").strip()
+    if not body:
+        return jsonify({"error": "A comment body is required."}), 400
+
+    try:
+        client = _client()
+        comment = client.create_issue_comment(full_name, number, body)
+    except GitHubError as exc:
+        return jsonify(github_error_payload(exc)), 502
+    return jsonify(
+        {
+            "id": comment.get("id"),
+            "body": comment.get("body"),
+            "html_url": comment.get("html_url"),
+            "created_at": comment.get("created_at"),
+            "user": (comment.get("user") or {}).get("login"),
+        }
+    ), 201
 
 
 # --------------------------------------------------------------------------

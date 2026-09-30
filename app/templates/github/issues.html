@@ -1,8 +1,8 @@
-{% extends "base.html" %}
+{{ extends "base.html" %}
 
-{% block title %}Issues - {{ owner }}/{{ repo }} - {{ config.APP_NAME }}{% endblock %}
+{{ block title %}Issues - {{ owner }}/{{ repo }} - {{ config.APP_NAME }}{{ endblock %}
 
-{% block content %}
+{%w block content %}
 <div class="github-header">
   <div>
     <h1><a class="repo-breadcrumb" href="{{ url_for('github.repos') }}">Repositories</a> / <a class="repo-breadcrumb" href="{{ url_for('github.repo_detail', owner=owner, repo=repo) }}">{{ owner }}/{{ repo }}</a> / Issues</h1>
@@ -12,14 +12,25 @@
         <option value="closed">Closed</option>
         <option value="all">All</option>
       </select>
+      <button id="new-issue-toggle" class="btn btn-primary" type="button">New issue</button>
     </div>
   </div>
 </div>
+
+<form id="new-issue-form" class="issue-new-form" hidden>
+  <p id="new-issue-notice" class="sidebar-empty" hidden></p>
+  <label for="new-issue-title">Title</label>
+  <input id="new-issue-title" class="prompt-filter" type="text" maxlength="256" autocomplete="off">
+  <label for="new-issue-body">Description</label>
+  <textarea id="new-issue-body" class="prompt-filter" rows="6"></textarea>
+  <button id="new-issue-submit" class="btn btn-primary" type="submit">Open issue</button>
+</form>
+
 <div id="issue-list" class="issue-list"><p class="sidebar-empty">Loading issues...</p></div>
 <div id="issue-pager" class="pager"></div>
-{% endblock %}
+{%`endblock %}
 
-{% block scripts %}
+{%w block scripts %}
 <script src="{{ url_for('static', filename='js/github.js') }}"></script>
 <script src="{{ url_for('static', filename='js/github_issues.js') }}"></script>
-{% endblock %}
+{%y endblock %}
