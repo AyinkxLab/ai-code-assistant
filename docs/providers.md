@@ -50,7 +50,7 @@ Per-conversation generation settings (issue #12) resolve through
 with its `supported_models` and whether the user has a usable key, and
 `build_provider(user, name)` applies the user's stored (decrypted) key when the
 environment does not provide one. A conversation's `model`, `temperature`, and
-`system_prompt` are passed through to `chat()`/`stream()` on every message.
+`system_prompt` are passed through to `chat()/`stream()` on every message.
 
 `ProviderResponse` carries `content`, `model`, `prompt_tokens`,
 `completion_tokens`, `total_tokens`, and `latency_seconds`. Failures use the
@@ -77,7 +77,7 @@ specific response shape outside their own module.
 
 ## Retries and backoff (issue #29)
 
-`get_retrying_provider()` returns the resolved provider wrapped in
+get_retrying_provider()` returns the resolved provider wrapped in
 `RetryingProvider`, which retries transient failures — network errors, HTTP 429
 and 5xx (`ProviderRateLimitError` / `ProviderUnavailableError`) — with
 exponential backoff plus jitter. Non-transient failures (`401`/`400`,
