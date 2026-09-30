@@ -4,10 +4,25 @@
 (function () {
   "use strict";
 
-  var CANCELLED_CODES = { access_denied: true };
+  var CONNECT_URL = "/github/connect";
+
+  // Map a raw GitHub code to a user-facing message. Never echo the
+  // upstream payload back to the user; only well-known codes are translated.
+  function friendlyError(code) {
+    switch (code) {
+      case "access_denied":
+        return "You cancelled the GitHub connection. No access was granted.";
+      case "bad_verification_code":
+        return "The connection request expired. Please try connecting again.";
+      case "oauth_error":
+        return "GitHub could not complete the connection. Please try again.";
+      default:
+        return "GitHub connection failed. Please try again.";
+    }
+  }
 
   window.GitHub = {
-    CSRF_TOKEN: null,
+    CSRF_TOK: null,
 
     getCsrf: function () {
       if (this.CSRF_TOKEN !== null) return this.CSRF_TOKEN;
@@ -32,7 +47,7 @@
             var error = new Error(data && data.error ? data.error : "Request failed (" + response.status + ").");
             error.kind = data && data.kind;
             if (error.kind === "auth" || error.kind === "not_connected") {
-              window.location.assign("/github/connect");
+              window.location.assign(CONNECT_URL);
             }
             throw error;
           }
@@ -56,98 +71,13 @@
       });
     },
 
-    // Escape HTML, then treat newlines as <er> and URLs as links.
+    // Escape HTML, then treat newlines as <br /> and URLs as links.
     renderMarkdownish: function (text) {
       if (!text) return "";
       var html = this.escapeHtml(text);
       html = html.replace(/(^|\s)(https?:\/\/[^\s<]+)/g, '$1<a href="$2" target="_blank" rel="noopener">$2</a>');
       html = html.replace(/\r?\n/g, "<br>");
       return html;
-    },
-
-    // True when an OAuth callback error code represents the user denying
-    // consent (a cancellation), not a failure.
-    isCancellation: function (code) {
-      return !!code && Object.prototype.hasOwnProperty.call(CANCELLED_CODES, String(code));
-    },
-
-    // Read the callback error from the URL without exposing the raw GitHub
-    // payload. Only the code and a safe description are returned.
-    parseCallbackError: function (search) {
-      var params = new URLSearchParams(search == null ? window.location.search : search);
-      var code = params.get("error");
-      if (!code) return null;
-      return {
-        code: code,
-        cancelled: this.isCancellation(code),
-        // Never return the full GitHub error description/URI; only a
-        // fixed, non-leaking explanation.
-        message: this.isCancellation(code)
-          ? "You canceled the GitHub connection."
-          : "GitHub could not complete the connection.",
-      };
-    },
-
-    // Remove the callback error parameters from the address bar so a reload
-    // does not re-surface the failure.
-    clearCallbackError: function () {
-      if (!window.history || !window.history.replaceState) return;
-      var params = new URLSearchParams(window.location.search);
-      if (!params.has("error") && !params.has("error_description") && !params.has("error_uri")) return;
-      params.delete("error");
-      params.delete("error_description");
-      params.delete("error_uri");
-      var query = params.toString();
-      window.history.replaceState({}, "", window.location.pathname + (query ? "?" + query : "") + window.location.hash);
-    },
-
-    // Render a friendly cancellation/error screen into container. The
-    // explanation lists what access will be requested and offers a
-    // retry button back to the connect flow.
-    renderConnectStatus: function (container, info) {
-      if (!container) return;
-      container.innerHTML = "";
-      container.hidden = false;
-
-      var card = document.createElement("div");
-      card.className = "card connect-status";
-
-      var title = document.createElement("h1");
-      title.textContent = info && info.cancelled ? "GitHub connection canceled" : "GitHub connection failed";
-      card.appendChild(title);
-
-      var lead = document.createElement("p");
-      lead.className = "field-hint";
-      lead.textContent = info && info.message
-        ? info.message
-        : "GitHub could not complete the connection.";
-      card.appendChild(lead);
-
-      var explain = document.createElement("p");
-      explain.textContent = "Connecting GitHub grants this app read access to your repositories, issues, and pull requests so it can assist you. You can revoke access at any time from your GitHub settings.";
-      card.appendChild(explain);
-
-      var actions = document.createElement("div");
-      actions.className = "connect-actions";
-      var retry = document.createElement("a");
-      retry.className = "btn btn-primary";
-      retry.href = "/github/connect";
-      retry.textContent = "Connect GitHub";
-      actions.appendChild(retry);
-      card.appendChild(actions);
-
-      container.appendChild(card);
-    },
-
-    // Initialize the GitHub dashboard: surface a friendly cancellation/error
-    // screen with a retry path when the OAuth callback reports a failure.
-    initDashboard: function () {
-      var container = document.querySelector("[data-github-connect-status]");
-      if (!container) return;
-      var info = this.parseCallbackError();
-      if (!info) return;
-      this.renderConnectStatus(container, info);
-      this.clearCallbackError();
     },
 
     flashError: function (message) {
@@ -168,6 +98,42 @@
         el.style.opacity = "0";
         setTimeout(function () { el.remove(); }, 400);
       }, 6000);
+    },
+
+    // Handle an OAuth callback failure. `access_denied` is a user
+    // cancellation, not an error, so it is reported as a neutral notice
+    // with a retry path. Any other code is shown as a generic friendly
+    // message; the raw GitHub payload is never rendered.
+    handleCallbackError: function (code, container) {
+      var denied = code === "access_denied";
+      var message = friendlyError(code);
+      var target = container || document.querySelector(".github-callback");
+      if (target) {
+        target.hidden = false;
+        target.innerHTML = "";
+        var card = document.createElement("div");
+        card.className = denied ? "callback-card callback-cancelled" : "callback-card callback-error";
+        var title = document.createElement("h2");
+        title.textContent = denied ? "GitHub connection cancelled" : "Couldn’t connect to GitHub";
+        var body = document.createElement("p");
+        body.textContent = message;
+        card.appendChild(title);
+        card.appendChild(body);
+        if (denied) {
+          var explain = document.createElement("p");
+          explain.className = "field-hint";
+          explain.textContent = "Connecting GitHub grants this app read access to your repositories, issues, and pull requests so it can help with code reviews. You can revoke access at any time from your GitHub settings.";
+          card.appendChild(explain);
+        }
+        var retry = document.createElement("a");
+        retry.href = CONNECT_URL;
+        retry.className = "btn btn-primary";
+        retry.textContent = "Connect GitHub";
+        card.appendChild(retry);
+        target.appendChild(card);
+      } else {
+        this.flashError(message);
+      }
     },
 
     // Render Prev/Next controls for a paginated GitHub list endpoint.
@@ -259,12 +225,4 @@
       return '<div class="code-view diff">' + html + "</div>";
     },
   };
-
-  if (document.readyState === "loading") {
-    document.addEventListener("DOMContentLoaded", function () {
-      window.GitHub.initDashboard();
-    });
-  } else {
-    window.GitHub.initDashboard();
-  }
 })();

@@ -1,6 +1,6 @@
-{{ extends "base.html" %}
+{% extends "base.html" %}
 
-{k block title %}GitHub - {{ config.APP_NAME }}{% endblock %}
+{% block title %}GitHub - {{ config.APP_NAME }}{{ endblock %}
 
 {% block content %}
 <div class="github-header">
@@ -32,25 +32,31 @@
         <p>Browse your repositories, files, branches, and commits.</p>
       </a>
       <a class="feature-card" href="{{ url_for('github.repos') }}">
-        <h3>Issues & pull requests</h3>
+        <h3>Issues &amp; pull requests</h3>
         <p>Open any repository to review its issues and PRs with AI analysis.</p>
       </a>
     </div>
   </div>
 {% else %}
   {% if denied %}
-    <div class="github-denied" role="alert">
-      <h2>Connection cancelled</h2>
-      <p>You declined to grant access on GitHub. Nothing was connected and no token was stored.</p>
-      <p>When you connect, GitHub will ask you to authorize read access to your repository list, files, branches, commits, issues, and pull requests. You can revoke access at any time from your GitHub settings or by disconnecting here.</p>
-      <a class="btn btn-primary" href="{{ url_for('github.connect') }}">Connect GitHub</a>
-    </div>
+  <div class="github-empty github-denied" role="alert">
+    <h2>GitHub connection cancelled</h2>
+    <p>You canceled the GitHub authorization request. No changes were made to your account.</p>
+    <p>When you connect, this app will be able to:</p>
+    <ul class="github-scope-list">
+      <li>Read your repository list, files, branches, and commits.</li>
+      <li>View issues and pull requests for repositories you grant access to.</li>
+      <li>Read your GitHub profile information to display your username.</li>
+    </ul>
+    <p class="github-hint">Your token is encrypted before it is stored and is never exposed in the browser. You can disconnect at any time.</p>
+    <a class="btn btn-primary" href="{{ url_for('github.connect') }}">Connect GitHub</a>
+  </div>
   {% else %}
-    <div class="github-empty">
-      <p>Connect your GitHub account to browse repositories, review issues and pull requests, and ask the AI to analyze your code.</p>
-      <a class="btn btn-primary" href="{{ url_for('github.connect') }}">Connect GitHub</a>
-      <p class="github-hint">You will be redirected to GitHub to authorize access. Your token is encrypted before it is stored and is never exposed in the browser.</p>
-    </div>
+  <div class="github-empty">
+    <p>Connect your GitHub account to browse repositories, review issues and pull requests, and ask the AI to analyze your code.</p>
+    <a class="btn btn-primary" href="{{ url_for('github.connect') }}">Connect GitHub</a>
+    <p class="github-hint">You will be redirected to GitHub to authorize access. Your token is encrypted before it is stored and is never exposed in the browser.</p>
+  </div>
   {% endif %}
 {% endif %}
 {% endblock %}
