@@ -1,6 +1,7 @@
 """Chat routes: UI page, conversation CRUD, sharing, and SSE streaming."""
 
 import base64
+import math
 import hashlib
 import json
 import secrets
@@ -214,6 +215,36 @@ def _generation_kwargs(conversation) -> dict:
 #: bounded for large imports); ``truncated`` signals the client when it applies.
 MAX_TREE_FILES = 500
 
+#: Default and maximum page sizes for paginated list endpoints.
+DEFAULT_PER_PAGE = 20
+MAX_PER_PAGE = 100
+
+
+def _pagination_args() -> tuple[int, int]:
+    """Parse ``page``/``per_page`` query params with sane bounds and defaults.
+
+    ``page`` is clamped to >= 1 and ``per_page`` to ``[1, MAX_PER_PAGE]`` so a
+    client cannot request an unbounded page. Invalid values fall back to the
+    defaults rather than erroring, keeping the list endpoints forgiving.
+    """
+    page = request.args.get("page", 1, type=int) or 1
+    per_page = request.args.get("per_page", DEFAULT_PER_PAGE, type=int) or DEFAULT_PER_PAGE
+    page = max(page, 1)
+    per_page = min(max(per_page, 1), MAX_PER_PAGE)
+    return page, per_page
+
+
+def _paginate_query(query, page: int, per_page: int):
+    """Return ``(items, pages, total)`` for a SQLAlchemy query.
+
+    Uses ``.count()`` for the total and ``.offset()/.limit()`` for the window so
+    the same helper works for conversations and messages alike.
+    """
+    total = query.count()
+    pages = max(math.ceil(total / per_page), 1) if total else 0
+    items = query.offset((page - 1) * per_page).limit(per_page).all()
+    return items, pages, total
+
 
 @bp.route("/")
 @login_required
@@ -248,7 +279,11 @@ def api_provider_status():
 @bp.route("/conversations", methods=["GET"])
 @login_required
 def list_conversations():
-    """Return the current user's conversations as JSON (for search/refresh)."""
+    """Return the current user's conversations as a paginated JSON payload.
+
+    Supports ``page`` and ``per_page`` query params and returns
+    ``{items, page, pages, total}`` so the chat sidebar can lazily load more.
+    """
     query = request.args.get("q", "").strip().lower()
     shared_ids = _shared_conversation_ids()
     base = Conversation.query.filter(
@@ -256,8 +291,17 @@ def list_conversations():
     )
     if query:
         base = base.filter(func.lower(Conversation.title).contains(query))
-    conversations = base.order_by(Conversation.updated_at.desc()).all()
-    return jsonify([c.to_dict() for c in conversations])
+    base = base.order_by(Conversation.updated_at.desc())
+    page, per_page = _pagination_args()
+    conversations, pages, total = _paginate_query(base, page, per_page)
+    return jsonify(
+        {
+            "items": [c.to_dict() for c in conversations],
+            "page": page,
+            "pages": pages,
+            "total": total,
+        }
+    )
 
 
 @bp.route("/conversations", methods=["POST"])
@@ -279,13 +323,24 @@ def create_conversation():
 @bp.route("/conversations/<int:conversation_id>", methods=["GET"])
 @login_required
 def get_conversation(conversation_id: int):
-    """Return a conversation with its full message history.
+    """Return a conversation with a paginated slice of its message history.
 
     Readable by the owner and by any user the conversation was shared with.
+    Supports ``page`` and ``per_page`` query params; the response includes
+    ``messages_page``/``messages_pages``/``messages_total`` so clients can load
+    older messages for long conversations.
     """
     conversation = _get_visible_conversation(conversation_id)
     payload = conversation.to_dict()
-    payload["messages"] = [m.to_dict() for m in conversation.messages]
+    page, per_page = _pagination_args()
+    messages_query = Message.query.filter_by(conversation_id=conversation.id).order_by(
+        Message.created_at.asc(), Message.id.asc()
+    )
+    messages, pages, total = _paginate_query(messages_query, page, per_page)
+    payload["messages"] = [m.to_dict() for m in messages]
+    payload["messages_page"] = page
+    payload["messages_pages"] = pages
+    payload["messages_total"] = total
     payload["shared_user_ids"] = [s.user_id for s in conversation.shares]
     # Cumulative token usage across the conversation (issue #13).
     payload["usage"] = token_usage.sum_usage(conversation.messages)
