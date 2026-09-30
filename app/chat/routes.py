@@ -148,6 +148,103 @@ def _shared_conversation_ids() -> list[int]:
     return [row[0] for row in rows]
 
 
+# --------------------------------------------------------------------------
+# Workspace scoping
+#
+# A conversation may optionally be filed under one of the caller's own
+# workspaces. Everything here is owner-scoped: a workspace id that belongs to
+# somebody else is treated exactly like one that does not exist, so these routes
+# are never an existence oracle.
+# --------------------------------------------------------------------------
+
+#: Sentinel distinguishing "no workspace selected" (show every conversation)
+#: from a concrete workspace id, since ``0`` is not a valid primary key.
+ALL_WORKSPACES = "all"
+
+
+def _owned_workspaces() -> list[Workspace]:
+    """Return the current user's workspaces, pinned first then most recent."""
+    return (
+        Workspace.query.filter_by(user_id=current_user.id)
+        .order_by(Workspace.is_pinned.desc(), Workspace.updated_at.desc())
+        .all()
+    )
+
+
+def _requested_workspace_id(raw) -> int | str | None:
+    """Normalize a ``workspace_id`` argument to an owned id, ``"all"``, or ``None``.
+
+    Returns ``None`` when the argument is absent/blank (no filtering) and
+    :data:`ALL_WORKSPACES` for the explicit "every workspace" selection. Raises
+    ``(error, 404)`` for a malformed value or a workspace the caller does not
+    own, so an unowned id is indistinguishable from a nonexistent one.
+    """
+    if raw is None:
+        return None
+    if isinstance(raw, str):
+        raw = raw.strip()
+        if not raw:
+            return None
+        if raw == ALL_WORKSPACES:
+            return ALL_WORKSPACES
+    try:
+        workspace_id = int(raw)
+    except (TypeError, ValueError):
+        raise ValueError("A valid workspace_id is required.") from None
+    if Workspace.query.filter_by(id=workspace_id, user_id=current_user.id).first() is None:
+        raise LookupError("Workspace not found.")
+    return workspace_id
+
+
+def _apply_workspace_filter(query, raw):
+    """Scope a conversation query to the requested workspace.
+
+    Shared-in conversations always carry the *owner's* workspace, so they are
+    only visible in the "all workspaces" view - filing them into the reader's
+    workspace list would leak the organizer's project structure.
+    """
+    try:
+        workspace_id = _requested_workspace_id(raw)
+    except ValueError as exc:
+        return query, (jsonify({"error": str(exc)}), 400)
+    except LookupError as exc:
+        return query, (jsonify({"error": str(exc)}), 404)
+    if workspace_id is None or workspace_id == ALL_WORKSPACES:
+        return query, None
+    return (
+        query.filter(
+            db.and_(
+                Conversation.user_id == current_user.id,
+                Conversation.workspace_id == workspace_id,
+            )
+        ),
+        None,
+    )
+
+
+def _assign_workspace(conversation: Conversation, data: dict):
+    """Apply ``workspace_id`` from a create/update payload to ``conversation``.
+
+    Returns ``None`` on success or a ``(payload, status)`` error tuple. A
+    workspace the caller does not own is rejected with 404 (no existence
+    oracle), matching the read paths.
+    """
+    if "workspace_id" not in data:
+        return None
+    raw = data.get("workspace_id")
+    if raw is None or (isinstance(raw, str) and not raw.strip()) or raw == ALL_WORKSPACES:
+        conversation.workspace_id = None
+        return None
+    try:
+        workspace_id = _requested_workspace_id(raw)
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    except LookupError as exc:
+        return jsonify({"error": str(exc)}), 404
+    conversation.workspace_id = workspace_id
+    return None
+
+
 def _message_images(message) -> list[dict]:
     """Return base64 image payloads for a message's attachments (issue #49)."""
     return [
@@ -218,18 +315,29 @@ MAX_TREE_FILES = 500
 @bp.route("/")
 @login_required
 def index():
-    """Render the chat interface with the user's conversations."""
+    """Render the chat interface with the user's conversations.
+
+    ``?workspace_id=<id>`` scopes the sidebar to a single workspace and
+    ``?workspace_id=all`` (the default) shows every conversation. The workspace
+    list backs the sidebar selector so the user can file or create a workspace
+    without leaving the page.
+    """
     shared_ids = _shared_conversation_ids()
-    conversations = (
-        Conversation.query.filter(
-            db.or_(Conversation.user_id == current_user.id, Conversation.id.in_(shared_ids))
-        )
-        .order_by(Conversation.is_pinned.desc(), Conversation.updated_at.desc())
-        .all()
+    base = Conversation.query.filter(
+        db.or_(Conversation.user_id == current_user.id, Conversation.id.in_(shared_ids))
     )
+    base, error = _apply_workspace_filter(base, request.args.get("workspace_id"))
+    if error is not None:
+        abort(404)
+    conversations = base.order_by(
+        Conversation.is_pinned.desc(), Conversation.updated_at.desc()
+    ).all()
+    selected = request.args.get("workspace_id") or ALL_WORKSPACES
     return render_template(
         "chat/index.html",
         conversations=conversations,
+        workspaces=_owned_workspaces(),
+        selected_workspace=selected,
         provider_status=provider_status(current_user),
     )
 
@@ -248,12 +356,19 @@ def api_provider_status():
 @bp.route("/conversations", methods=["GET"])
 @login_required
 def list_conversations():
-    """Return the current user's conversations as JSON (for search/refresh)."""
+    """Return the current user's conversations as JSON (for search/refresh).
+
+    ``workspace_id`` scopes the list to one workspace; omit it (or pass ``all``)
+    to return everything the caller can see.
+    """
     query = request.args.get("q", "").strip().lower()
     shared_ids = _shared_conversation_ids()
     base = Conversation.query.filter(
         db.or_(Conversation.user_id == current_user.id, Conversation.id.in_(shared_ids))
     )
+    base, error = _apply_workspace_filter(base, request.args.get("workspace_id"))
+    if error is not None:
+        return error
     if query:
         base = base.filter(func.lower(Conversation.title).contains(query))
     conversations = base.order_by(Conversation.updated_at.desc()).all()
@@ -263,10 +378,13 @@ def list_conversations():
 @bp.route("/conversations", methods=["POST"])
 @login_required
 def create_conversation():
-    """Create a new empty conversation."""
+    """Create a new empty conversation, optionally filed under a workspace."""
     data = request.get_json(silent=True) or {}
     title = (data.get("title") or "New conversation").strip()[:200]
     conversation = Conversation(user_id=current_user.id, title=title or "New conversation")
+    error = _assign_workspace(conversation, data)
+    if error is not None:
+        return error
     try:
         apply_settings(conversation, data, current_user)
     except ProviderSettingsError as exc:
@@ -335,13 +453,16 @@ def api_usage_daily():
 @bp.route("/conversations/<int:conversation_id>", methods=["PATCH"])
 @login_required
 def update_conversation(conversation_id: int):
-    """Rename or pin/unpin a conversation."""
+    """Rename, pin/unpin, or move a conversation to another workspace."""
     conversation = _get_conversation(conversation_id)
     data = request.get_json(silent=True) or {}
     if "title" in data:
         conversation.title = (data.get("title") or "Untitled").strip()[:200]
     if "is_pinned" in data:
         conversation.is_pinned = bool(data["is_pinned"])
+    error = _assign_workspace(conversation, data)
+    if error is not None:
+        return error
     db.session.commit()
     return jsonify(conversation.to_dict())
 
@@ -487,17 +608,22 @@ def create_share_link(conversation_id: int):
         conversation = _get_visible_conversation(conversation_id)
         if conversation.user_id != current_user.id:
             return jsonify([])
-        links = ConversationShare.query.filter_by(conversation_id=conversation.id).filter(
-            ConversationShare.token_hash.isnot(None)
-        ).order_by(ConversationShare.created_at.desc()).all()
-        return jsonify([
-            {
-                "id": link.id,
-                "expires_at": link.expires_at.isoformat(),
-                "permission": link.permission,
-            }
-            for link in links
-        ])
+        links = (
+            ConversationShare.query.filter_by(conversation_id=conversation.id)
+            .filter(ConversationShare.token_hash.isnot(None))
+            .order_by(ConversationShare.created_at.desc())
+            .all()
+        )
+        return jsonify(
+            [
+                {
+                    "id": link.id,
+                    "expires_at": link.expires_at.isoformat(),
+                    "permission": link.permission,
+                }
+                for link in links
+            ]
+        )
     conversation = _get_conversation(conversation_id)
     data = request.get_json(silent=True) or {}
     try:
@@ -518,15 +644,18 @@ def create_share_link(conversation_id: int):
     )
     db.session.add(share)
     db.session.commit()
-    return jsonify(
-        {
-            "id": share.id,
-            "url": url_for("chat.view_shared_conversation", token=token, _external=True),
-            "created_by": current_user.id,
-            "expires_at": expires_at.isoformat(),
-            "permission": "read_only",
-        }
-    ), 201
+    return (
+        jsonify(
+            {
+                "id": share.id,
+                "url": url_for("chat.view_shared_conversation", token=token, _external=True),
+                "created_by": current_user.id,
+                "expires_at": expires_at.isoformat(),
+                "permission": "read_only",
+            }
+        ),
+        201,
+    )
 
 
 @bp.route("/conversations/<int:conversation_id>/share-links/<int:share_id>", methods=["DELETE"])

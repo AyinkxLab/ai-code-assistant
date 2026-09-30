@@ -13,6 +13,8 @@
   var conversationUsage = { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 };
   var listEl = document.getElementById("conversation-list");
   var searchEl = document.getElementById("conversation-search");
+  var workspaceSelectEl = document.getElementById("workspace-select");
+  var newWorkspaceBtn = document.getElementById("new-workspace");
   var actionsEl = document.getElementById("conversation-actions");
   var currentId = null;
   var streaming = false;
@@ -317,6 +319,7 @@
             '<div class="chat-placeholder"><p>Ask the AI assistant for help with your code.</p></div>';
         }
         applySettingsToPanel(data);
+        syncWorkspaceSelect(data.workspace_id);
         clearComposerError();
         autoGrowComposer();
         inputEl.focus();
@@ -411,10 +414,14 @@
 
   async function ensureConversation() {
     if (currentId !== null) return currentId;
+    var payload = collectSettings();
+    // File the new conversation under the workspace currently selected in the
+    // sidebar. "all" means no workspace, which the server stores as NULL.
+    payload.workspace_id = selectedWorkspaceId();
     var created = await api("/chat/conversations", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(collectSettings()),
+      body: JSON.stringify(payload),
     });
     addListItem(created);
     currentId = created.id;
@@ -632,6 +639,63 @@
     }
   }
 
+  // "all" is the sentinel meaning "no workspace"; it is also what the server
+  // expects for an unscoped request.
+  function selectedWorkspaceId() {
+    return workspaceSelectEl && workspaceSelectEl.value ? workspaceSelectEl.value : "all";
+  }
+
+  // Point the selector at the workspace an opened conversation is filed under.
+  // An unknown id (a shared-in conversation belonging to somebody else's
+  // workspace) leaves the current selection untouched rather than blanking it.
+  function syncWorkspaceSelect(workspaceId) {
+    if (!workspaceSelectEl) return;
+    if (workspaceId === null || workspaceId === undefined) {
+      workspaceSelectEl.value = "all";
+      return;
+    }
+    var match = Array.prototype.some.call(workspaceSelectEl.options, function (option) {
+      return option.value === String(workspaceId);
+    });
+    if (match) workspaceSelectEl.value = String(workspaceId);
+  }
+
+  function appendWorkspaceOption(workspace) {
+    if (!workspaceSelectEl) return;
+    var option = document.createElement("option");
+    option.value = String(workspace.id);
+    option.textContent = workspace.name;
+    workspaceSelectEl.appendChild(option);
+  }
+
+  // Create a workspace inline and scope the sidebar to it. The name is trimmed
+  // and the server enforces the 200-character column limit, so a blank or
+  // oversized name is rejected before anything is stored.
+  async function createWorkspace() {
+    var name = window.prompt("Workspace name");
+    if (name === null) return;
+    name = name.trim();
+    if (!name) {
+      flashError("A workspace name is required.");
+      return;
+    }
+    var created;
+    try {
+      created = await api("/workspaces/api/workspaces", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: name }),
+      });
+    } catch (error) {
+      flashError(error.message);
+      return;
+    }
+    appendWorkspaceOption(created);
+    if (workspaceSelectEl) workspaceSelectEl.value = String(created.id);
+    newConversation();
+    refreshList();
+  }
+
   function addListItem(conversation) {
     var li = document.createElement("li");
     li.className = "conversation-item";
@@ -653,7 +717,12 @@
 
   function refreshList() {
     var query = searchEl ? searchEl.value.trim() : "";
-    api("/chat/conversations" + (query ? "?q=" + encodeURIComponent(query) : ""))
+    var params = new URLSearchParams();
+    if (query) params.set("q", query);
+    // Scope the sidebar to the selected workspace. "all" is the default and is
+    // sent explicitly so the server treats it as "no filter" too.
+    params.set("workspace_id", selectedWorkspaceId());
+    api("/chat/conversations?" + params.toString())
       .then(function (items) {
         listEl.innerHTML = "";
         items.forEach(addListItem);
@@ -922,6 +991,17 @@
     });
 
     document.getElementById("new-conversation").addEventListener("click", newConversation);
+
+    if (workspaceSelectEl) {
+      // Changing the workspace re-scopes the sidebar to that project folder.
+      workspaceSelectEl.addEventListener("change", function () {
+        newConversation();
+        refreshList();
+      });
+    }
+    if (newWorkspaceBtn) {
+      newWorkspaceBtn.addEventListener("click", createWorkspace);
+    }
 
     if (providerEl) {
       providerEl.addEventListener("change", function () {

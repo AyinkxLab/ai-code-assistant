@@ -9,7 +9,7 @@ Pages (HTML)
 
 API (JSON, all scoped to the current user)
     /workspaces/api/workspaces                       list / create
-    /workspaces/api/workspaces/<id>                  rename / delete
+    /workspaces/api/workspaces/<id>                  get / rename / delete
     /workspaces/api/workspaces/<id>/projects         list / import
     /workspaces/api/projects/<pid>                   delete
     /workspaces/api/projects/<pid>/export            download zip snapshot (owner)
@@ -292,6 +292,17 @@ def api_create_workspace():
     db.session.add(workspace)
     db.session.commit()
     return jsonify(workspace.to_dict()), 201
+
+
+@bp.route("/api/workspaces/<int:workspace_id>", methods=["GET"])
+@login_required
+def api_get_workspace(workspace_id: int):
+    """Return a single workspace.
+
+    Owner-scoped via ``_get_workspace``: anyone else receives a 404 so the route
+    is not an existence oracle for workspace ids.
+    """
+    return jsonify(_get_workspace(workspace_id).to_dict())
 
 
 @bp.route("/api/workspaces/<int:workspace_id>", methods=["PATCH"])

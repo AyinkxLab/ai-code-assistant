@@ -126,7 +126,7 @@ class TestMigrationHead:
     def test_head_is_latest_revision(self):
         result = _run_flask(["db", "heads"], {"DATABASE_URL": "sqlite:///:memory:"})
         assert result.returncode == 0, result.stderr
-        assert "d8e9f0a1b2c3" in (result.stdout + result.stderr)
+        assert "e7a8b9c0d1e2" in (result.stdout + result.stderr)
 
     def test_message_token_columns_upgraded(self):
         with _migration_db() as db_url, _inspect(db_url) as insp:
@@ -393,6 +393,24 @@ class TestMigrationHead:
             with _inspect(db_url) as insp:
                 columns = {col["name"] for col in insp.get_columns("workspaces")}
                 assert "is_pinned" not in columns
+
+    def test_conversation_workspace_column_upgraded(self):
+        with _migration_db() as db_url, _inspect(db_url) as insp:
+            columns = {col["name"] for col in insp.get_columns("conversations")}
+            assert "workspace_id" in columns
+            indexes = {idx["name"] for idx in insp.get_indexes("conversations")}
+            assert "ix_conversations_workspace_id" in indexes
+
+    def test_conversation_workspace_column_downgrade_removed(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            db_url = f"sqlite:///{os.path.join(tmp, 'mig_conv_ws.db')}"
+            up = _run_flask(["db", "upgrade"], {"DATABASE_URL": db_url})
+            assert up.returncode == 0, up.stderr
+            down = _run_flask(["db", "downgrade", "d8e9f0a1b2c3"], {"DATABASE_URL": db_url})
+            assert down.returncode == 0, down.stderr
+            with _inspect(db_url) as insp:
+                columns = {col["name"] for col in insp.get_columns("conversations")}
+                assert "workspace_id" not in columns
 
     def test_api_keys_table_upgraded(self):
         expected = {
