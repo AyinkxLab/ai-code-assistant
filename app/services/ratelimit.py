@@ -7,9 +7,6 @@ Limits are per-key (typically per client IP, or per user id for the endpoint
 limiter) over a configurable window. The limiter is process-local, which is
 acceptable for the default single-worker deployments and CI; multi-worker
 deployments should back it with a shared store (out of scope here).
-
-The AI endpoints (``/chat/*/stream``, ``/tools/*``) are limited per authenticated
-user via :func:`per_user_limit` with the ``RATE_LIMIT_AI_PER_MINUTE`` config.
 """
 
 from __future__ import annotations
@@ -18,7 +15,6 @@ import functools
 import threading
 import time
 
-from flask import current_app, jsonify, request
 from flask import current_app, jsonify
 from flask_login import current_user
 
@@ -78,27 +74,14 @@ def consume(key: str, *, max_hits: int, window: int) -> tuple[bool, int]:
 
 
 def _ai_limit_config() -> tuple[int, int]:
-    """Return ``(max_hits, window_seconds)`` for the AI endpoint limiter.
+    """Return ``(max_hits, window)`` for the AI endpoints from app config.
 
-    The per-minute limit is read from ``RATE_LIMIT_AI_PER_MINUTE`` at request
-    time so it stays environment-configurable. A value of ``0`` (or unset)
-    disables limiting, which is how the ``testing`` config opts out.
+    Both values are environment-configurable; a non-positive ``max_hits``
+    disables the limiter (used by the ``testing`` config).
     """
-    per_minute = current_app.config.get("RATE_LIMIT_AI_PER_MINUTE") or 0
-    return per_minute, 60
-
-
-def _rate_limited_response(retry_after: int):
-    """Build the standard ``429`` JSON response with a ``Retry-After`` header."""
-    response = jsonify(
-        {
-            "error": "Rate limit exceeded. Please retry later.",
-            "kind": "rate_limited",
-        }
-    )
-    response.status_code = 429
-    response.headers["Retry-After"] = str(retry_after)
-    return response
+    max_hits = current_app.config.get("RATE_LIMIT_AI_PER_MINUTE") or 0
+    window = current_app.config.get("RATE_LIMIT_AI_WINDOW_SECONDS") or 60
+    return max_hits, window
 
 
 def count(key: str, *, window: int) -> int:
@@ -175,12 +158,11 @@ def per_user_limit(bucket: str, *, max_config: str, window_config: str):
 def ai_per_user_limit(bucket: str):
     """Decorator enforcing the per-user AI rate limit on a view.
 
-    Applies to the AI-powered endpoints (``/chat/*/stream``, ``/tools/*``).
-    The limit is keyed on the authenticated user id (not the client IP) and is
-    read from ``RATE_LIMIT_AI_PER_MINUTE`` at request time. When the limit is
+    The limit (requests per minute) is read from ``RATE_LIMIT_AI_PER_MINUTE``
+    at request time so it stays environment-configurable. When the limit is
     exceeded the wrapped view is not called and a ``429`` JSON response with a
-    ``Retry-After`` header is returned instead. A limit of ``0`` disables the
-    check, so the ``testing`` config is unaffected.
+    ``Retry-After`` header is returned. A non-positive limit disables the
+    limiter entirely (e.g. the ``testing`` config).
     """
 
     def decorator(view):
@@ -192,7 +174,15 @@ def ai_per_user_limit(bucket: str):
             key = f"{bucket}:user:{current_user.get_id()}"
             allowed, retry_after = consume(key, max_hits=max_hits, window=window)
             if not allowed:
-                return _rate_limited_response(retry_after)
+                response = jsonify(
+                    {
+                        "error": "Rate limit exceeded. Please retry later.",
+                        "kind": "rate_limited",
+                    }
+                )
+                response.status_code = 429
+                response.headers["Retry-After"] = str(retry_after)
+                return response
             return view(*args, **kwargs)
 
         return wrapper

@@ -49,9 +49,9 @@ def create_app(config_name: str | None = None) -> Flask:
     configure_cache(app)
 
     # Per-user rate limiting on AI-powered endpoints.
-    from app.services.rate_limit import configure_rate_limiting
+    from app.services.rate_limit import configure_rate_limit
 
-    configure_rate_limiting(app)
+    configure_rate_limit(app)
 
     # Register blueprints.
     from app.admin import bp as admin_bp

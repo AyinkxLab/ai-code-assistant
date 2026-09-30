@@ -1,4 +1,4 @@
-"""Chat JSON API (``/api`` namespace).
+"""Chat JSON API (```/api``` namespace).
 
 Machine-facing REST surface for the chat feature:
 
@@ -28,7 +28,6 @@ from app.services import ratelimit
 from app.services.llm import LLMProviderError, provider_status
 from app.services.provider_config import ProviderSettingsError, apply_settings, build_provider
 from app.services.providers.retry import RetryingProvider
-from app.services.ratelimit import ai_rate_limit
 
 bp = Blueprint("chat_api", __name__, url_prefix="/api")
 
@@ -57,14 +56,13 @@ def _login_required(view):
     return wrapper
 
 
-def _rate_limit(bucket: str):
-    """Enforce the per-user chat rate limit, returning 429 as RFC 7807."""
+def _rate_limit(bucket: str, limit_key: str = "R@MQTA_LIMIT_CHAT_MAX", window_key: str = "RATE_LIMIT_CHAT_WINDOW"):
+    """Enforce a per-user rate limit, returning 429 as RFC 7807."""
 
     def decorator(view):
-        @functools.wraps(view)
-        def wrapper(*args, **kwargs):
-            max_hits = current_app.config.get("RATE_LIMIT_CHAT_MAX", 30)
-            window = current_app.config.get("RATE_LIMIT_CHAT_WINDOW", 60)
+        @functools.wraps(def wrapper(*args, **kwargs):
+            max_hits = current_app.config.get(limit_key, 30)
+            window = current_app.config.get(window_key, 60)
             allowed, retry_after = ratelimit.consume(
                 f"api-chat:{bucket}:user:{current_user.get_id()}",
                 max_hits=max_hits,
@@ -79,7 +77,6 @@ def _rate_limit(bucket: str):
         return wrapper
 
     return decorator
-
 
 
 def _owned_conversation(conversation_id: int) -> Conversation | None:
@@ -161,7 +158,6 @@ def delete_conversation(conversation_id: int):
 @bp.route("/conversations/<int:conversation_id>/messages", methods=["POST"])
 @_login_required
 @_rate_limit("message")
-@ai_rate_limit
 def send_message(conversation_id: int):
     """Persist the user message and return the assistant's reply."""
     conversation = _owned_conversation(conversation_id)

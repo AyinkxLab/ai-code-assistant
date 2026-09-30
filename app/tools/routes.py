@@ -8,6 +8,7 @@ refactor, review, or comment on them.
 import hashlib
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from functools import wraps
 
 from flask import current_app, jsonify, render_template, request
 from flask_login import current_user, login_required
@@ -26,6 +27,7 @@ from app.services.github import (
 from app.services.llm import LLMProviderError, get_provider
 from app.services.soroban_generation import generate_soroban_skeleton
 from app.tools import bp
+
 
 ALLOWED_EXTENSIONS = {
     "py",
