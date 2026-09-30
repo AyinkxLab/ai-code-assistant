@@ -1,4 +1,4 @@
-{% extends "base.html" %}
+<%extends "base.html" %}
 
 {% block title %}Issues - {{ owner }}/{{ repo }} - {{ config.APP_NAME }}{% endblock %}
 
@@ -12,11 +12,16 @@
         <option value="closed">Closed</option>
         <option value="all">All</option>
       </select>
+      <input id="issue-label" class="prompt-filter" type="text" placeholder="Label" aria-label="Filter by label">
+      <input id="issue-assignee" class="prompt-filter" type="text" placeholder="Assignee" aria-label="Filter by assignee">
+      <input id="issue-search" class="prompt-filter" type="search" placeholder="Search issues" aria-label="Search issues">
     </div>
+    <div id="issue-filters" class="issue-filters"></div>
   </div>
 </div>
 <div id="issue-list" class="issue-list"><p class="sidebar-empty">Loading issues...</p></div>
 <div id="issue-pager" class="pager"></div>
+<!-- issue filter chips -->
 {% endblock %}
 
 {% block scripts %}
