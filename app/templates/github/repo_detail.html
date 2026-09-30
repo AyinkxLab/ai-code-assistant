@@ -13,6 +13,7 @@
 <div class="repo-tabs">
   <button class="repo-tab active" data-tab="tree">Files</button>
   <button class="repo-tab" data-tab="commits">Commits</button>
+  <button class="repo-tab" data-tab="compare">Compare</button>
   <button class="repo-tab" data-tab="issues">Issues</button>
   <button class="repo-tab" data-tab="pulls">Pull Requests</button>
   <button class="repo-tab" data-tab="analyze">AI Analysis</button>
@@ -30,6 +31,17 @@
 
 <div id="tab-commits" class="repo-tab-panel" hidden>
   <div id="commit-list" class="commit-list"></div>
+</div>
+
+<div id="tab-compare" class="repo-tab-panel" hidden>
+  <div class="repo-toolbar compare-toolbar">
+    <input id="compare-base" class="sidebar-search" type="text" placeholder="Base ref (e.g. main)" autocomplete="off">
+    <span class="compare-separator">...</span>
+    <input id="compare-head" class="sidebar-search" type="text" placeholder="Head ref (e.g. feature)" autocomplete="off">
+    <button id="compare-submit" class="btn btn-primary" type="button">Compare</button>
+  </div>
+  <div id="compare-summary" class="compare-summary"></div>
+  <div id="compare-files" class="compare-files"></div>
 </div>
 
 <div id="tab-issues" class="repo-tab-panel" hidden>
