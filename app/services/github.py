@@ -397,6 +397,27 @@ class GitHubClient:
     def get_repository(self, full_name: str) -> dict:
         return self._get(f"/repos/{full_name}")
 
+    def get_public_repository(self, full_name: str) -> dict:
+        """Fetch a repository by ``owner/name``, honoring GitHub's access model.
+
+        The request is made with the current user's token, so GitHub itself
+        decides whether the repository is visible: public repositories are
+        returned to anyone, while private repositories the user cannot access
+        surface as a permission or not-found error. The token never grants
+        access beyond what the user already has on GitHub.
+        """
+        full_name = validate_full_name(full_name)
+        try:
+            return self.get_repository(full_name)
+        except GitHubNotFoundError:
+            # GitHub returns 404 for private repos the caller cannot see, so
+            # translate it into a clear permission error rather than a bare
+            # "not found" that leaks nothing but also explains nothing.
+            raise GitHubPermissionError(
+                "GitHub denied access to this resource.",
+                detail=f"Repository {full_name} is not visible to this token.",
+            ) from None
+
     def list_branches(self, full_name: str) -> list[dict]:
         return self._get_paginated(f"/repos/{full_name}/branches")
 
@@ -810,6 +831,20 @@ def validate_full_name(full_name: str) -> str:
     if not _FULL_NAME_RE.match(name) or name.count("/") != 1:
         raise GitHubInvalidError("Invalid repository name.")
     return name
+
+
+def lookup_repository(user, full_name: str) -> dict:
+    """Look up an arbitrary public repository by ``owner/name``.
+
+    Validates the ``owner/name`` shape, then fetches the repository using the
+    user's GitHub token so GitHub's own permission model is respected. Private
+    repositories the user cannot access raise :class:`GitHubPermissionError`
+    with a clear message, and the token is never used to bypass GitHub's
+    access checks.
+    """
+    name = validate_full_name(full_name)
+    client = get_github_client(user)
+    return client.get_public_repository(name)
 
 
 def validate_path(path: str) -> str:

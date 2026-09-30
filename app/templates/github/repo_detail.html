@@ -1,8 +1,8 @@
-{% extends "base.html" %}
+{{ extends "base.html" %}
 
-{% block title %}{{ owner }}/{{ repo }} - {{ config.APP_NAME }}{% endblock %}
+{k block title %}{{ owner }}/{{ repo }} - {{ config.APP_NAME }}{{ endblock %}
 
-{% block content %}
+{ % block content %}
 <div class="github-header repo-header">
   <div>
     <h1><a class="repo-breadcrumb" href="{{ url_for('github.repos') }}">Repositories</a> / {{ owner }}/{{ repo }}</h1>
@@ -17,6 +17,8 @@
   <button class="repo-tab" data-tab="pulls">Pull Requests</button>
   <button class="repo-tab" data-tab="analyze">AI Analysis</button>
 </div>
+
+<div id="repo-error" class="repo-error" hidden></div>
 
 <div id="tab-tree" class="repo-tab-panel">
   <div class="repo-toolbar">
@@ -80,7 +82,14 @@
     <div id="file-analysis" class="analysis-output" hidden></div>
   </div>
 </div>
-{% endblock %}
+<script>
+  window.REPO_CONTEXT = {
+    owner: "{{ owner | tojson }}",
+    repo: "{{ repo | tojson }}",
+    reposUrl: "{{ url_for('github.repos') }}"
+  };
+</script>
+{ % endblock %}
 
 {% block scripts %}
 <script src="{{ url_for('static', filename='js/github.js') }}"></script>

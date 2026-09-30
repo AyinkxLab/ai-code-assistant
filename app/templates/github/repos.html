@@ -10,6 +10,15 @@
   </div>
 </div>
 
+<form id="repo-lookup-form" class="repo-lookup-form">
+  <label for="repo-lookup-input">Open a public repository</label>
+  <div class="repo-lookup-row">
+    <input id="repo-lookup-input" name="repo" type="text" placeholder="owner/name" required autocomplete="off" spellcheck="false">
+    <button type="submit">Open</button>
+  </div>
+  <p id="repo-lookup-error" class="repo-lookup-error" role="alert" hidden></p>
+</form>
+
 <div id="repo-list" class="repo-list">
   <p class="sidebar-empty">Loading repositories...</p>
 </div>

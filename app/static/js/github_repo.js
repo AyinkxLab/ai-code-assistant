@@ -5,10 +5,32 @@
   "use strict";
 
   var GH = window.GitHub;
-  var FULL_NAME = document.querySelector(".repo-header h1").textContent.trim().split("/").slice(1).join("/").trim();
-  var parts = FULL_NAME.split(" / ");
-  var OWNER = parts[0];
-  var REPO = parts[1];
+  var FULL_NAME = "";
+  var OWNER = "";
+  var REPO = "";
+
+  // Resolve owner/name from the URL path (/github/repos/<owner>/<name>/...)
+  // so arbitrary public repositories can be browsed, not just the user's own.
+  function resolveRepoFromLocation() {
+    var match = window.location.pathname.match(/\/github\/repos\/([^\/]+)\/([^\/]+)/);
+    if (match) {
+      OWNER = decodeURIComponent(match[1]);
+      REPO = decodeURIComponent(match[2]);
+    } else {
+      var header = document.querySelector(".repo-header h1");
+      if (header) {
+        var text = header.textContent.trim();
+        var slash = text.indexOf("/");
+        if (slash !== -1) {
+          OWNER = text.slice(0, slash).trim();
+          REPO = text.slice(slash + 1).trim();
+        }
+      }
+    }
+    FULL_NAME = OWNER + "/" + REPO;
+  }
+
+  resolveRepoFromLocation();
 
   var state = {
     ref: "HEAD",
@@ -80,6 +102,12 @@
         }
       })
       .catch(function (error) {
+        // GitHub returns 404 for private repos the user cannot access; surface
+        // a clear permission error rather than a generic failure.
+        if (error && (error.status === 404 || error.status === 403)) {
+          GH.flashError("Repository not found or you do not have permission to view it.");
+          return;
+        }
         GH.flashError(error.message);
       });
   }
@@ -102,7 +130,11 @@
         select.value = state.ref;
         if (document.getElementById("tab-tree").hidden === false) loadTree();
       })
-      .catch(function () { /* non-fatal */ });
+      .catch(function (error) {
+        if (error && (error.status === 404 || error.status === 403)) {
+          GH.flashError("Repository not found or you do not have permission to view it.");
+        }
+      });
   }
 
   // -- Files ---------------------------------------------------------------
@@ -146,6 +178,10 @@
       container.innerHTML = html;
     }).catch(function (error) {
       container.innerHTML = '<p class="sidebar-empty">Could not load files.</p>';
+      if (error && (error.status === 404 || error.status === 403)) {
+        GH.flashError("Repository not found or you do not have permission to view it.");
+        return;
+      }
       GH.flashError(error.message);
     });
   }
@@ -203,6 +239,10 @@
         body.textContent = data.text;
       })
       .catch(function (error) {
+        if (error && (error.status === 404 || error.status === 403)) {
+          body.textContent = "You do not have permission to view this file.";
+          return;
+        }
         body.textContent = "Could not load file: " + error.message;
       });
   }
@@ -278,6 +318,10 @@
       });
     }).catch(function (error) {
       loading.remove();
+      if (error && (error.status === 404 || error.status === 403)) {
+        GH.flashError("Repository not found or you do not have permission to view it.");
+        return;
+      }
       GH.flashError(error.message);
     });
   }
@@ -317,6 +361,10 @@
       });
     }).catch(function (error) {
       container.innerHTML = '<p class="sidebar-empty">Could not load issues.</p>';
+      if (error && (error.status === 404 || error.status === 403)) {
+        GH.flashError("Repository not found or you do not have permission to view it.");
+        return;
+      }
       GH.flashError(error.message);
     });
   }
@@ -353,6 +401,10 @@
       });
     }).catch(function (error) {
       container.innerHTML = '<p class="sidebar-empty">Could not load pull requests.</p>';
+      if (error && (error.status === 404 || error.status === 403)) {
+        GH.flashError("Repository not found or you do not have permission to view it.");
+        return;
+      }
       GH.flashError(error.message);
     });
   }
@@ -369,6 +421,10 @@
       })
       .catch(function (error) {
         container.innerHTML = "";
+        if (error && (error.status === 404 || error.status === 403)) {
+          GH.flashError("Repository not found or you do not have permission to view it.");
+          return;
+        }
         GH.flashError(error.message);
       });
   }
@@ -385,6 +441,10 @@
       GH.renderAnalysis(container, data.analysis);
     }).catch(function (error) {
       container.innerHTML = "";
+      if (error && (error.status === 404 || error.status === 403)) {
+        GH.flashError("Repository not found or you do not have permission to view it.");
+        return;
+      }
       GH.flashError(error.message);
     });
   }
@@ -402,6 +462,10 @@
       GH.renderAnalysis(container, data.analysis);
     }).catch(function (error) {
       container.innerHTML = "";
+      if (error && (error.status === 404 || error.status === 403)) {
+        GH.flashError("You do not have permission to view this file.");
+        return;
+      }
       GH.flashError(error.message);
     });
   }
@@ -409,6 +473,23 @@
   // -- Wiring --------------------------------------------------------------
 
   document.addEventListener("DOMContentLoaded", function () {
+    // Repository lookup form: accept owner/name and navigate to that repo.
+    var lookupForm = document.getElementById("repo-lookup-form");
+    if (lookupForm) {
+      lookupForm.addEventListener("submit", function (event) {
+        event.preventDefault();
+        var input = document.getElementById("repo-lookup-input");
+        var value = (input && input.value || "").trim();
+        var match = value.match(/^([^\/\s]+)\s*\/\s*([^\/\s]+)$/);
+        if (!match) {
+          GH.flashError("Enter a repository as owner/name.");
+          return;
+        }
+        window.location.href = "/github/repos/" +
+          encodeURIComponent(match[1]) + "/" + encodeURIComponent(match[2]);
+      });
+    }
+
     loadMeta();
     loadBranches();
 
