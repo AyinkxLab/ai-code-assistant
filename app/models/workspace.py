@@ -2,8 +2,10 @@
 
 A workspace is a user-owned space that groups imported projects (local
 archives or GitHub repositories) so the AI assistant can explore, search, and
-analyze them. Every workspace belongs to exactly one user; there is no shared
-access, which keeps project content strictly isolated between accounts.
+analyze them. It also acts as a project folder for chat conversations and
+prompts, which optionally reference it via ``workspace_id``. Every workspace
+belongs to exactly one user; there is no shared access, which keeps project
+content strictly isolated between accounts.
 """
 
 from datetime import UTC, datetime
@@ -41,6 +43,14 @@ class Workspace(db.Model):
         cascade="all, delete-orphan",
         order_by="Project.created_at",
     )
+    conversations = db.relationship(
+        "Conversation",
+        back_populates="workspace",
+        # Deliberately *not* delete-orphan: the FK is ON DELETE SET NULL, so
+        # removing a workspace unfiles its conversations instead of deleting
+        # them. That keeps a container removable without destroying history.
+        order_by="Conversation.updated_at.desc()",
+    )
     members = db.relationship(
         "WorkspaceMember",
         back_populates="workspace",
@@ -68,6 +78,7 @@ class Workspace(db.Model):
             "description": self.description,
             "is_pinned": bool(self.is_pinned),
             "project_count": len(self.projects),
+            "conversation_count": len(self.conversations),
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "updated_at": self.updated_at.isoformat() if self.updated_at else None,
         }

@@ -30,6 +30,30 @@ def _get_prompt(prompt_id: int) -> Prompt:
     return prompt
 
 
+def _owned_workspace_ids() -> list[int]:
+    """Workspace ids the current user owns (their personal project folders)."""
+    return [row.id for row in Workspace.query.filter_by(user_id=current_user.id).all()]
+
+
+def _resolve_personal_workspace(raw):
+    """Validate a personal prompt's ``workspace_id``.
+
+    Returns ``(workspace_id, error)``. ``error`` is ``None`` on success or a
+    ready-to-return ``(payload, status)`` tuple. A workspace the caller does not
+    own is a 404 so an id from another account is indistinguishable from one that
+    does not exist.
+    """
+    if raw is None or (isinstance(raw, str) and not raw.strip()):
+        return None, None
+    try:
+        workspace_id = int(raw)
+    except (TypeError, ValueError):
+        return None, (jsonify({"error": "A valid workspace_id is required."}), 400)
+    if workspace_id not in _owned_workspace_ids():
+        return None, (jsonify({"error": "Workspace not found."}), 404)
+    return workspace_id, None
+
+
 def _team_workspace_ids():
     """Workspace ids the current user can access through ownership or membership."""
     owned = [row.id for row in Workspace.query.filter_by(user_id=current_user.id).all()]
@@ -68,6 +92,14 @@ def list_prompts():
         base = Prompt.query.filter_by(is_team=True, workspace_id=workspace_id)
     elif scope == "personal":
         base = Prompt.query.filter_by(user_id=current_user.id, is_team=False)
+        # Personal prompts can be filed under one of the caller's own workspaces.
+        # An unowned id is rejected with 404 rather than silently returning an
+        # empty list, so the API never confirms that another user's id exists.
+        workspace_id, error = _resolve_personal_workspace(request.args.get("workspace_id"))
+        if error is not None:
+            return error
+        if workspace_id is not None:
+            base = base.filter(Prompt.workspace_id == workspace_id)
     else:
         return jsonify({"error": "scope must be personal or team."}), 400
     if query:
@@ -164,10 +196,16 @@ def create_prompt():
         if workspace_id not in _team_workspace_ids():
             return jsonify({"error": "Workspace not found."}), 404
         if role_for(workspace_id, current_user) not in {ROLE_OWNER, ROLE_CONTRIBUTOR}:
-            return jsonify(
-                {"error": "Only workspace owners and contributors can add team prompts."}
-            ), 403
+            return (
+                jsonify({"error": "Only workspace owners and contributors can add team prompts."}),
+                403,
+            )
         prompt.is_team = True
+        prompt.workspace_id = workspace_id
+    elif "workspace_id" in data:
+        workspace_id, error = _resolve_personal_workspace(data.get("workspace_id"))
+        if error is not None:
+            return error
         prompt.workspace_id = workspace_id
     db.session.add(prompt)
     db.session.flush()
@@ -216,6 +254,16 @@ def update_prompt(prompt_id: int):
         prompt.category = category
     if "is_favorite" in data:
         prompt.is_favorite = bool(data["is_favorite"])
+    if "workspace_id" in data:
+        if prompt.is_team:
+            return (
+                jsonify({"error": "A team prompt's workspace cannot be changed."}),
+                400,
+            )
+        workspace_id, error = _resolve_personal_workspace(data.get("workspace_id"))
+        if error is not None:
+            return error
+        prompt.workspace_id = workspace_id
 
     if changed:
         prompt_versions_service.record_version(prompt, changed_by=current_user.id)
