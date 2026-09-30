@@ -4,6 +4,8 @@
 (function () {
   "use strict";
 
+  var CANCELLED_CODES = { access_denied: true };
+
   window.GitHub = {
     CSRF_TOKEN: null,
 
@@ -54,13 +56,98 @@
       });
     },
 
-    // Escape HTML, then treat newlines as <br> and URLs as links.
+    // Escape HTML, then treat newlines as <er> and URLs as links.
     renderMarkdownish: function (text) {
       if (!text) return "";
       var html = this.escapeHtml(text);
       html = html.replace(/(^|\s)(https?:\/\/[^\s<]+)/g, '$1<a href="$2" target="_blank" rel="noopener">$2</a>');
       html = html.replace(/\r?\n/g, "<br>");
       return html;
+    },
+
+    // True when an OAuth callback error code represents the user denying
+    // consent (a cancellation), not a failure.
+    isCancellation: function (code) {
+      return !!code && Object.prototype.hasOwnProperty.call(CANCELLED_CODES, String(code));
+    },
+
+    // Read the callback error from the URL without exposing the raw GitHub
+    // payload. Only the code and a safe description are returned.
+    parseCallbackError: function (search) {
+      var params = new URLSearchParams(search == null ? window.location.search : search);
+      var code = params.get("error");
+      if (!code) return null;
+      return {
+        code: code,
+        cancelled: this.isCancellation(code),
+        // Never return the full GitHub error description/URI; only a
+        // fixed, non-leaking explanation.
+        message: this.isCancellation(code)
+          ? "You canceled the GitHub connection."
+          : "GitHub could not complete the connection.",
+      };
+    },
+
+    // Remove the callback error parameters from the address bar so a reload
+    // does not re-surface the failure.
+    clearCallbackError: function () {
+      if (!window.history || !window.history.replaceState) return;
+      var params = new URLSearchParams(window.location.search);
+      if (!params.has("error") && !params.has("error_description") && !params.has("error_uri")) return;
+      params.delete("error");
+      params.delete("error_description");
+      params.delete("error_uri");
+      var query = params.toString();
+      window.history.replaceState({}, "", window.location.pathname + (query ? "?" + query : "") + window.location.hash);
+    },
+
+    // Render a friendly cancellation/error screen into container. The
+    // explanation lists what access will be requested and offers a
+    // retry button back to the connect flow.
+    renderConnectStatus: function (container, info) {
+      if (!container) return;
+      container.innerHTML = "";
+      container.hidden = false;
+
+      var card = document.createElement("div");
+      card.className = "card connect-status";
+
+      var title = document.createElement("h1");
+      title.textContent = info && info.cancelled ? "GitHub connection canceled" : "GitHub connection failed";
+      card.appendChild(title);
+
+      var lead = document.createElement("p");
+      lead.className = "field-hint";
+      lead.textContent = info && info.message
+        ? info.message
+        : "GitHub could not complete the connection.";
+      card.appendChild(lead);
+
+      var explain = document.createElement("p");
+      explain.textContent = "Connecting GitHub grants this app read access to your repositories, issues, and pull requests so it can assist you. You can revoke access at any time from your GitHub settings.";
+      card.appendChild(explain);
+
+      var actions = document.createElement("div");
+      actions.className = "connect-actions";
+      var retry = document.createElement("a");
+      retry.className = "btn btn-primary";
+      retry.href = "/github/connect";
+      retry.textContent = "Connect GitHub";
+      actions.appendChild(retry);
+      card.appendChild(actions);
+
+      container.appendChild(card);
+    },
+
+    // Initialize the GitHub dashboard: surface a friendly cancellation/error
+    // screen with a retry path when the OAuth callback reports a failure.
+    initDashboard: function () {
+      var container = document.querySelector("[data-github-connect-status]");
+      if (!container) return;
+      var info = this.parseCallbackError();
+      if (!info) return;
+      this.renderConnectStatus(container, info);
+      this.clearCallbackError();
     },
 
     flashError: function (message) {
@@ -172,4 +259,12 @@
       return '<div class="code-view diff">' + html + "</div>";
     },
   };
+
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", function () {
+      window.GitHub.initDashboard();
+    });
+  } else {
+    window.GitHub.initDashboard();
+  }
 })();

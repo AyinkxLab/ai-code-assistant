@@ -1,6 +1,6 @@
-{% extends "base.html" %}
+{{ extends "base.html" %}
 
-{% block title %}GitHub - {{ config.APP_NAME }}{% endblock %}
+{k block title %}GitHub - {{ config.APP_NAME }}{% endblock %}
 
 {% block content %}
 <div class="github-header">
@@ -38,11 +38,20 @@
     </div>
   </div>
 {% else %}
-  <div class="github-empty">
-    <p>Connect your GitHub account to browse repositories, review issues and pull requests, and ask the AI to analyze your code.</p>
-    <a class="btn btn-primary" href="{{ url_for('github.connect') }}">Connect GitHub</a>
-    <p class="github-hint">You will be redirected to GitHub to authorize access. Your token is encrypted before it is stored and is never exposed in the browser.</p>
-  </div>
+  {% if denied %}
+    <div class="github-denied" role="alert">
+      <h2>Connection cancelled</h2>
+      <p>You declined to grant access on GitHub. Nothing was connected and no token was stored.</p>
+      <p>When you connect, GitHub will ask you to authorize read access to your repository list, files, branches, commits, issues, and pull requests. You can revoke access at any time from your GitHub settings or by disconnecting here.</p>
+      <a class="btn btn-primary" href="{{ url_for('github.connect') }}">Connect GitHub</a>
+    </div>
+  {% else %}
+    <div class="github-empty">
+      <p>Connect your GitHub account to browse repositories, review issues and pull requests, and ask the AI to analyze your code.</p>
+      <a class="btn btn-primary" href="{{ url_for('github.connect') }}">Connect GitHub</a>
+      <p class="github-hint">You will be redirected to GitHub to authorize access. Your token is encrypted before it is stored and is never exposed in the browser.</p>
+    </div>
+  {% endif %}
 {% endif %}
 {% endblock %}
 
@@ -60,7 +69,7 @@
         if (!rl || !rl.available || !rl.low) return;
         var remaining = rl.remaining;
         var limit = rl.limit;
-        var message = "Low GitHub API quota: " + remaining + " of " + limit +
+        var message = "Low GitHub API quota: " + remaining + "of " + limit +
           " requests remaining.";
         if (rl.reset) {
           message += " Resets " + new Date(rl.reset * 1000).toLocaleString() + ".";

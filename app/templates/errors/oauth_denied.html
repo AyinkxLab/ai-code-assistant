@@ -1,0 +1,25 @@
+{{ extends "base.html" }}
+
+{k block title }}GitHub connection cancelled - {{ config.APP_NAME }}{% endblock %}
+
+{% block content %}
+<div class="github-denied">
+  <h1>GitHub connection cancelled</h1>
+  <p>You cancelled the GitHub authorization request, so no access was granted. Nothing was changed on your account.</p>
+
+  <div class="github-denied-explanation">
+    <h2>What the app would access if you connect</h2>
+    <ul>
+      <li>Read your repositories, files, branches, and commits.</li>
+      <li>Read and analyze issues and pull requests.</li>
+      <li>Store an encrypted token so the app can query GitHub on your behalf.</li>
+    </ul>
+    <p class="github-hint">You can revoke access at any time from your GitHub settings, and you can disconnect here at any time.</p>
+  </div>
+
+  <div class="github-denied-actions">
+    <a class="btn btn-primary" href="{{ url_for('github.connect') }}">Retry connecting GitHub</a>
+    <a class="btn btn-ghost" href="{{ url_for('github.index') }}">Back to GitHub integration</a>
+  </div>
+</div>
+{% endblock %}

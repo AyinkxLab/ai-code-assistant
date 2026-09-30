@@ -102,7 +102,14 @@ def callback():
     error = request.args.get("error")
     if error:
         ratelimit.record(key)
-        flash(f"GitHub authorization failed: {error}", "error")
+        if error == "access_denied":
+            flash(
+                "You cancelled the GitHub connection. No access was granted. "
+                "You can try again whenever you're ready.",
+                "info",
+            )
+        else:
+            flash("GitHub authorization failed. Please try again.", "error")
         return redirect(url_for("github.index"))
 
     state = request.args.get("state")
@@ -135,8 +142,8 @@ def callback():
         token_data = {}
     if response.status_code >= 400 or "access_token" not in token_data:
         ratelimit.record(key)
-        message = token_data.get("error_description") or token_data.get("error") or response.text
-        flash(f"GitHub authorization failed: {message}", "error")
+        current_app.logger.warning("GitHub token exchange failed: %s", token_data)
+        flash("GitHub authorization failed. Please try again.", "error")
         return redirect(url_for("github.index"))
 
     token = token_data["access_token"]
@@ -145,7 +152,8 @@ def callback():
         user = client.get_user()
     except GitHubError as exc:
         ratelimit.record(key)
-        flash(f"Could not verify your GitHub account: {exc}", "error")
+        current_app.logger.warning("GitHub user verification failed: %s", exc)
+        flash("Could not verify your GitHub account. Please try again.", "error")
         return redirect(url_for("github.index"))
 
     account = GithubAccount.query.filter_by(user_id=current_user.id).first()
