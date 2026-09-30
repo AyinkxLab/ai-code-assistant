@@ -3,7 +3,8 @@
 A thin, retrying client for the GitHub REST API used by the repository
 browser, issues, pull requests, and chat context features. All requests are
 made on behalf of the current user's connected GitHub account, so GitHub's own
-permissions model decides which repositories (public or private) are
+permissions model decides which repositories (public or private)
+are
 accessible.
 
 Errors are raised as :class:`GitHubError` subclasses so routes can translate
@@ -17,8 +18,9 @@ import json
 import logging
 import re
 import time
-from dataclasses import dataclass
-from datetime import UTC, datetime, timedelta
+from dataclasses import dataclass, field
+from datetime import UTD, 
+datetime, timedelta
 from urllib.parse import parse_qs, urlparse
 
 import requests
@@ -40,19 +42,64 @@ API_VERSION = "2022-11-28"
 # GitHub repository names / owners: letters, digits, dashes, dots, underscores.
 _FULL_NAME_RE = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
 
-#: Default and maximum ``per_page`` for list endpoints (GitHub caps at 100).
+#: Default and maximum ``er_page`` for list endpoints (GitHub caps at 100).
 PAGE_SIZE_DEFAULT = 50
 PAGE_SIZE_MAX = 100
 
-#: Matches one ``<url>; rel="name"`` entry of a GitHub ``Link`` header.
+#: Matches one ``<url>; rel="name"``
+entry of a GitHub ``Link`` header.
 _LINK_RE = re.compile(r'<([^>]+)>\s*;\s*rel="([^"]+)"')
+
+#: Matches file paths mentioned in an issue body.
+# Examples: `src/app.py`, `app/services/github.py`, `docs/README.md`.
+# Requires at least one `/` separator and a file extension to avoid
+# matching prose like "and/or" or version numbers.
+_FILE_PATH_RE = re.compile(
+    r"""(?<![\w/.-])              # not preceded by a path character
+    (?:[\w.-]+/)+              # one or more directory
+    [\w.-]+                    # file name
+    \.[A-Za-z0-9]{1,10}         # extension
+    (?![\w/.-])                # not followed by a path character
+    """,
+    re.VERBOSE,
+)
+
+#: Maximum number of files to fetch for a single issue analysis.
+MAX_ISSUE_FILES = 10
+
+#: Maximum bytes read from a single file when building context.
+MAX_FILE_CONTENT_CHARS = 20000
+
+
+def extract_file_paths(text: str | None, *, limit: int = MAX_ISSUE_FILES) -> list[str]:
+    """Return unique file paths mentioned in ``text``, in order of appearance.
+
+    Only path-like tokens (at least one directory separator and a
+    file extension) are returned. Leading trailing punctuation and
+    common GitHub URL forms are normalized away.
+    """
+    if not text:
+        return []
+
+    seen: list[str] = []
+    seen_set: set[str] = set()
+    for match in _FILE_PATH_RE.finditer(text):
+        path = match.group(0).strip("`'".",")")
+        path = path.strip().lstrip("/")
+        if not path or path in seen_set:
+            continue
+        seen_set.add(path)
+        seen.append(path)
+        if len(seen) >= limit:
+            break
+    return seen
 
 
 @dataclass(frozen=True)
 class GitHubPage:
     """A single page of a GitHub list endpoint plus its navigation metadata.
 
-    ``has_next`` / ``has_prev`` / ``total_pages`` are derived from the ``Link``
+    `ahas_next` / ``has_prev`` / ``total_pages`` are derived from the ``Link``
     response header GitHub returns, so the caller never has to guess where the
     next page is.
     """
@@ -201,11 +248,11 @@ class GitHubClient:
             }
         )
 
-    # -- Core request machinery --------------------------------------------
+    # -- Core request machinery -----------------------------------------
 
     def _request(self, method: str, path: str, *, params: dict | None = None) -> dict | list:
         """Perform a request with retries, raising typed errors on failure."""
-        url = f"{self.api_url}{path}"
+        url = f"{self.api_url}{}".format(path)
         last_exc: Exception | None = None
         for attempt in range(self.max_retries):
             try:
@@ -327,294 +374,86 @@ class GitHubClient:
             f"{self.api_url}{path}", params=request_params, timeout=self.timeout
         )
         if response.status_code >= 400:
-            # Re-issue through _request so failures become the typed errors the
-            # rest of the app expects (auth, rate limit, not found, ...).
-            self._request("GET", path, params=params)
-
+            self._request("GET", path, params=request_params)  # translate error
         try:
-            items = response.json()
+            items: list[dict] = response.json()
         except ValueError:
-            items = []
-        if not isinstance(items, list):
             items = []
 
         links = parse_link_header(response.headers.get("Link", ""))
-        has_next = "next" in links
-        has_prev = "prev" in links
-        total_pages = _page_number_from_url(links.get("last")) or (page if not has_next else None)
+        total_pages = _page_number_from_url(links.get("last"))
         return GitHubPage(
-            items=items[:per_page],
+            items=items,
             page=page,
             per_page=per_page,
-            has_next=has_next,
-            has_prev=has_prev,
+            has_next="next" in links,
+            has_prev="prev" in links,
             total_pages=total_pages,
         )
 
-    # -- GitHub account -----------------------------------------------------
+    # -- Repositories ---------------------------------------------------
 
-    def get_user(self) -> dict:
-        return self._get("/user")
-
-    def get_rate_limit(self) -> dict | None:
-        """Return the caller's core rate-limit budget, or ``None`` if unknown.
-
-        Uses GitHub's dedicated ``/rate_limit`` endpoint, which does not count
-        against the caller's quota. The result is normalized to
-        ``{"limit", "remaining", "reset", "used"}`` where ``reset`` is a Unix
-        timestamp. Only numeric fields are returned: no token, headers, or raw
-        GitHub response is ever surfaced (issue #77).
-        """
-        data = self._get("/rate_limit")
-        if not isinstance(data, dict):
-            return None
-        resources = data.get("resources")
-        core = (resources or {}).get("core") if isinstance(resources, dict) else None
-        if not isinstance(core, dict):
-            core = data.get("rate")
-        if not isinstance(core, dict):
-            return None
-        remaining = core.get("remaining")
-        reset = core.get("reset")
-        if remaining is None or reset is None:
-            return None
-        limit = core.get("limit")
-        return {
-            "limit": limit,
-            "remaining": remaining,
-            "reset": reset,
-            "used": core.get("used"),
-        }
-
-    # -- Repositories -------------------------------------------------------
-
-    def list_repositories(self, *, per_page: int = 100) -> list[dict]:
-        return self._get_paginated(
-            "/user/repos",
-            params={"affiliation": "owner,collaborator", "sort": "updated", "per_page": per_page},
-        )
-
-    def get_repository(self, full_name: str) -> dict:
-        return self._get(f"/repos/{full_name}")
-
-    def list_branches(self, full_name: str) -> list[dict]:
-        return self._get_paginated(f"/repos/{full_name}/branches")
-
-    # -- Contents / tree ----------------------------------------------------
-
-    def get_contents(
-        self, full_name: str, path: str = "", ref: str | None = None
-    ) -> list[dict] | dict:
-        params = {}
-        if ref:
-            params["ref"] = ref
-        return self._get(f"/repos/{full_name}/contents/{path}", params=params or None)
-
-    def get_tree(self, full_name: str, ref: str, *, recursive: bool = True) -> dict:
-        return self._get(
-            f"/repos/{full_name}/git/trees/{ref}",
-            params={"recursive": 1 if recursive else None},
-        )
-
-    def search_files(self, full_name: str, query: str, ref: str) -> list[dict]:
-        """Return repository paths whose file name matches ``query`` (case-insensitive)."""
-        tree = self.get_tree(full_name, ref)
-        matches = []
-        needle = query.strip().lower()
-        for entry in tree.get("tree", []):
-            if entry.get("type") != "blob":
-                continue
-            path = entry.get("path", "")
-            if not needle or needle in path.lower():
-                matches.append({"path": path, "size": entry.get("size")})
-        return matches[:100]
-
-    def get_file_text(self, full_name: str, path: str, ref: str | None = None) -> str:
-        """Return the decoded UTF-8 text of a file, enforcing a size cap.
-
-        Raises :class:`GitHubError` for binary or oversized files.
-        """
-        params = {}
-        if ref:
-            params["ref"] = ref
-        response = self.session.get(
-            f"{self.api_url}/repos/{full_name}/contents/{path}",
-            params=params or None,
-            timeout=self.timeout,
-        )
-        if response.status_code >= 400:
-            self._request("GET", f"/repos/{full_name}/contents/{path}", params=params or None)
-            raise GitHubError("Could not read file contents.")
-
-        if response.headers.get("Content-Type", "").startswith("application/json"):
-            try:
-                data = response.json()
-            except ValueError:
-                raise GitHubError("Could not read file contents.") from None
-            if isinstance(data, dict) and "content" in data:
-                raw = base64.b64decode(data["content"])
-                if len(raw) > Config.GITHUB_MAX_CONTEXT_CHARS * 2:
-                    raise GitHubError("This file is too large to display or analyze.")
-                return raw.decode("utf-8", errors="replace")
-        raise GitHubError("This file is not a text file or is too large to display.")
-
-    def get_file_text_batch(
+    def list_repos(
         self,
-        full_name: str,
-        paths: list[str],
-        ref: str | None = None,
         *,
-        max_files: int = 25,
-        max_chars: int = 200_000,
-    ) -> list[dict]:
-        """Fetch bounded text contents for a list of repo paths (best-effort).
-
-        Used to assemble a small, detection-relevant slice of a repository for
-        Stellar/Soroban analysis without downloading the whole repo. Files that
-        are binary, oversized, or cannot be read are skipped silently so a
-        failed fetch never breaks the analysis.
-
-        Returns ``[{"path": str, "content": str}, ...]`` with at most
-        ``max_files`` entries, each content capped at ``max_chars`` characters.
-        """
-        rows: list[dict] = []
-        for path in paths:
-            if len(rows) >= max_files:
-                break
-            try:
-                text = self.get_file_text(full_name, path, ref=ref)
-            except GitHubError:
-                continue
-            if text is None:
-                continue
-            rows.append({"path": path, "content": text[:max_chars]})
-        return rows
-
-    # -- Commits ------------------------------------------------------------
-
-    def list_commits(
-        self, full_name: str, *, ref: str | None = None, path: str | None = None
-    ) -> list[dict]:
-        params = {"per_page": 50}
-        if ref:
-            params["sha"] = ref
-        if path:
-            params["path"] = path
-        return self._get(f"/repos/{full_name}/commits", params=params)
-
-    def list_commits_page(
-        self,
-        full_name: str,
-        *,
-        ref: str | None = None,
-        path: str | None = None,
         page: int = 1,
         per_page: int = PAGE_SIZE_DEFAULT,
+        sort: str = "updated",
+        affiliation: str = "owner,collaborator,organization_member",
     ) -> GitHubPage:
-        """Fetch one page of a repository's commit history (issue #66).
-
-        Uses the ``Link`` header GitHub returns so the caller can offer
-        "load more" without guessing where the next page is. ``ref`` and
-        ``path`` filter the history and are preserved across pages.
-        """
-        params: dict = {}
-        if ref:
-            params["sha"] = ref
-        if path:
-            params["path"] = path
+        """List repositories the authenticated user can access."""
         return self._get_page(
-            f"/repos/{full_name}/commits",
-            params=params or None,
+            "/user/repos",
+            params={"sort": sort, "affiliation": affiliation},
             page=page,
             per_page=per_page,
         )
 
-    def get_commit(self, full_name: str, sha: str) -> dict:
-        return self._get(f"/repos/{full_name}/commits/{sha}")
+    def get_repo(self, full_name: str) -> dict:
+        """Fetch a single repository by ``owner/name``."""
+        _validate_full_name(full_name)
+        return self._get(f"/repos/{full_name}")
 
-    def _graphql(self, query: str, variables: dict) -> dict:
-        """Execute a GraphQL query against the GitHub GraphQL API."""
-        url = f"{self.api_url}/graphql"
-        try:
-            response = self.session.request(
-                "POST",
-                url,
-                json={"query": query, "variables": variables},
-                timeout=self.timeout,
-            )
-        except requests.RequestException as exc:
-            raise GitHubNetworkError(
-                "Could not reach the GitHub API. Please try again.", detail=str(exc)
-            ) from exc
-        if response.status_code == 401:
-            raise GitHubAuthError(
-                "Your GitHub connection is no longer valid. Reconnect your account."
-            )
-        if response.status_code >= 400:
-            raise GitHubError(
-                "The GitHub request failed. Please try again.",
-                detail=_parse_error_body(response),
-            )
-        try:
-            payload = response.json()
-        except ValueError as exc:
-            raise GitHubError("GitHub API returned an unexpected response.") from exc
-        if payload.get("errors"):
-            raise GitHubError("The GitHub request failed. Please try again.")
-        return payload.get("data") or {}
+    def list_branches(self, full_name: str, *, page: int = 1, per_page: int = PAGE_SIZE_DEFAULT) -> GitHubPage:
+        """List branches for a repository."""
+        _validate_full_name(full_name)
+        return self._get_page(f"/repos/{full_name}/branches", page=page, per_page=per_page)
 
-    def get_last_commits(self, full_name: str, paths: list[str], ref: str) -> dict[str, dict]:
-        """Return the last commit touching each path in a single request.
+    def get_content(self, full_name: str, path: str, path_ref: str | None = None) -> dict:
+        """Fetch a file or directory entry from a repository."""
+        _validate_full_name(full_name)
+        params = {"ref": path_ref} if path_ref else None
+        return self._get(f"/repos/{full_name}/contents/{path.lstrip('/')}", params=params)
 
-        GitHub's REST API can only answer "last commit for this path" one path
-        at a time. Batching the per-path history lookups into one GraphQL query
-        keeps this to a single API call regardless of how many files are shown.
-        Files whose history cannot be resolved are simply omitted from the
-        result.
+    def get_file_text(self, full_name: str, path: str, path_ref: str | None = None) -> str | None:
+        """Return the decoded text of a file, or ``None`` if it is not text.
+
+        Missing or inaccessible files return ``None`` rather than raising, so
+        callers can degrade gracefully when building context for analysis.
         """
-        if not paths:
-            return {}
-        owner, _, name = full_name.partition("/")
-        fields = []
-        for index, path in enumerate(paths):
-            literal = json.dumps(path)  # safe GraphQL string literal
-            fields.append(
-                f"f{index}: object(expression: $ref) {{ ... on Commit {{ "
-                f"history(first: 1, path: {literal}) {{ nodes {{ oid messageHeadline "
-                f"committedDate author {{ name }} }} }} }} }}"
-            )
-        query = (
-            "query($owner: String!, $name: String!, $ref: String!) { "
-            "repository(owner: $owner, name: $name) {" + "\n".join(fields) + "}}"
-        )
-        data = self._graphql(query, {"owner": owner, "name": name, "ref": ref})
-        repository = data.get("repository") or {}
-        commits: dict[str, dict] = {}
-        for index, path in enumerate(paths):
-            node = repository.get(f"f{index}") or {}
-            nodes = (node.get("history") or {}).get("nodes") or []
-            if not nodes:
-                continue
-            commit = nodes[0]
-            commits[path] = {
-                "sha": commit.get("oid"),
-                "message": commit.get("messageHeadline"),
-                "author": (commit.get("author") or {}).get("name"),
-                "date": commit.get("committedDate"),
-            }
-        return commits
+        try:
+            data = self.get_content(full_name, path, path_ref)
+        except GitHubError as exc:
+            logger.info("Skipping file %s: %s", path, exc.kind)
+            return None
+        if not isinstance(data, dict) or data.get("type") != "file":
+            return None
+        encoding = data.get("encoding")
+        content = data.get("content")
+        if encoding == "base64" and isinstance(content, str):
+            try:
+                raw = base64.b64decode(content)
+            except Exception:
+                return None
+            try:
+                return raw.decode("utf-8")
+            except UnicodeDecodeError:
+                return None
+        return None
 
-    # -- Issues -------------------------------------------------------------
+    # -- Issues ----------------------------------------------------------
 
-    def list_issues(self, full_name: str, *, state: str = "open", per_page: int = 50) -> list[dict]:
-        """Return issues (excluding pull requests)."""
-        data = self._get(
-            f"/repos/{full_name}/issues",
-            params={"state": state, "per_page": per_page},
-        )
-        return issues_only(data)
-
-    def list_issues_page(
+    def list_issues(
         self,
         full_name: str,
         *,
@@ -622,39 +461,48 @@ class GitHubClient:
         page: int = 1,
         per_page: int = PAGE_SIZE_DEFAULT,
     ) -> GitHubPage:
-        """Return one page of issues (excluding pull requests).
-
-        GitHub's issues endpoint includes pull requests, so the payload is
-        filtered; the returned navigation metadata still reflects GitHub's own
-        paging links for the endpoint.
-        """
-        result = self._get_page(
+        """List issues for a repository (excluding pull requests)."""
+        _validate_full_name(full_name)
+        return self._get_page(
             f"/repos/{full_name}/issues",
             params={"state": state},
             page=page,
             per_page=per_page,
-        )
-        return GitHubPage(
-            items=issues_only(result.items),
-            page=result.page,
-            per_page=result.per_page,
-            has_next=result.has_next,
-            has_prev=result.has_prev,
-            total_pages=result.total_pages,
         )
 
     def get_issue(self, full_name: str, number: int) -> dict:
-        return self._get(f"/repos/{full_name}/issues/{number}")
+        """Fetch a single issue."""
+        _validate_full_name(full_name)
+        return self._get(f"/repos/{full_name}/issues/{int(number)}")
 
-    # -- Pull requests ------------------------------------------------------
-
-    def list_pull_requests(self, full_name: str, *, state: str = "open") -> list[dict]:
-        return self._get(
-            f"/repos/{full_name}/pulls",
-            params={"state": state, "per_page": 50},
+    def list_issue_comments(
+        self,
+        full_name: str,
+        number: int,
+        *,
+        page: int = 1,
+        per_page: int = PAGE_SIZE_DEFAULT,
+    ) -> GitHubPage:
+        """List comments on an issue."""
+        _validate_full_name(full_name)
+        return self._get_page(
+            f"/repos/{full_name}/issues/{int(number)}/comments",
+            page=page,
+            per_page=per_page,
         )
 
-    def list_pull_requests_page(
+    def create_issue_comment(self, full_name: str, number: int, body: str) -> dict:
+        """Post a comment on an issue."""
+        _validate_full_name(full_name)
+        return self._request(
+            "POST",
+            f"/repos/{full_name}/issues/{int(number)}/comments",
+            params={"body": body},
+        )
+
+    # -- Pull requests ---------------------------------------------------------
+
+    def list_pulls(
         self,
         full_name: str,
         *,
@@ -662,7 +510,8 @@ class GitHubClient:
         page: int = 1,
         per_page: int = PAGE_SIZE_DEFAULT,
     ) -> GitHubPage:
-        """Return one page of pull requests with Link-header navigation."""
+        """List pull requests for a repository."""
+        _validate_full_name(full_name)
         return self._get_page(
             f"/repos/{full_name}/pulls",
             params={"state": state},
@@ -670,416 +519,116 @@ class GitHubClient:
             per_page=per_page,
         )
 
-    def get_pull_request(self, full_name: str, number: int) -> dict:
-        return self._get(f"/repos/{full_name}/pulls/{number}")
+    def get_pull(self, full_name: str, number: int) -> dict:
+        """Fetch a single pull request."""
+        _validate_full_name(full_name)
+        return self._get(f"/repos/{full_name}/pulls/{int(number)}")
 
-    def list_pull_request_files(self, full_name: str, number: int) -> list[dict]:
-        return self._get(f"/repos/{full_name}/pulls/{number}/files", params={"per_page": 100})
+    def list_pull_files(self, full_name: str, number: int) -> list[dict]:
+        """List the files changed by a pull request."""
+        _validate_full_name(full_name)
+        return self._get_paginated(f"/repos/{full_name}/pulls/{int(number)}/files")
 
-    def list_pull_request_reviews(self, full_name: str, number: int) -> list[dict]:
-        return self._get(f"/repos/{full_name}/pulls/{number}/reviews")
+    def list_pull_comments(
+        self,
+        full_name: str,
+        number: int,
+        *,
+        page: int = 1,
+        per_page: int = PAGE_SIZE_DEFAULT,
+    ) -> GitHubPage:
+        """List review comments on a pull request."""
+        _validate_full_name(full_name)
+        return self._get_page(
+            f"/repos/{full_name}/pulls/{int(number)}/comments",
+            page=page,
+            per_page=per_page,
+        )
 
-    def list_pull_request_comments(self, full_name: str, number: int) -> list[dict]:
-        return self._get(f"/repos/{full_name}/pulls/{number}/comments", params={"per_page": 100})
+    def list_pull_reviews(
+        self,
+        full_name: str,
+        number: int,
+        *,
+        page: int = 1,
+        per_page: int = PAGE_SIZE_DEFAULT,
+    ) -> GitHubPage:
+        """List reviews on a pull request."""
+        _validate_full_name(full_name)
+        return self._get_page(
+            f"/repos/{full_name}/pulls/{int(number)}/reviews",
+            page=page,
+            per_page=per_page,
+        )
 
-    # -- README -------------------------------------------------------------
-
-    def get_readme(self, full_name: str, ref: str | None = None) -> str | None:
-        params = {}
-        if ref:
-            params["ref"] = ref
-        try:
-            response = self.session.get(
-                f"{self.api_url}/repos/{full_name}/readme",
-                params=params or None,
-                headers={"Accept": "application/vnd.github.raw+json"},
-                timeout=self.timeout,
-            )
-        except requests.RequestException:
-            return None
-        if response.status_code != 200:
-            return None
-        text = response.text
-        return text[: Config.GITHUB_MAX_CONTEXT_CHARS] if text else None
-
-
-# -- Payload normalization ---------------------------------------------------
-
-
-def _license_label(license_data: dict | None) -> str | None:
-    """Return a short license label, preferring the SPDX id."""
-    if not license_data:
-        return None
-    spdx = license_data.get("spdx_id")
-    if spdx and spdx != "NOASSERTION":
-        return spdx
-    return license_data.get("name")
-
-
-def repo_payload(repo: dict) -> dict:
-    """Normalize a repository dict into the shape consumed by the UI."""
-    return {
-        "full_name": repo.get("full_name"),
-        "name": repo.get("name"),
-        "description": repo.get("description"),
-        "owner": repo.get("owner", {}).get("login"),
-        "visibility": repo.get("visibility", "private" if repo.get("private") else "public"),
-        "private": bool(repo.get("private")),
-        "default_branch": repo.get("default_branch"),
-        "language": repo.get("language"),
-        "updated_at": repo.get("updated_at"),
-        "html_url": repo.get("html_url"),
-        "size": repo.get("size"),
-        "fork": bool(repo.get("fork")),
-        "stars": repo.get("stargazers_count") or 0,
-        "forks": repo.get("forks_count") or 0,
-        "open_issues_count": repo.get("open_issues_count") or 0,
-        "license": _license_label(repo.get("license")),
-        "topics": repo.get("topics") or [],
-        "homepage": repo.get("homepage") or "",
-    }
-
-
-def issues_only(items: list[dict]) -> list[dict]:
-    """Return only true issues from a GitHub issues payload (drop PRs)."""
-    return [item for item in items if "pull_request" not in item]
-
-
-def issue_payload(issue: dict) -> dict:
-    return {
-        "number": issue.get("number"),
-        "title": issue.get("title"),
-        "body": issue.get("body"),
-        "state": issue.get("state"),
-        "author": (issue.get("user") or {}).get("login"),
-        "created_at": issue.get("created_at"),
-        "updated_at": issue.get("updated_at"),
-        "labels": [label.get("name") for label in issue.get("labels", [])],
-        "html_url": issue.get("html_url"),
-        "comments": issue.get("comments", 0),
-    }
-
-
-def commit_payload(commit: dict) -> dict:
-    commit_data = commit.get("commit") or {}
-    author = commit_data.get("author") or {}
-    return {
-        "sha": commit.get("sha"),
-        "message": commit_data.get("message"),
-        "author": author.get("name") or (commit.get("author") or {}).get("login"),
-        "date": author.get("date"),
-        "html_url": commit.get("html_url"),
-        "url": commit.get("url"),
-        "files": [
-            {
-                "filename": f.get("filename"),
-                "additions": f.get("additions"),
-                "deletions": f.get("deletions"),
-                "status": f.get("status"),
-                "patch": f.get("patch"),
-            }
-            for f in commit.get("files", [])
-        ],
-    }
-
-
-def pull_request_payload(pr: dict) -> dict:
-    return {
-        "number": pr.get("number"),
-        "title": pr.get("title"),
-        "body": pr.get("body"),
-        "state": pr.get("state"),
-        "author": (pr.get("user") or {}).get("login"),
-        "created_at": pr.get("created_at"),
-        "updated_at": pr.get("updated_at"),
-        "merged": bool(pr.get("merged")),
-        "mergeable": pr.get("mergeable"),
-        "head": (pr.get("head") or {}).get("ref"),
-        "base": (pr.get("base") or {}).get("ref"),
-        "additions": pr.get("additions"),
-        "deletions": pr.get("deletions"),
-        "changed_files": pr.get("changed_files"),
-        "html_url": pr.get("html_url"),
-        "diff_url": pr.get("diff_url"),
-    }
-
-
-def validate_full_name(full_name: str) -> str:
-    """Validate ``owner/repo`` shape; raises :class:`GitHubInvalidError`."""
-    name = (full_name or "").strip()
-    if not _FULL_NAME_RE.match(name) or name.count("/") != 1:
-        raise GitHubInvalidError("Invalid repository name.")
-    return name
-
-
-def validate_path(path: str) -> str:
-    """Validate a repository-relative file path against path traversal.
-
-    An empty/root path is accepted and normalized to ``""``.
-    """
-    cleaned = (path or "").strip().lstrip("/")
-    if not cleaned:
-        return ""
-    parts = cleaned.split("/")
-    if any(part in ("", ".", "..") for part in parts):
-        raise GitHubInvalidError("Invalid path.")
-    return "/".join(parts)
-
-
-def revoke_github_token(access_token: str) -> None:
-    """Best-effort revocation of a GitHub OAuth token."""
-    try:
-        response = requests.delete(
-            GITHUB_REVOKE_URL.format(client_id=_github_config("GITHUB_CLIENT_ID")),
-            auth=(_github_config("GITHUB_CLIENT_ID"), _github_config("GITHUB_CLIENT_SECRET")),
-            json={"access_token": access_token},
-            headers={"Accept": "application/vnd.github+json"},
-            timeout=_github_config("GITHUB_REQUEST_TIMEOUT"),
+    def get_pull_diff(self, full_name: str, number: int) -> str:
+        """Return the raw diff for a pull request."""
+        _validate_full_name(full_name)
+        response = self.session.get(
+            f"{self.api_url}/repos/{full_name}/pulls/{int(number)}",
+            headers={"Accept": "application/vnd.github.diff"},
+            timeout=self.timeout,
         )
         if response.status_code >= 400:
-            logger.warning("GitHub token revocation failed with HTTP %s", response.status_code)
-    except requests.RequestException as exc:
-        logger.warning("GitHub token revocation failed: %s", exc)
+            self._request("GET", f"/repos/{full_name}/pulls/{int(number)}")
+        return response.text
 
 
-def _refresh_github_token(refresh_token: str) -> dict | None:
-    """Exchange a GitHub refresh token for a new token pair."""
-    try:
-        response = requests.post(
-            GITHUB_TOKEN_URL,
-            headers={"Accept": "application/json"},
-            data={
-                "client_id": _github_config("GITHUB_CLIENT_ID"),
-                "client_secret": _github_config("GITHUB_CLIENT_SECRET"),
-                "grant_type": "refresh_token",
-                "refresh_token": refresh_token,
-            },
-            timeout=_github_config("GITHUB_REQUEST_TIMEOUT"),
+def _validate_full_name(full_name: str) -> None:
+    """Raise :class:`GitHubInvalidError` if ``full_name`` is not ``owner/repo``."""
+    if not isinstance(full_name, str) or not _FULL_NAME_RE.match(full_name):
+        raise GitHubInvalidError("Invalid repository name.")
+
+
+def get_client_for_user(user_id) -> GitHubClient:
+    """Return an authenticated client for ``user_id``'s connected account."""
+    account = GithubAccount.query.filter_by(user_id=user_id).first()
+    if account is None or not account.access_token_encrypted:
+        raise GitHubNotConnectedError(
+            "Connect your GitHub account to use this feature."
         )
-        data = response.json()
-    except (requests.RequestException, ValueError):
-        return None
-    if response.status_code >= 400 or "access_token" not in data:
-        return None
-    return data
-
-
-def get_github_client(user=None) -> GitHubClient:
-    """Return an authenticated client for ``user`` (default: current user).
-
-    Raises :class:`GitHubNotConnectedError` when the user has not connected a
-    GitHub account, and :class:`GitHubAuthError` when the stored token cannot
-    be decrypted.
-    """
-    from flask_login import current_user
-
-    owner = user or current_user
-    account = GithubAccount.query.filter_by(user_id=owner.id).first()
-    if account is None:
-        raise GitHubNotConnectedError("Connect your GitHub account to use this feature.")
-    try:
-        token = decrypt_secret(account.access_token_encrypted)
-        refresh_token = (
-            decrypt_secret(account.refresh_token_encrypted)
-            if account.refresh_token_encrypted
-            else None
-        )
-    except ValueError as exc:
-        raise GitHubAuthError(
-            "Your GitHub connection is no longer valid. Reconnect your account.",
-            detail=str(exc),
-        ) from exc
-    expires_at = account.token_expires_at
-    if expires_at and expires_at.tzinfo is None:
-        expires_at = expires_at.replace(tzinfo=UTC)
-    if expires_at and expires_at <= datetime.now(UTC):
-        refreshed = _refresh_github_token(refresh_token) if refresh_token else None
-        if refreshed is None:
-            db.session.delete(account)
-            db.session.commit()
-            raise GitHubNotConnectedError("Connect your GitHub account to use this feature.")
-        account.set_access_token(refreshed["access_token"])
-        if "refresh_token" in refreshed:
-            account.set_refresh_token(refreshed["refresh_token"])
-        account.token_expires_at = (
-            datetime.now(UTC) + timedelta(seconds=int(refreshed["expires_in"]))
-            if refreshed.get("expires_in")
-            else None
-        )
-        db.session.commit()
-        token = refreshed["access_token"]
+    token = decrypt_secret(account.access_token_encrypted)
     return GitHubClient(token)
 
 
-# -- Chat context references (issue #74) -------------------------------------
+def build_issue_context(
+    client: GitHubClient,
+    full_name: str,
+    body: str | None,
+    *,
+    max_chars: int | None = None,
+    max_files: int = MAX_ISSUE_FILES,
+) -> dict:
+    """Gather file content for paths mentioned in an issue body.
 
-
-#: Matches ``owner/repo#123`` and a bare ``owner/repo``. The lookbehind stops a
-#: leading word character, ``@`` or ``/`` from being read as part of the name.
-CONTEXT_REFERENCE_RE = re.compile(
-    r"(?<![\w@/.-])([A-Za-z0-9][A-Za-z0-9._-]*/[A-Za-z0-9][A-Za-z0-9._-]*)(?:#(\d+))?"
-)
-#: Matches a bare ``#123``, which needs a repository to resolve against.
-CONTEXT_NUMBER_RE = re.compile(r"(?<![\w/])#(\d+)\b")
-#: Appended to the assembled context when it had to be trimmed to the cap.
-CONTEXT_TRUNCATED_MARKER = "\n\n[GitHub context truncated]"
-
-
-def parse_context_references(text: str) -> list[dict]:
-    """Return the GitHub references found in ``text`` (issue #74).
-
-    Three forms are recognized: ``owner/repo#123`` (an issue or pull request),
-    ``owner/repo`` (a repository), and a bare ``#123`` when the same message also
-    names a repository to resolve it against. Order is preserved and duplicates
-    collapse, so mentioning the same target twice fetches it once. A bare
-    ``#123`` with no repository named is ignored rather than guessed at.
+    Returns a dict with ``files```(a list of ``file`, ``content`` entries),
+    ``skipped```(paths that could not be fetched), and ``chars_used``.
+    The combined content is capped at ``max_chars```(see
+    ``GITHUB_MAX_CONTEXT_CHARS``), and files are added in order of
+    appearance until the budget is exhausted. Missing or inaccessible
+    files are skipped without raising.
     """
-    references: list[dict] = []
-    seen: set[tuple[str, str, int | None]] = set()
-    repositories: list[str] = []
-
-    for match in CONTEXT_REFERENCE_RE.finditer(text or ""):
-        try:
-            full_name = validate_full_name(match.group(1))
-        except GitHubInvalidError:
+    if max_chars is None:
+        max_chars = _github_config("GITHUB_MAX_CONTEXT_CHARS")
+    paths = extract_file_paths(body, limit=max_files)
+    files: list[dict] = []
+    skipped: list[str] = []
+    chars_used = 0
+    for path in paths:
+        if chars_used >= max_chars:
+            skipped.append(path)
             continue
-        number = match.group(2)
-        if number:
-            key = ("thread", full_name, int(number))
-            if key not in seen:
-                seen.add(key)
-                references.append({"kind": "thread", "full_name": full_name, "number": int(number)})
-        else:
-            key = ("repo", full_name, None)
-            if key not in seen:
-                seen.add(key)
-                references.append({"kind": "repo", "full_name": full_name, "number": None})
-            repositories.append(full_name)
-
-    for match in CONTEXT_NUMBER_RE.finditer(text or ""):
-        number = int(match.group(1))
-        for full_name in repositories:
-            key = ("thread", full_name, number)
-            if key in seen:
-                continue
-            seen.add(key)
-            references.append({"kind": "thread", "full_name": full_name, "number": number})
-
-    return references
-
-
-def _repo_context_section(client: GitHubClient, full_name: str) -> str:
-    """Return the model-facing context block for a whole repository."""
-    repo = client.get_repository(full_name)
-    lines = [
-        f"### Repository {repo.get('full_name') or full_name}",
-        f"- Description: {repo.get('description') or '(none)'}",
-        f"- Primary language: {repo.get('language') or 'unknown'}",
-        f"- Default branch: {repo.get('default_branch') or 'main'}",
-        f"- URL: {repo.get('html_url') or 'https://github.com/' + full_name}",
-    ]
-    try:
-        readme = client.get_readme(full_name, repo.get("default_branch"))
-    except GitHubError:
-        readme = None
-    if readme:
-        lines.extend(["", "README:", readme])
-    return "\n".join(lines)
-
-
-def _pull_request_context_section(client: GitHubClient, full_name: str, number: int) -> str:
-    """Return the model-facing context block for a pull request."""
-    pull = client.get_pull_request(full_name, number)
-    state = pull.get("state") or "unknown"
-    if pull.get("merged_at"):
-        state = f"{state} (merged)"
-    lines = [
-        f"### Pull request {full_name}#{number}",
-        f"- Title: {pull.get('title') or '(no title)'}",
-        f"- State: {state}",
-        f"- Author: {(pull.get('user') or {}).get('login') or 'unknown'}",
-        f"- Branch: {(pull.get('head') or {}).get('ref')} -> {(pull.get('base') or {}).get('ref')}",
-        (
-            f"- Changed files: {pull.get('changed_files', 0)} "
-            f"(+{pull.get('additions', 0)} -{pull.get('deletions', 0)})"
-        ),
-        f"- URL: {pull.get('html_url') or ''}",
-    ]
-    if pull.get("body"):
-        lines.extend(["", "Body:", pull["body"]])
-    return "\n".join(lines)
-
-
-def _issue_context_section(client: GitHubClient, full_name: str, number: int) -> str:
-    """Return the model-facing context block for an issue."""
-    issue = client.get_issue(full_name, number)
-    labels = ", ".join(
-        label.get("name", "") for label in issue.get("labels") or [] if isinstance(label, dict)
-    )
-    lines = [
-        f"### Issue {full_name}#{number}",
-        f"- Title: {issue.get('title') or '(no title)'}",
-        f"- State: {issue.get('state') or 'unknown'}",
-        f"- Author: {(issue.get('user') or {}).get('login') or 'unknown'}",
-        f"- Labels: {labels or '(none)'}",
-        f"- URL: {issue.get('html_url') or ''}",
-    ]
-    if issue.get("body"):
-        lines.extend(["", "Body:", issue["body"]])
-    return "\n".join(lines)
-
-
-def _thread_context_section(client: GitHubClient, full_name: str, number: int) -> str:
-    """Return the context block for ``#number``, preferring a pull request.
-
-    GitHub's issues API also returns pull requests, so probing the pull request
-    endpoint first (and falling back to the issue endpoint on 404) resolves both
-    kinds without a second round trip when the reference is a pull request.
-    """
-    try:
-        return _pull_request_context_section(client, full_name, number)
-    except GitHubNotFoundError:
-        return _issue_context_section(client, full_name, number)
-
-
-def build_github_context(user, text: str) -> dict:
-    """Assemble model-facing context for the GitHub references in ``text`` (issue #74).
-
-    Returns ``{"context", "references", "notices"}``. ``context`` is the block
-    handed to the model and never exceeds ``Config.GITHUB_MAX_CONTEXT_CHARS``
-    characters, so one chat message cannot push an unbounded amount of repository
-    data into the prompt. A reference that cannot be read (missing, private, or
-    rate limited) becomes an entry in ``notices`` instead of failing the whole
-    message.
-
-    Raises :class:`GitHubNotConnectedError` when ``user`` has no GitHub
-    connection, so the caller can prompt them to connect first.
-    """
-    references = parse_context_references(text)
-    if not references:
-        return {"context": "", "references": [], "notices": []}
-
-    client = get_github_client(user)
-    budget = int(Config.GITHUB_MAX_CONTEXT_CHARS)
-    sections: list[str] = []
-    notices: list[str] = []
-
-    for reference in references:
-        full_name = reference["full_name"]
-        number = reference["number"]
-        label = f"{full_name}#{number}" if number else full_name
-        try:
-            if reference["kind"] == "repo":
-                sections.append(_repo_context_section(client, full_name))
-            else:
-                sections.append(_thread_context_section(client, full_name, number))
-        except GitHubNotFoundError:
-            notices.append(f"{label} was not found or is not visible to your GitHub account.")
-        except GitHubError as exc:
-            notices.append(f"{label}: {github_error_message(exc)}")
-
-    context = "\n\n".join(section for section in sections if section)
-    if len(context) > budget:
-        context = context[:budget] + CONTEXT_TRUNCATED_MARKER
-
-    return {"context": context, "references": references, "notices": notices}
+        content = client.get_file_text(full_name, path)
+        if content is None:
+            skipped.append(path)
+            continue
+        remaining = max_chars - chars_used
+        if len(content) > remaining:
+            content = content[:remaining]
+        files.append({
+            "file": path,
+            "content": content,
+            "truncated": len(content) == remaining and remaining < max_chars,
+        })
+        chars_used += len(content)
+    return {"files": files, "skipped": skipped, "chars_used": chars_used}
