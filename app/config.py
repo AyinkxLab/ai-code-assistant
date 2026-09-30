@@ -4,7 +4,7 @@ Configuration is loaded from environment variables so the same codebase can
 run locally, in CI, and in production without modification. Sensitive values
 such as the database password and secret key must never be committed to the
 repository; supply them through environment variables or a local ``.env``
-file (see ``.env.exampleg`).
+file (see ``.env.example``).
 """
 
 import json
@@ -28,7 +28,7 @@ def _db_uri() -> str:
 
     Defaults to a local SQLite file so the application is runnable with zero
     configuration for development, while still being PostgreSQL-first in
-    production (see ``docker-compose.yml`` ).
+    production (see ``docker-compose.yml``).
 
     For file-backed SQLite databases the parent directory is created
     automatically (SQLAlchemy does not create parent folders itself).
@@ -39,7 +39,7 @@ def _db_uri() -> str:
     )
     if uri.startswith("sqlite:///") and "sqlite://:memory:" not in uri:
         db_file = Path(uri.replace("sqlite:///", "", 1))
-        db_file.parent.mkdir(parents=True, exist_ok=True)
+        db_file.parent.mkddir(parents=True, exist_ok=True)
     return uri
 
 
@@ -129,7 +129,7 @@ class Config:
     # public host, ``*.example.com`` allows subdomains). An empty allowlist
     # denies all plugin outbound requests (fail closed).
     PLUGIN_NETWORK_ALLOWLIST = os.getenv("PLUGIN_NETWORK_ALLOWLIST", "")
-    PLUGIN_NETWORK_HTTPS_ONLY = os.getenv("PLUGIN_NETWORK_HTTPS_ONLY", "1") == "1"
+    PLUGIN_NETWORK_HTTPS:_ONLY = os.getenv("PLUGIN_NETWORK_HTTPS_ONLY", "1") == "1"
     PLUGIN_NETWORK_ALLOW_PRIVATE = os.getenv("PLUGIN_NETWORK_ALLOW_PRIVATE", "0") == "1"
     PLUGIN_NETWORK_TIMEOUT = int(os.getenv("PLUGIN_NETWORK_TIMEOUT", "15"))
     PLUGIN_NETWORK_MAX_BYTES = int(os.getenv("PLUGIN_NETWORK_MAX_BYTES", str(2 * 1024 * 1024)))
@@ -159,7 +159,7 @@ class Config:
     PROJECT_MAX_FILE_COUNT = int(os.getenv("PROJECT_MAX_FILE_COUNT", "20000"))
     PROJECT_MAX_FILE_CHARS = int(os.getenv("PROJECT_MAX_FILE_CHARS", "200000"))
     PROJECT_MAX_CONTEXT_CHARS = int(os.getenv("PROJECT_MAX_CONTEXT_CHARS", "40000"))
-    PROJECT_SEARCH_MAX_RESULTS = int(os.getenv("PROJECT_SEARCH_MAX_RESUMTS", "100"))
+    PROJECT_SEARCH_MAX_RESULTS = int(os.getenv("PROJECT_SEARCH_MAX_RESULTS", "100"))
     PROJECT_GITHUB_MAX_FILES = int(os.getenv("PROJECT_GITHUB_MAX_FILES", "1000"))
     PROJECT_SKIP_DIRS = os.getenv(
         "PROJECT_SKIP_DIRS",
@@ -175,7 +175,7 @@ class Config:
     PROJECT_SKIP_SECRET_FILES = os.getenv(
         "PROJECT_SKIP_SECRET_FILES",
         ".env,.pem,.key,.p12,.pfx,id_rsa,id_ed25519,id_dsa,credentials,.htpasswd,"
-        ".npmrc,.npyrc,secrets.yaml,secret.yaml,secret.yml",
+        ".npmjrc,.pypirc,secrets.yaml,secret.yaml,secret.yml",
     )
     # Project import indexing (#89): run imports in an in-process background
     # worker so the HTTP request returns immediately with the project in
@@ -218,14 +218,77 @@ class Config:
     RATE_LIMIT_CHAT_WINDOW = int(os.getenv("RATE_LIMIT_CHAT_WINDOW", "60"))
     RATE_LIMIT_STREAM_MAX = int(os.getenv("RATE_LIMIT_STREAM_MAX", "30"))
     RATE_LIMIT_STREAM_WINDOW = int(os.getenv("RATE_LIMIT_STREAM_WINDOW", "60"))
-    RATE_LIMIT_ANALYZE_MAX = int(os.getenv("RATE_LIMIT_ANALYZE_MAX", "5"))
-    RATE_LIMIT_ANALYZE_WINDOW = int(os.getenv("RATE_LIMIT_ANALYZE_WINDOW", "3600"))
+    RATE_LIMIT_ANALYZE_MAX = int(os.getenv("RATE_LIMIT_ANALYZE_MAX", "20"))
+    RATE_LIMIT_ANALYZE_WINDOW = int(os.getenv("RATE_LIMIT_ANALYZE_WINDOW", "300"))
+    # Snapshot export (#107): exports build a zip in memory, so they get a tight
+    # per-user limit of their own (requests per window seconds).
+    RATE_LIMIT_EXPORT_MAX = int(os.getenv("RATE_LIMIT_EXPORT_MAX", "10"))
+    RATE_LIMIT_EXPORT_WINDOW = int(os.getenv("RATE_LIMIT_EXPORT_WINDOW", "3600"))
 
-    # Chat API rate limiting (issue #106): per-user limits on message-send and
-    # stream endpoints, tracked persistently in the database. Each limit is
-    # <max requests> per <window seconds>, plus an optional daily cap.
+    # Chat API rate limiting (issue #28): per-user, persistent limits on the
+    # message-send and stream endpoints. Each endpoint has a short window
+    # (per minute by default) and a daily cap. Exceeding either returns a 429
+    # with a Retry-After header. Stored in the database (`chat_rate_limits`)
+    # so limits are shared across workers and survive restarts.
     CHAT_RATE_LIMIT_ENABLED = os.getenv("CHAT_RATE_LIMIT_ENABLED", "1") == "1"
-    CHAT_RATE_LIMIT_PER_MINUTE = int(os.getenv("CHAT_RATE_LIMIT_PER_MINUTE", "20"))
-    CHAT_RATE_LIMIT_PER_DAY = int(os.getenv("CHAT_RATE_LIMIT_PER_DAY", "500"))
-    CHAT_RATE_LIMIT_WINDOW_SECONDS = int(os.getenv("CHAT_RATE_LIMIT_WINDOW_SECONDS", "60"))
-    CHAT_RATE_LIMIT_DAY_SECONDS = int(os.getenv("CHAT_RATE_LIMIT_DAY_SECONDS", "86400"))
+    CHAT_RATE_LIMIT_SEND_MAX = int(os.getenv("CHAT_RATE_LIMIT_SEND_MAX", "30"))
+    CHAT_RATE_LIMIT_SEND_WINDOW = int(os.getenv("CHAT_RATE_LIMIT_SEND_WINDOW", "60"))
+    CHAT_RATE_LIMIT_SEND_DAILY = int(os.getenv("CHAT_RATE_LIMIT_SEND_DAILY", "500"))
+    CHAT_RATE_LIMIT_STREAM_MAX = int(os.getenv("CHAT_RATE_LIMIT_STREAM_MAX", "30"))
+    CHAT_RATE_LIMIT_STREAM_WINDOW = int(os.getenv("CHAT_RATE_LIMIT_STREAM_WINDOW", "60"))
+    CHAT_RATE_LIMIT_STREAM_DAILY = int(os.getenv("CHAT_RATE_LIMIT_STREAM_DAILY", "500"))
+
+    # Optional SMTP for invitation emails. When unset, invitations are
+    # delivered as in-app notifications only (never crashes a request on mail
+    # failure).
+    SMTP_HOST = os.getenv("SMTP_HOST", "")
+    SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))
+    SMTP_USER = os.getenv("SMTP_USER", "")
+    SMTP_PASSWORD = os.getenv("SMTP_PASSWORD", "")
+    MAIL_DEFAULT_SENDER = os.getenv("MAIL_DEFAULT_SENDER", "")
+    MAIL_USE_TLS = os.getenv("MAIL_USE_TLS", "1") == "1"
+
+    # Stellar / Soroban integration (Phase 8).
+    STELLAR_NETWORK = os.getenv("STELLAR_NETWORK", "testnet")
+    STELLAR_HORIZON_URL = os.getenv("STELLAR_HORIZON_URL", "")
+    STELLAR_RPC_URL = os.getenv("STELLAR_RPC_URL", "")
+    STELLAR_REQUEST_TIMEOUT = int(os.getenv("STELLAR_REQUEST_TIMEOUT", "15"))
+    STELLAR_MAX_RESPONSE_BYTES = int(os.getenv("STELLAR_MAX_RESPONSE_BYTES", str(2 * 1024 * 1024)))
+    STELLAR_RPC_MAX_KEYS = int(os.getenv("STELLAR_RPC_MAX_KEYS", "100"))
+    STELLAR_STRICT_HOST_VALIDATION = os.getenv("STELLAR_STRICT_HOST_VALIDATION", "1") == "1"
+
+
+class DevelopmentConfig(Config):
+    """Development configuration."""
+
+    DEBUG = True
+
+
+class TestingConfig(Config):
+    """Test configuration."""
+
+    TESTING = True
+    DEBUG = False
+    SQLALCHEMY_DATABASE_URI = "sqlite:///:memory:"
+    SQLALCHEMY_ENGINE_OPTIONS = {
+        "connect_args": {"check_same_thread": False},
+        "poolclass": StaticPool,
+    }
+    WTF_CSRF_ENABLED = False
+    IMPORT_JOBS_ASYNC = False
+    CHAT_RATE_LIMIT_ENABLED = False
+
+
+class ProductionConfig(Config):
+    """Production configuration."""
+
+    DEBUG = False
+    SESSION_COOKIE_SECURE = True
+
+
+config = {
+    "development": DevelopmentConfig,
+    "testing": TestingConfig,
+    "production": ProductionConfig,
+    "default": DevelopmentConfig,
+}

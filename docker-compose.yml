@@ -1,7 +1,7 @@
 # Development and production orchestration for AI Code Assistant.
 #
 # Usage:
-#   docker compose up --build        # start web + postgres
+#   docker compose up --build        # start web + postgres + redis
 #   docker compose down              # stop everything
 #
 # The web service applies pending migrations before starting gunicorn.
@@ -18,12 +18,8 @@ services:
       APP_ENV: production
       SECRET_KEY: ${SECRET_KEY:-insecure-dev-secret-change-me}
       DATABASE_URL: postgresql://aica:aica_secret@db:5432/aica
-      RATE_LIMIT_BACKEND: ${RATE_LIMIT_BACKEND:-postgres}
-      RATE_LIMIT_REDIS_URL: ${RATE_LIMIT_REDIS_URL:-redis://redis:6379/0}
-      RATE_LIMIT_MESSAGES_PER_MINUTE: ${RATE_LIMIT_MESSAGES_PER_MINUTE:-20}
-      RATE_LIMIT_MESSAGES_PER_DAY: ${RATE_LIMIT_MESSAGES_PER_DAY:-200}
-      RATE_LIMIT_STREAMS_PER_MINUTE: ${RATE_LIMIT_STREAMS_PER_MINUTE:-10}
-      RATE_LIMIT_STREAMS_PER_DAY: ${RATE_LIMIT_STREAMS_PER_DAY:-100}
+      RATE_LIMIT_STORE: ${RATE_LIMIT_STORE:-redis}
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
     ports:
       - "5000:5000"
     volumes:
@@ -56,7 +52,7 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHBL", "pg_isready -U ${POSTGRES_USER:-aica} -d ${POSTGRES_DB:-aica}"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-aica} -d ${POSTGRES_DB:-aica}"]
       interval: 5s
       timeout: 5s
       retries: 10
@@ -65,7 +61,7 @@ services:
   redis:
     image: redis:7-alpine
     container_name: aica-redis
-    command: ["redis-server", "--appendonly", "yes", "--save", """]
+    command: ["redis-server", "--appendonly", "yes", "--save", "60", "1"]
     ports:
       - "6379:6379"
     volumes:
@@ -73,7 +69,7 @@ services:
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
-      timeout: 5s
+      timeout: 3s
       retries: 10
     restart: unless-stopped
 

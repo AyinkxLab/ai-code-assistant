@@ -1,7 +1,7 @@
 // AI Code Assistant — chat UI
 // Conversation list, SSE streaming of assistant replies, client-side
 // markdown rendering, and conversation management (rename/pin/delete/export).
-// Also surfaces per-user rate limits (issue: rate limiting for chat API).
+// Per-user rate limits surface as a friendly banner before the limit is hit.
 
 (function () {
   "use strict";
@@ -20,6 +20,7 @@
   var currentController = null;
   var cancelRequested = false;
   var onboardingEl = document.getElementById("provider-onboarding");
+  var rateLimitEl = document.getElementById("chat-rate-limit");
   var imageInput = document.getElementById("chat-image-input");
   var attachBtn = document.getElementById("chat-attach-image");
   var previewEl = document.getElementById("chat-image-preview");
@@ -39,10 +40,8 @@
   var stickToBottom = true;
   var SCROLL_STICK_THRESHOLD_PX = 40;
 
-  // Rate limit state (issue: rate limiting for chat API endpoints). The server
-  // is the source of truth; we mirror its headers so the composer can warn the
-  // user before they hit the cap and disable Send once exhausted.
-  var rateLimit = { limit: null, remaining: null, resetAt: null, retryAfter: null };
+  // Latest rate-limit snapshot from the server, used to warn before sending.
+  var rateLimit = null;
   var rateLimitTimer = null;
 
   var CSRF_TOKEN = null;
@@ -87,105 +86,6 @@
       }
     }
     return relative ? relative.format(seconds, "second") : "just now";
-  }
-
-  // -- Rate limit helpers -------------------------------------------------
-
-  function parseRateLimitHeaders(response) {
-    if (!response || !response.headers) return null;
-    var limit = response.headers.get("X-RateLimit-Limit");
-    var remaining = response.headers.get("X-RateLimit-Remaining");
-    var reset = response.headers.get("X-RateLimit-Reset");
-    if (limit === null && remaining === null && reset === null) return null;
-    return {
-      limit: limit !== null ? parseInt(limit, 10) : null,
-      remaining: remaining !== null ? parseInt(remaining, 10) : null,
-      resetAt: reset !== null ? parseInt(reset, 10) * 1000 : null,
-    };
-  }
-
-  function updateRateLimitFromResponse(response) {
-    var parsed = parseRateLimitHeaders(response);
-    if (!parsed) return;
-    rateLimit.limit = parsed.limit;
-    rateLimit.remaining = parsed.remaining;
-    rateLimit.resetAt = parsed.resetAt;
-    rateLimit.retryAfter = null;
-    renderRateLimit();
-  }
-
-  function applyRateLimitExceeded(response, data) {
-    var retryAfter = response && response.headers
-      ? response.headers.get("Retry-After")
-      : null;
-    var seconds = retryAfter !== null ? parseInt(retryAfter, 10) : null;
-    if ((seconds === null || isNaN(seconds)) && data && data.retry_after != null) {
-      seconds = parseInt(data.retry_after, 10);
-    }
-    if (seconds === null || isNaN(seconds)) seconds = 60;
-    rateLimit.remaining = 0;
-    rateLimit.retryAfter = seconds;
-    rateLimit.resetAt = Date.now() + seconds * 1000;
-    renderRateLimit();
-    scheduleRateLimitReset();
-  }
-
-  function scheduleRateLimitReset() {
-    if (rateLimitTimer) window.clearTimeout(rateLimitTimer);
-    if (!rateLimit.resetAt) return;
-    var delay = Math.max(0, rateLimit.resetAt - Date.now()) + 250;
-    rateLimitTimer = window.setTimeout(function () {
-      rateLimit.remaining = null;
-      rateLimit.retryAfter = null;
-      rateLimit.resetAt = null;
-      renderRateLimit();
-    }, delay);
-  }
-
-  function formatRetryAfter(seconds) {
-    if (seconds == null) return "";
-    if (seconds < 60) return seconds + "s";
-    var minutes = Math.ceil(seconds / 60);
-    return minutes + " min";
-  }
-
-  function renderRateLimit() {
-    var el = document.getElementById("chat-rate-limit");
-    if (!el) return;
-    if (rateLimit.remaining === null && rateLimit.retryAfter === null) {
-      el.hidden = true;
-      el.textContent = "";
-      return;
-    }
-    el.hidden = false;
-    if (rateLimit.retryAfter !== null) {
-      el.textContent =
-        "Rate limit reached. Try again in " + formatRetryAfter(rateLimit.retryAfter) + ".";
-      el.classList.add("chat-rate-limit-exceeded");
-    } else {
-      var limitText = rateLimit.limit != null ? " of " + rateLimit.limit : "";
-      el.textContent =
-        rateLimit.remaining + limitText + " message" +
-        (rateLimit.remaining === 1 ? "" : "s") + " remaining this minute.";
-      el.classList.remove("chat-rate-limit-exceeded");
-    }
-  }
-
-  function isRateLimited() {
-    return rateLimit.retryAfter !== null && rateLimit.retryAfter > 0;
-  }
-
-  function rateLimitErrorMessage(response, data) {
-    var seconds = null;
-    if (response && response.headers) {
-      var header = response.headers.get("Retry-After");
-      if (header !== null) seconds = parseInt(header, 10);
-    }
-    if ((seconds === null || isNaN(seconds)) && data && data.retry_after != null) {
-      seconds = parseInt(data.retry_after, 10);
-    }
-    if (seconds === null || isNaN(seconds)) seconds = 60;
-    return "You've hit the chat rate limit. Try again in " + formatRetryAfter(seconds) + ".";
   }
 
   function updateTimestamps(root) {
@@ -397,16 +297,66 @@
     } catch (e) {
       data = null;
     }
-    updateRateLimitFromResponse(response);
     if (!response.ok) {
-      if (response.status === 429) {
-        applyRateLimitExceeded(response, data);
-        throw new Error(rateLimitErrorMessage(response, data));
-      }
       var message = data && data.error ? data.error : "Request failed (" + response.status + ").";
       throw new Error(message);
     }
     return data;
+  }
+
+  // Render the remaining-requests hint and disable Send when the limit is hit.
+  function renderRateLimit() {
+    if (!rateLimitEl) return;
+    if (!rateLimit) {
+      rateLimitEl.hidden = true;
+      rateLimitEl.textContent = "";
+      return;
+    }
+    var remaining = rateLimit.remaining;
+    var limit = rateLimit.limit;
+    if (remaining <= 0) {
+      rateLimitEl.hidden = false;
+      rateLimitEl.textContent =
+        "Rate limit reached (" +
+        limit +
+        " per " +
+        (rateLimit.window || "minute") +
+        "). Try again " +
+        formatRelativeTime(rateLimit.reset_at) +
+        ".";
+      return;
+    }
+    rateLimitEl.hidden = false;
+    rateLimitEl.textContent =
+      remaining +
+      " of " +
+      limit +
+      " requests remaining this " +
+      (rateLimit.window || "minute") +
+      ".";
+  }
+
+  function applyRateLimitHeaders(response) {
+    var limit = response.headers.get("X-RateLimit-Limit");
+    if (limit === null) return;
+    rateLimit = {
+      limit: parseInt(limit, 10),
+      remaining: parseInt(response.headers.get("X-RateLimit-Remaining") || "0", 10),
+      reset_at: response.headers.get("X-RateLimit-Reset"),
+      window: response.headers.get("X-RateLimit-Window") || "minute",
+    };
+    renderRateLimit();
+  }
+
+  function refreshRateLimit() {
+    return api("/chat/api/rate-limit")
+      .then(function (data) {
+        rateLimit = data;
+        renderRateLimit();
+      })
+      .catch(function () {
+        return null;
+      });
   }
 
   function loadConversation(id) {
@@ -591,12 +541,6 @@
 
   async function startStream() {
     if (streaming) return;
-    if (isRateLimited()) {
-      showComposerError(
-        "Rate limit reached. Try again in " + formatRetryAfter(rateLimit.retryAfter) + "."
-      );
-      return;
-    }
     var content = inputEl.value.trim();
     if (!content && pendingAttachments.length === 0) {
       showComposerError("Please enter a message before sending.");
@@ -643,8 +587,8 @@
         body: JSON.stringify({ content: content, attachment_ids: attachmentIds }),
         signal: currentController.signal,
       });
+      applyRateLimitHeaders(response);
 
-      updateRateLimitFromResponse(response);
       if (!response.ok) {
         var errData = null;
         try {
@@ -653,8 +597,18 @@
           errData = null;
         }
         if (response.status === 429) {
-          applyRateLimitExceeded(response, errData);
-          throw new Error(rateLimitErrorMessage(response, errData));
+          var retryAfter = response.headers.get("Retry-After");
+          var wait = retryAfter ? parseInt(retryAfter, 10) : 60;
+          rateLimit = {
+            limit: rateLimit ? rateLimit.limit : 0,
+            remaining: 0,
+            reset_at: new Date(Date.now() + wait * 1000).toISOString(),
+            window: rateLimit ? rateLimit.window : "minute",
+          };
+          renderRateLimit();
+          throw new Error(
+            (errData && errData.error) || "Rate limit exceeded. Please wait before sending again."
+          );
         }
         if (errData && errData.code === "provider_not_configured") {
           showOnboarding(errData);
@@ -982,8 +936,9 @@
   document.addEventListener("DOMContentLoaded", function () {
     updateTimestamps();
     autoGrowComposer();
-    renderRateLimit();
     inputEl.focus();
+    refreshRateLimit();
+    rateLimitTimer = window.setInterval(refreshRateLimit, 60000);
 
     listEl.addEventListener("click", function (event) {
       var item = event.target.closest(".conversation-item");

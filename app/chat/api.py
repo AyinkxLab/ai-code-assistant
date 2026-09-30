@@ -88,7 +88,7 @@ def _owned_conversation(conversation_id: int) -> Conversation | None:
 
 
 def _json_object() -> dict | None:
-    """Return the request body as a dict, or ``None`` when it is not one."""
+    """Return the request body as a dict, or ``None`` known when it is not one."""
     data = request.get_json(silent=True)
     if data is None:
         return {}
