@@ -69,6 +69,55 @@ class TestMessage:
         assert payload["role"] == "assistant"
         assert payload["content"] == "code here"
 
+    def test_message_stores_provider_model_and_tokens(self, client, db):
+        user = _register(client)
+        conversation = Conversation(user_id=user.id)
+        message = Message(
+            role="assistant",
+            content="hi",
+            provider="openai",
+            model="gpt-4o-mini",
+            prompt_tokens=10,
+            completion_tokens=5,
+            total_tokens=15,
+        )
+        conversation.messages.append(message)
+        db.session.add(conversation)
+        db.session.commit()
+
+        stored = Message.query.filter_by(conversation_id=conversation.id).first()
+        assert stored.provider == "openai"
+        assert stored.model == "gpt-4o-mini"
+        assert stored.total_tokens == 15
+        payload = stored.to_dict()
+        assert payload["provider"] == "openai"
+        assert payload["model"] == "gpt-4o-mini"
+        assert payload["token_usage"] == {
+            "prompt_tokens": 10,
+            "completion_tokens": 5,
+            "total_tokens": 15,
+        }
+
+    def test_message_stores_error_metadata(self, client, db):
+        user = _register(client)
+        conversation = Conversation(user_id=user.id)
+        message = Message(
+            role="assistant",
+            content="",
+            error="Provider timed out",
+            error_code="timeout",
+        )
+        conversation.messages.append(message)
+        db.session.add(conversation)
+        db.session.commit()
+
+        stored = Message.query.filter_by(conversation_id=conversation.id).first()
+        assert stored.error == "Provider timed out"
+        assert stored.error_code == "timeout"
+        payload = stored.to_dict()
+        assert payload["error"] == "Provider timed out"
+        assert payload["error_code"] == "timeout"
+
 
 class TestPrompt:
     def test_prompt_defaults(self, client, db):

@@ -8,9 +8,9 @@ from app.extensions import db
 class Message(db.Model):
     """A single message exchanged within a conversation.
 
-    ``role`` is one of ``user`` or ``assistant``. Prompt text and assistant
-    responses are stored verbatim so conversation history can be replayed or
-    exported.
+    ``role`` is one of ``system``, ``user``, or ``assistant``. Prompt text and
+    assistant responses are stored verbatim so conversation history can be
+    replayed or exported.
     """
 
     __tablename__ = "messages"
@@ -24,11 +24,18 @@ class Message(db.Model):
     )
     role = db.Column(db.String(20), nullable=False)
     content = db.Column(db.Text, nullable=False)
+    # Provider/model that produced this message. ``None`` for user/system
+    # messages and for historical rows.
+    provider = db.Column(db.String(50), nullable=True)
+    model = db.Column(db.String(100), nullable=True)
     # Token usage recorded for the provider response that produced this message
-    # (issue #13). ``None`` for user messages and for historical rows.
+    # issue #13). ``None``` for user messages and for historical rows.
     prompt_tokens = db.Column(db.Integer, nullable=True)
     completion_tokens = db.Column(db.Integer, nullable=True)
     total_tokens = db.Column(db.Integer, nullable=True)
+    # Error metadata for failed generation attempts.
+    error = db.Column(db.Text, nullable=True)
+    error_code = db.Column(db.String(50), nullable=True)
     created_at = db.Column(
         db.DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC)
     )
@@ -55,7 +62,11 @@ class Message(db.Model):
             "role": self.role,
             "content": self.content,
             "attachments": [attachment.to_dict() for attachment in self.attachments],
+            "provider": self.provider,
+            "model": self.model,
             "token_usage": usage,
+            "error": self.error,
+            "error_code": self.error_code,
             "created_at": self.created_at.isoformat() if self.created_at else None,
         }
 
