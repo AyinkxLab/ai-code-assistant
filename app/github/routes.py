@@ -665,10 +665,21 @@ def api_issues(owner: str, repo: str):
     state = request.args.get("state", "open")
     if state not in ("open", "closed", "all"):
         state = "open"
+    labels = request.args.get("labels", "").strip() or None
+    assignee = request.args.get("assignee", "").strip() or None
+    search = request.args.get("q", "").strip() or None
     page, per_page = _page_params()
     try:
         client = _client()
-        result = client.list_issues_page(full_name, state=state, page=page, per_page=per_page)
+        result = client.list_issues_page(
+            full_name,
+            state=state,
+            labels=labels,
+            assignee=assignee,
+            search=search,
+            page=page,
+            per_page=per_page,
+        )
     except GitHubError as exc:
         return jsonify(github_error_payload(exc)), 502
     return jsonify(_paginated_payload(result, issue_payload))
