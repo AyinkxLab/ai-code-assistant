@@ -12,8 +12,42 @@
   if (numberMatch) NUMBER = numberMatch[1];
 
   var detailEl = document.getElementById("pull-detail");
+  var statusEl = document.getElementById("pull-status");
   var filesEl = document.getElementById("pull-files");
   var analysisEl = document.getElementById("pr-analysis");
+
+  function mergeableLabel(value) {
+    if (value === true) return { text: "mergeable", cls: "tag-public" };
+    if (value === false) return { text: "conflict", cls: "tag-private" };
+    return { text: "unknown", cls: "tag-private" };
+  }
+
+  function checkConclusionClass(conclusion) {
+    if (conclusion === "success") return "tag-public";
+    return "tag-private";
+  }
+
+  function renderStatus(pr) {
+    if (!statusEl) return;
+    var merge = mergeableLabel(pr.mergeable);
+    var html = '<h3>Merge status</h3>';
+    html += '<div class="issue-meta"><span class="tag ' + merge.cls + '">' + GH.escapeHtml(merge.text) + '</span></div>';
+
+    html += '<h3>CI checks</h3>';
+    var checks = pr.check_runs;
+    if (!checks || !checks.length) {
+      html += '<p class="sidebar-empty">No CI checks available.</p>';
+    } else {
+      html += '<ul class="check-list">';
+      checks.forEach(function (check) {
+        var conclusion = check.conclusion || check.status || "unknown";
+        html += '<li><span class="tag ' + checkConclusionClass(conclusion) + '">' +
+          GH.escapeHtml(conclusion) + '</span> ' + GH.escapeHtml(check.name || "") + '</li>';
+      });
+      html += '</ul>';
+    }
+    statusEl.innerHTML = html;
+  }
 
   function render(pr) {
     var status = pr.merged ? "merged" : pr.state;
@@ -28,6 +62,8 @@
       "</div>" +
       "</div>" +
       '<div class="issue-body">' + GH.renderMarkdownish(pr.body) + "</div>";
+
+    renderStatus(pr);
 
     filesEl.innerHTML = "";
     if (pr.files && pr.files.length) {

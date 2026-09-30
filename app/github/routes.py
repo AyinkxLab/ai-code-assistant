@@ -742,6 +742,9 @@ def api_pull_detail(owner: str, repo: str, number: int):
         }
         for f in files
     ]
+    payload["mergeable"] = pr.get("mergeable")
+    payload["mergeable_state"] = pr.get("mergeable_state")
+    payload["checks"] = _pull_request_checks(client, full_name, pr)
     if analyze:
         payload["analysis"] = analysis.analyze_pull_request(
             payload, files, repo_files=_stellar_repo_context(client, full_name)
@@ -752,6 +755,35 @@ def api_pull_detail(owner: str, repo: str, number: int):
 # --------------------------------------------------------------------------
 # API: AI analysis
 # --------------------------------------------------------------------------
+
+
+def _pull_request_checks(client: GitHubClient, full_name: str, pr: dict) -> dict:
+    """Best-effort CI check runs for a pull request's head commit.
+
+    Returns ``{"available": False}`` when checks cannot be resolved (no head
+    SHA, missing permission, or a GitHub error) so the PR detail page can
+    degrade gracefully instead of failing the whole request.
+    """
+    head = pr.get("head") or {}
+    sha = head.get("sha")
+    if not sha:
+        return {"available": False, "runs": []}
+    try:
+        runs = client.list_check_runs(full_name, sha)
+    except GitHubError:
+        return {"available": False, "runs": []}
+    return {
+        "available": True,
+        "runs": [
+            {
+                "name": run.get("name"),
+                "status": run.get("status"),
+                "conclusion": run.get("conclusion"),
+                "html_url": run.get("html_url"),
+            }
+            for run in runs
+        ],
+    }
 
 
 @bp.route("/api/repos/<owner>/<repo>/analyze", methods=["POST"])

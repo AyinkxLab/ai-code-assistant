@@ -682,6 +682,23 @@ class GitHubClient:
     def list_pull_request_comments(self, full_name: str, number: int) -> list[dict]:
         return self._get(f"/repos/{full_name}/pulls/{number}/comments", params={"per_page": 100})
 
+    def list_check_runs(self, full_name: str, ref: str) -> list[dict]:
+        """Return the latest CI check runs for a commit ref (best-effort).
+
+        Uses the check-runs endpoint, which requires the ``checks:read`` scope.
+        When the caller lacks that scope, or the repository has no checks
+        configured, GitHub answers with an error; the caller treats that as
+        "checks unavailable" rather than failing the whole PR view.
+        """
+        data = self._get(
+            f"/repos/{full_name}/commits/{ref}/check-runs",
+            params={"per_page": 100},
+        )
+        if not isinstance(data, dict):
+            return []
+        runs = data.get("check_runs")
+        return runs if isinstance(runs, list) else []
+
     # -- README -------------------------------------------------------------
 
     def get_readme(self, full_name: str, ref: str | None = None) -> str | None:
@@ -804,6 +821,37 @@ def pull_request_payload(pr: dict) -> dict:
     }
 
 
+def mergeable_state_label(mergeable: bool | None) -> str:
+    """Map GitHub's tri-state ``mergeable`` field to a display label.
+
+    GitHub returns ``True`` (mergeable), ``False`` (conflict), or ``None``
+    while it is still computing the merge status. ``None`` is rendered as
+    "unknown" so the UI never claims a PR is clean before GitHub has decided.
+    """
+    if mergeable is True:
+        return "mergeable"
+    if mergeable is False:
+        return "conflict"
+    return "unknown"
+
+
+def check_run_payload(run: dict) -> dict:
+    """Normalize a GitHub check run into the shape consumed by the UI."""
+    return {
+        "name": run.get("name"),
+        "status": run.get("status"),
+        "conclusion": run.get("conclusion"),
+        "html_url": run.get("html_url"),
+        "started_at": run.get("started_at"),
+        "completed_at": run.get("completed_at"),
+    }
+
+
+def check_runs_payload(runs: list[dict]) -> list[dict]:
+    """Normalize a list of GitHub check runs, dropping malformed entries."""
+    return [check_run_payload(run) for run in runs if isinstance(run, dict)]
+
+
 def validate_full_name(full_name: str) -> str:
     """Validate ``owner/repo`` shape; raises :class:`GitHubInvalidError`."""
     name = (full_name or "").strip()
@@ -824,6 +872,35 @@ def validate_path(path: str) -> str:
     if any(part in ("", ".", "..") for part in parts):
         raise GitHubInvalidError("Invalid path.")
     return "/".join(parts)
+
+
+def pull_request_checks(client: GitHubClient, full_name: str, pr: dict) -> dict:
+    """Assemble mergeable state and CI check runs for a pull request.
+
+    Returns ``{"mergeable": str, "checks": list, "checks_available": bool}``.
+    The mergeable label is always present (falling back to "unknown"), and the
+    check-run lookup degrades gracefully: if GitHub refuses the request (missing
+    scope, no checks configured, rate limit) the result reports
+    ``checks_available=False`` with an empty list instead of raising, so the PR
+    detail page still renders.
+    """
+    result = {
+        "mergeable": mergeable_state_label(pr.get("mergeable")),
+        "checks": [],
+        "checks_available": False,
+    }
+    head = pr.get("head") or {}
+    ref = head.get("sha") or head.get("ref")
+    if not ref:
+        return result
+    try:
+        runs = client.list_check_runs(full_name, ref)
+    except GitHubError as exc:
+        logger.info("Check runs unavailable for %s@%s: %s", full_name, ref, exc.kind)
+        return result
+    result["checks"] = check_runs_payload(runs)
+    result["checks_available"] = True
+    return result
 
 
 def revoke_github_token(access_token: str) -> None:
