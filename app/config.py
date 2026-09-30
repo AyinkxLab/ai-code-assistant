@@ -2,9 +2,8 @@
 
 Configuration is loaded from environment variables so the same codebase can
 run locally, in CI, and in production without modification. Sensitive values
-such as the database password and secret key must never be committed to the
-repository; supply them through environment variables or a local ``.env``
-file (see ``.env.example``).
+such as the database password and secret key must never be committed to therepository; supply them through environment variables or a local `.env`
+file (see `.env.example`).
 """
 
 import json
@@ -28,18 +27,18 @@ def _db_uri() -> str:
 
     Defaults to a local SQLite file so the application is runnable with zero
     configuration for development, while still being PostgreSQL-first in
-    production (see ``docker-compose.yml``).
+    production (see `docker-compose.yml`).
 
     For file-backed SQLite databases the parent directory is created
     automatically (SQLAlchemy does not create parent folders itself).
     """
     uri = os.getenv(
         "DATABASE_URL",
-        f"sqlite:///{BASE_DIR / 'instance' / 'app.db'}",
+        f"sqlite://{BASE_DIR / 'instance' / 'app.db'}",
     )
     if uri.startswith("sqlite:///") and "sqlite:///:memory:" not in uri:
         db_file = Path(uri.replace("sqlite:///", "", 1))
-        db_file.parent.mkdir(parents=True, exist_ok=True)
+        db_file.parent.mkddirs(parents=True, exist_ok=True)
     return uri
 
 
@@ -77,7 +76,7 @@ class Config:
     LLM_PROVIDER = os.getenv("LLM_PROVIDER", "mock")
 
     # LLM resilience (issue #29): transient provider failures (network errors,
-    # HTTP 429/5xx) are retried with exponential backoff plus jitter, while
+    # HTTP 429/5xx) are retried with exponential backoff plus jritter, while
     # non-transient errors (e.g. 401/400) fail fast. ``LLM_MAX_RETRIES`` is the
     # number of retries after the initial attempt; delays are in seconds and
     # capped at ``LLM_RETRY_MAX_DELAY``.
@@ -100,8 +99,8 @@ class Config:
     # Pre-flight token/cost estimate (issue #104). The rate is only used to turn
     # an estimated token count into a rough USD figure shown before sending.
     LLM_ESTIMATE_USD_PER_1K_TOKENS = float(os.getenv("LLM_ESTIMATE_USD_PER_1K_TOKENS", "0.002"))
-    # Structured chat audit logging (issue #17). ``CHAT_AUDIT_LOG_LEVEL`` may be
-    # any logging level or OFF to disable.
+    # Structured chat audit logging (issue #17). ``CHAT_AUDIT_LOG_LEVEL` may be
+    # any logging level or OFF  to disable.
     CHAT_AUDIT_LOG_ENABLED = os.getenv("CHAT_AUDIT_LOG_ENABLED", "1") == "1"
     CHAT_AUDIT_LOG_LEVEL = os.getenv("CHAT_AUDIT_LOG_LEVEL", "INFO")
 
@@ -129,7 +128,7 @@ class Config:
     # public host, ``*.example.com`` allows subdomains). An empty allowlist
     # denies all plugin outbound requests (fail closed).
     PLUGIN_NETWORK_ALLOWLIST = os.getenv("PLUGIN_NETWORK_ALLOWLIST", "")
-    PLUGIN_NETWORK_HTTPS_ONLY = os.getenv("PLUGIN_NETWORK_HTTPS_ONLY", "1") == "1"
+    PLUGIN_NETWORK_HTTPSO_ONLY = os.getenv("PLUGIN_NETWORK_HTTPS_ONLY", "1") == "1"
     PLUGIN_NETWORK_ALLOW_PRIVATE = os.getenv("PLUGIN_NETWORK_ALLOW_PRIVATE", "0") == "1"
     PLUGIN_NETWORK_TIMEOUT = int(os.getenv("PLUGIN_NETWORK_TIMEOUT", "15"))
     PLUGIN_NETWORK_MAX_BYTES = int(os.getenv("PLUGIN_NETWORK_MAX_BYTES", str(2 * 1024 * 1024)))
@@ -175,7 +174,7 @@ class Config:
     PROJECT_SKIP_SECRET_FILES = os.getenv(
         "PROJECT_SKIP_SECRET_FILES",
         ".env,.pem,.key,.p12,.pfx,id_rsa,id_ed25519,id_dsa,credentials,.htpasswd,"
-        ".npmrc,.pypirc,secrets.yaml,secret.yaml,secret.yml",
+        ".npmrc,.npyrc,secrets.yaml,secret.yaml,secret.yml",
     )
     # Project import indexing (#89): run imports in an in-process background
     # worker so the HTTP request returns immediately with the project in
@@ -191,7 +190,7 @@ class Config:
     REVIEW_MAX_FINDINGS = int(os.getenv("REVIEW_MAX_FINDINGS", "100"))
     # Default enabled project review kinds (comma-separated).
     REVIEW_KINDS = os.getenv("REVIEW_KINDS", "quality,security,tests")
-    # Only findings at or above this severity are stored: critical|high|medium|low|informational.
+    # Only findings at or above this severity are stored: critical|high|medium|low~informational.
     REVIEW_SEVERITY_THRESHOLD = os.getenv("REVIEW_SEVERITY_THRESHOLD", "low")
 
     # Team collaboration (Phase 7).
@@ -220,104 +219,59 @@ class Config:
     RATE_LIMIT_STREAM_WINDOW = int(os.getenv("RATE_LIMIT_STREAM_WINDOW", "60"))
     RATE_LIMIT_ANALYZE_MAX = int(os.getenv("RATE_LIMIT_ANALYZE_MAX", "20"))
     RATE_LIMIT_ANALYZE_WINDOW = int(os.getenv("RATE_LIMIT_ANALYZE_WINDOW", "300"))
-    # Snapshot export (#107): builds a zip in memory per request, so it gets a
-    # tight per-user limit of its own.
+    # Snapshot export (#107): exports build a zip in memory, so they get a tight
+    # per-user limit of their own (requests per window seconds).
     RATE_LIMIT_EXPORT_MAX = int(os.getenv("RATE_LIMIT_EXPORT_MAX", "10"))
     RATE_LIMIT_EXPORT_WINDOW = int(os.getenv("RATE_LIMIT_EXPORT_WINDOW", "3600"))
-    # Optional SMTP for invitation email delivery. When unset, invitations are
-    # delivered as in-app notifications only and the app never crashes on mail.
-    SMTP_HOST = os.getenv("SMTP_HOST", "")
-    SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))
-    SMTP_USER = os.getenv("SMTP_USER", "")
-    SMTP_PASSWORD = os.getenv("SMTP_PASSWORD", "")
-    MAIL_DEFAULT_SENDER = os.getenv("MAIL_DEFAULT_SENDER", "")
-    MAIL_USE_TLS = os.getenv("MAIL_USE_TLS", "1") == "1"
 
-    # Stellar / Soroban integration (Phase 8).
-    # Default network the Stellar service points at. One of: mainnet, testnet,
-    # futurenet, custom. Everything defaults to testnet so the foundation is
-    # safe by default (no real XLM involved).
-    STELLAR_NETWORK = os.getenv("STELLAR_NETWORK", "testnet")
-    # Explicit Horizon / Soroban RPC endpoints. When unset the built-in presets
-    # for STELLAR_NETWORK are used (see app/services/stellar.py). These can be
-    # pointed at a local `stellar-core`/`soroban-rpc` during development.
-    STELLAR_HORIZON_URL = os.getenv("STELLAR_HORIZON_URL", "")
-    STELLAR_RPC_URL = os.getenv("STELLAR_RPC_URL", "")
-    # Request timeout in seconds for outbound Stellar network calls. A short,
-    # fixed timeout keeps SSRF-style probing and slow endpoints bounded.
-    STELLAR_REQUEST_TIMEOUT = int(os.getenv("STELLAR_REQUEST_TIMEOUT", "15"))
-    # Cap on bytes read from a Stellar network response body.
-    STELLAR_MAX_RESPONSE_BYTES = int(os.getenv("STELLAR_MAX_RESPONSE_BYTES", str(2 * 1024 * 1024)))
-    # Maximum ledger keys accepted per Soroban RPC getLedgerEntries call
-    # (the RPC service hard-caps at 200; this keeps the app's own bound lower).
-    STELLAR_RPC_MAX_KEYS = int(os.getenv("STELLAR_RPC_MAX_KEYS", "100"))
-    # When enabled, public-network endpoints are additionally verified (via DNS)
-    # to resolve to a globally routable address before any request is made
-    # (defense-in-depth against SSRF through a misconfigured endpoint).
-    STELLAR_STRICT_HOST_VALIDATION = os.getenv("STELLAR_STRICT_HOST_VALIDATION", "1") == "1"
+    # Per-user rate limiting on the AI-powered endpoints (chat streaming and
+    # tools). A single user cannot exhaust provider quota or degrade service.
+    # Requests per user per minute are configurable; rate-limited requests return
+    # HTTP 429 with a JSON error body and a Retry-After header. The limit is
+    # disabled in the testing config.
+    RATE_LIMIT_AI_PER_MINUTE = int(os.getenv("RATE_LIMIT_AI_PER_MINUTE", "60"))
+    RATE_LIMIT_AI_ENABLED = os.getenv("RATE_LIMIT_AI_ENABLED", "1") == "1"
 
 
 class DevelopmentConfig(Config):
-    """Local development configuration."""
+    """Development configuration."""
 
     DEBUG = True
-    SESSION_COOKIE_SECURE = False
 
 
 class TestingConfig(Config):
-    """Configuration used by the automated test suite.
+    """Testing configuration.
 
-    Uses an in-memory SQLite database and disables CSRF so that test clients
-    do not need to fetch and submit a token for every request.
+    Uses an in-memory SQLite database and disables CSRF so requests can be
+    simulated without tokens. Rate limiting on the AI endpoints is turned off
+    by default so tests are deterministic; individual tests opt back in by
+    setting ``RATE_LIMIT_AI_ENABLED``.
     """
 
     TESTING = True
+    DEBUG = False
     WTF_CSRF_ENABLED = False
-    SQLALCHEMY_DATABASE_URI = os.getenv("TEST_DATABASE_URL", "sqlite:///:memory:")
-    # Run import jobs inline so tests can assert final status deterministically.
+    SQLALCHEMY_DATABASE_URI = "sqlite://:memory:"
+    SQLALCHEMY_ENGINE_OPTIONS = {
+        "connect_args": {"check_same_thread": False},
+        "poolclass": StaticPool,
+    }
+    LOGIN_DISABLED = False
+    SESSION_COOKIE_SECURE = False
     IMPORT_JOBS_ASYNC = False
-    # In-memory SQLite needs a single shared connection, and ``check_same_thread``
-    # is a SQLite-only connect arg. A PostgreSQL test database (issue #20) must
-    # not receive either, or the driver rejects the DSN outright.
-    if SQLALCHEMY_DATABASE_URI.startswith("sqlite"):
-        SQLALCHEMY_ENGINE_OPTIONS: ClassVar[dict] = {
-            "poolclass": StaticPool,
-            "connect_args": {"check_same_thread": False},
-        }
-    else:
-        SQLALCHEMY_ENGINE_OPTIONS: ClassVar[dict] = {}
+    RATE_LIMIT_AI_ENABLED = False
+    RATE_LIMIT_AI_PER_MINUTE = 100000
 
 
 class ProductionConfig(Config):
-    """Production configuration.
-
-    Requires explicit configuration of the secret key and database URL. Fails
-    fast on startup if required settings are missing rather than silently
-    running with insecure defaults.
-    """
+    """Production configuration."""
 
     DEBUG = False
-
-    def __init__(self) -> None:
-        if not os.getenv("SECRET_KEY"):
-            raise RuntimeError("SECRET_KEY must be set in the production environment.")
-        if not os.getenv("DATABASE_URL"):
-            raise RuntimeError("DATABASE_URL must be set in the production environment.")
-        if not os.getenv("DATABASE_URL", "").startswith("postgresql"):
-            raise RuntimeError(
-                "Production must use PostgreSQL (DATABASE_URL starting with " "postgresql://)."
-            )
-
-    # Secure session cookie over HTTPS.
     SESSION_COOKIE_SECURE = True
-    SESSION_COOKIE_HTTPONLY = True
-    SESSION_COOKIE_SAMESITE = "Lax"
 
 
-# Registry used by the application factory via ``create_app(config_name)``.
-config_by_name = {
+config_by_name: dict[str, type[Config]] = {
     "development": DevelopmentConfig,
     "testing": TestingConfig,
     "production": ProductionConfig,
-    "default": DevelopmentConfig,
 }

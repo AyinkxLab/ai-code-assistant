@@ -28,6 +28,7 @@ from app.services import ratelimit
 from app.services.llm import LLMProviderError, provider_status
 from app.services.provider_config import ProviderSettingsError, apply_settings, build_provider
 from app.services.providers.retry import RetryingProvider
+from app.services.ratelimit import ai_rate_limit
 
 bp = Blueprint("chat_api", __name__, url_prefix="/api")
 
@@ -78,6 +79,7 @@ def _rate_limit(bucket: str):
         return wrapper
 
     return decorator
+
 
 
 def _owned_conversation(conversation_id: int) -> Conversation | None:
@@ -159,6 +161,7 @@ def delete_conversation(conversation_id: int):
 @bp.route("/conversations/<int:conversation_id>/messages", methods=["POST"])
 @_login_required
 @_rate_limit("message")
+@ai_rate_limit
 def send_message(conversation_id: int):
     """Persist the user message and return the assistant's reply."""
     conversation = _owned_conversation(conversation_id)

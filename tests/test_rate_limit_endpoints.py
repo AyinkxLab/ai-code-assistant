@@ -1,14 +1,13 @@
 """Tests for per-user rate limiting on the costly Phase 5 endpoints (#106).
 
 Covers each limited endpoint (import, search, chat, stream, analyze): the first
-request is allowed and subsequent requests over the limit return ``429`` with a
-``Retry-After`` header. Also checks that limits are keyed per user and that
-``consume`` reports a sane retry delay.
+request is allowed and subsequent requests over the limit return ```429``` with a
+``Retry-After`` consume reports a sane retry delay.
 """
 
 from app.extensions import db
 from app.models import Project, ProjectFile, Workspace
-from app.models.project import SOURCE_ARCHIVE, STATUS_READY
+from app.models.project import SOURCE_ARCHIVE,STATUS_READY
 from app.services import ratelimit
 
 
@@ -22,8 +21,7 @@ def _ready_project(make_user, login, username="rateuser", email="rateuser@exampl
         workspace_id=workspace.id,
         user_id=user.id,
         name="Rate project",
-        source=SOURCE_ARCHIVE,
-        status=STATUS_READY,
+        source=SOURCE_ARCHIVE,STATUS_READY,
     )
     db.session.add(project)
     db.session.commit()
