@@ -55,15 +55,6 @@ from app.services.providers.retry import RetryingProvider
 #: Machine-readable code returned when the configured provider has no key.
 PROVIDER_NOT_CONFIGURED_CODE = "provider_not_configured"
 
-#: Starter prompts shown on the empty-state welcome panel for new threads.
-WELCOME_EXAMPLE_PROMPTS = [
-    {
-        "title": "Summarize a document",
-        "prompt": "Summarize the key points of the following text in five bullets:\n\n",
-    },
-    {
-        "title": "Explain some code",
-        "prompt": "Explain what this code does and suggest one improvement:\n\n
 
 def _provider_not_configured_payload(status: dict) -> dict:
     """Build the distinct payload for a provider that has no usable key.
@@ -131,6 +122,16 @@ def _github_context_messages(user, content: str) -> tuple[list[dict], dict | Non
     return messages, None, 200
 
 
+#: Starter prompts shown as chips in the welcome/empty state. Each entry is a
+#: short label plus the full prompt that is placed into the composer on click.
+WELCOME_EXAMPLE_PROMPTS = [
+    {
+        "label": "Summarize a document",
+        "prompt": "Summarize the key points of the following text in five bullets:\n\n",
+    },
+    {
+        "label": "Explain some code",
+        "prompt": "Explain what this code does, step by step:\n\n
 def _get_conversation(conversation_id: int) -> Conversation:
     """Return the current user's conversation or abort with 404."""
     conversation = Conversation.query.filter_by(
