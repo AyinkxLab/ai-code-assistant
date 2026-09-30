@@ -304,6 +304,41 @@ def _throttled_response(retry_after: int):
 # --------------------------------------------------------------------------
 
 
+@bp.route("/repos/lookup")
+@login_required
+def repo_lookup():
+    """Resolve an ``owner/name`` string and redirect to the repository page.
+
+    Accepts a public repository the user can access via GitHub's own access
+    model. Private repositories the user lacks permission for surface a clear
+    permission error instead of a redirect. The user's token is used as-is, so
+    it never grants access beyond GitHub's own permissions.
+    """
+    raw = (request.args.get("repo") or "").strip()
+    if not raw:
+        flash("Enter a repository as owner/name.", "error")
+        return redirect(url_for("github.repos"))
+    try:
+        full_name = validate_full_name(raw)
+    except GitHubError as exc:
+        flash(str(exc), "error")
+        return redirect(url_for("github.repos"))
+    owner, _, repo = full_name.partition("/")
+    try:
+        client = _client()
+        client.get_repository(full_name)
+    except GitHubError as exc:
+        if getattr(exc, "status", None) in (403, 404):
+            flash(
+                f"You do not have permission to view {full_name}, or it does not exist.",
+                "error",
+            )
+        else:
+            flash(f"Could not open {full_name}: {exc}", "error")
+        return redirect(url_for("github.repos"))
+    return redirect(url_for("github.repo_detail", owner=owner, repo=repo))
+
+
 @bp.route("/repos")
 @login_required
 def repos():
@@ -415,48 +450,6 @@ def _repo_matches_query(repo: dict, query: str) -> bool:
         if value and query in str(value).lower():
             return True
     return False
-
-
-def _repo_error_status(exc: GitHubError) -> int:
-    """Map a :class:`GitHubError` to an HTTP status for repo lookups.
-
-    GitHub returns 404 for both missing repositories and private repositories
-    the caller cannot see, and 403 when the token is rate-limited or lacks
-    scope. We surface 403 for permission/rate-limit failures so the UI can
-    show a clear "you do not have access" message, and 404 otherwise.
-    """
-    status = getattr(exc, "status", None) or getattr(exc, "status_code", None)
-    if status in (401, 403):
-        return 403
-    return 404
-
-
-@bp.route("/api/repos/lookup")
-@login_required
-def api_repo_lookup():
-    """Look up an arbitrary public repository by ``owner/name``.
-
-    Accepts a single ``full_name`` query parameter (``owner/name``). Access is
-    governed entirely by the caller's GitHub token: public repositories are
-    readable, private repositories the user cannot see return a clear
-    permission error, and the token never grants access beyond what GitHub
-    itself allows.
-    """
-    raw = (request.args.get("full_name") or request.args.get("q") or "").strip()
-    if not raw:
-        return jsonify({"error": "A repository in owner/name form is required."}), 400
-    try:
-        full_name = validate_full_name(raw)
-    except GitHubError as exc:
-        return jsonify(github_error_payload(exc)), 400
-    try:
-        client = _client()
-        data = client.get_repository(full_name)
-    except GitHubError as exc:
-        return jsonify(github_error_payload(exc)), _repo_error_status(exc)
-    payload = repo_payload(data)
-    payload["readme"] = client.get_readme(data.get("full_name", full_name))
-    return jsonify(payload)
 
 
 @bp.route("/api/repos")

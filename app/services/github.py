@@ -397,26 +397,18 @@ class GitHubClient:
     def get_repository(self, full_name: str) -> dict:
         return self._get(f"/repos/{full_name}")
 
-    def get_public_repository(self, full_name: str) -> dict:
-        """Fetch a repository by ``owner/name``, honoring GitHub's access model.
+    def lookup_repository(self, full_name: str) -> dict:
+        """Look up a repository by ``owner/name``, respecting GitHub access.
 
-        The request is made with the current user's token, so GitHub itself
-        decides whether the repository is visible: public repositories are
-        returned to anyone, while private repositories the user cannot access
-        surface as a permission or not-found error. The token never grants
-        access beyond what the user already has on GitHub.
+        Validates the ``owner/name`` shape first, then fetches the repository
+        through the authenticated client so GitHub's own permission model
+        decides visibility. Public repositories are readable by any connected
+        account; private repositories the caller cannot access raise
+        :class:`GitHubPermissionError` (or :class:`GitHubNotFoundError` when
+        GitHub hides their existence).
         """
-        full_name = validate_full_name(full_name)
-        try:
-            return self.get_repository(full_name)
-        except GitHubNotFoundError:
-            # GitHub returns 404 for private repos the caller cannot see, so
-            # translate it into a clear permission error rather than a bare
-            # "not found" that leaks nothing but also explains nothing.
-            raise GitHubPermissionError(
-                "GitHub denied access to this resource.",
-                detail=f"Repository {full_name} is not visible to this token.",
-            ) from None
+        name = validate_full_name(full_name)
+        return self.get_repository(name)
 
     def list_branches(self, full_name: str) -> list[dict]:
         return self._get_paginated(f"/repos/{full_name}/branches")
@@ -833,18 +825,18 @@ def validate_full_name(full_name: str) -> str:
     return name
 
 
-def lookup_repository(user, full_name: str) -> dict:
-    """Look up an arbitrary public repository by ``owner/name``.
+def lookup_public_repository(user, full_name: str) -> dict:
+    """Resolve ``owner/name`` to a repository payload for ``user``.
 
-    Validates the ``owner/name`` shape, then fetches the repository using the
-    user's GitHub token so GitHub's own permission model is respected. Private
-    repositories the user cannot access raise :class:`GitHubPermissionError`
-    with a clear message, and the token is never used to bypass GitHub's
-    access checks.
+    Accepts an arbitrary ``owner/name`` and returns the normalized repository
+    payload. Access is delegated entirely to GitHub: the user's token is used
+    for the request, so public repositories are always readable and private
+    repositories the user lacks access to surface as a clear permission error
+    (never silently granted).
     """
-    name = validate_full_name(full_name)
     client = get_github_client(user)
-    return client.get_public_repository(name)
+    repo = client.lookup_repository(full_name)
+    return repo_payload(repo)
 
 
 def validate_path(path: str) -> str:
