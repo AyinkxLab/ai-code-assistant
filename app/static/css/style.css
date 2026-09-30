@@ -619,6 +619,20 @@ a:hover {
   font-weight: 600;
 }
 
+/* Search match highlighting in the file viewer (issue #12). */
+.search-highlight {
+  background: rgba(210, 153, 34, 0.35);
+  color: inherit;
+  border-radius: 3px;
+  padding: 0 1px;
+}
+
+/* Ensure highlighted matches remain readable inside the file viewer. */
+.file-viewer-content .search-highlight {
+  background: rgba(210, 153, 34, 0.45);
+  outline: 1px solid rgba(210, 153, 34, 0.6);
+}
+
 /* Copy button injected into every rendered code block (issue #9). */
 .code-copy-btn {
   position: absolute;
