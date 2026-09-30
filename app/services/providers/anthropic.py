@@ -23,6 +23,7 @@ from app.services.providers.base import (
     ProviderRateLimitError,
     ProviderResponse,
     ProviderResponseError,
+    ProviderStreamError,
     ProviderUnavailableError,
     prepare_messages,
 )
@@ -193,17 +194,31 @@ class AnthropicProvider(LLMProvider):
         payload = self._payload(messages, model=model, params=params, stream=True)
         response = self._post(payload, stream=True)
         self._raise_for_status(response)
-        for line in response.iter_lines(decode_unicode=True):
-            if not line or not line.startswith("data: "):
-                continue
-            try:
-                event = json.loads(line[len("data: ") :].strip())
-            except ValueError:
-                continue
-            if event.get("type") == "content_block_delta":
-                text = (event.get("delta") or {}).get("text", "")
-                if text:
-                    yield text
+        try:
+            for line in response.iter_lines(decode_unicode=True):
+                if not line or not line.startswith("data: "):
+                    continue
+                try:
+                    event = json.loads(line[len("data: ") :].strip())
+                except ValueError:
+                    continue
+                event_type = event.get("type")
+                if event_type == "content_block_delta":
+                    text = (event.get("delta") or {}).get("text", "")
+                    if text:
+                        yield text
+                elif event_type == "error":
+                    error = event.get("error") or {}
+                    raise ProviderStreamError(
+                        error.get("message", "Anthropic stream error."),
+                        provider=self.name,
+                    )
+        except requests.RequestException as exc:
+            raise ProviderStreamError(
+                f"Anthropic stream interrupted: {exc}", provider=self.name
+            ) from exc
+        finally:
+            response.close()
 
     def stream_events(
         self,
@@ -212,65 +227,51 @@ class AnthropicProvider(LLMProvider):
         model: str | None = None,
         params: dict | None = None,
     ) -> Iterator[dict]:
-        """Yield structured streaming events for SSE.
+        """Yield normalized streaming events with usage metadata.
 
-        Emits ``message_start``, ``content`` deltas, ``message_end`` (with token
-        usage), and ``error`` events. The underlying HTTP response is closed
-        when the generator is closed (e.g. on client disconnect), which cancels
-        the provider call.
+        Emits ``{"type": "content", "text": ...}`` deltas followed by a final
+        ``{"type": "usage", "prompt_tokens": ..., "completion_tokens": ...}``
+        event so callers can persist token accounting for streamed responses.
         """
         self._require_key()
         payload = self._payload(messages, model=model, params=params, stream=True)
         response = self._post(payload, stream=True)
+        self._raise_for_status(response)
+        prompt_tokens: int | None = None
+        completion_tokens: int | None = None
         try:
-            try:
-                self._raise_for_status(response)
-            except (
-                ProviderAuthenticationError,
-                ProviderRateLimitError,
-                ProviderResponseError,
-                ProviderUnavailableError,
-            ) as exc:
-                yield {"type": "error", "message": str(exc)}
-                return
-            yield {
-                "type": "message_start",
-                "model": payload["model"],
-            }
-            prompt_tokens: int | None = None
-            completion_tokens: int | None = None
-            try:
-                for line in response.iter_lines(decode_unicode=True):
-                    if not line or not line.startswith("data: "):
-                        continue
-                    try:
-                        event = json.loads(line[len("data: ") :].strip())
-                    except ValueError:
-                        continue
-                    event_type = event.get("type")
-                    if event_type == "message_start":
-                        usage = (event.get("message") or {}).get("usage") or {}
-                        prompt_tokens = usage.get("input_tokens", prompt_tokens)
-                    elif event_type == "content_block_delta":
-                        text = (event.get("delta") or {}).get("text", "")
-                        if text:
-                            yield {"type": "content", "delta": text}
-                    elif event_type == "message_delta":
-                        usage = event.get("usage") or {}
-                        completion_tokens = usage.get("output_tokens", completion_tokens)
-                    elif event_type == "message_stop":
-                        break
-            except requests.RequestException as exc:
-                yield {
-                    "type": "error",
-                    "message": f"Anthropic stream failed: {exc}",
-                }
-                return
-            yield {
-                "type": "message_end",
-                "model": payload["model"],
-                "prompt_tokens": prompt_tokens,
-                "completion_tokens": completion_tokens,
-            }
+            for line in response.iter_lines(decode_unicode=True):
+                if not line or not line.startswith("data: "):
+                    continue
+                try:
+                    event = json.loads(line[len("data: ") :].strip())
+                except ValueError:
+                    continue
+                event_type = event.get("type")
+                if event_type == "message_start":
+                    usage = (event.get("message") or {}).get("usage") or {}
+                    prompt_tokens = usage.get("input_tokens", prompt_tokens)
+                elif event_type == "content_block_delta":
+                    text = (event.get("delta") or {}).get("text", "")
+                    if text:
+                        yield {"type": "content", "text": text}
+                elif event_type == "message_delta":
+                    usage = event.get("usage") or {}
+                    completion_tokens = usage.get("output_tokens", completion_tokens)
+                elif event_type == "error":
+                    error = event.get("error") or {}
+                    raise ProviderStreamError(
+                        error.get("message", "Anthropic stream error."),
+                        provider=self.name,
+                    )
+        except requests.RequestException as exc:
+            raise ProviderStreamError(
+                f"Anthropic stream interrupted: {exc}", provider=self.name
+            ) from exc
         finally:
             response.close()
+        yield {
+            "type": "usage",
+            "prompt_tokens": prompt_tokens,
+            "completion_tokens": completion_tokens,
+        }

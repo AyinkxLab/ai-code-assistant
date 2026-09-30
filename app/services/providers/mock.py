@@ -8,7 +8,6 @@ is what the shared contract tests exercise.
 
 from __future__ import annotations
 
-import threading
 import time
 from collections.abc import Iterable, Iterator
 from typing import Any
@@ -59,7 +58,6 @@ class MockProvider(LLMProvider):
             content=self._respond(prepared),
             model=model or self.models[0],
             latency_seconds=time.perf_counter() - started,
-            usage=self._usage(prepared, self._respond(prepared)),
         )
 
     def stream(
@@ -68,21 +66,9 @@ class MockProvider(LLMProvider):
         *,
         model: str | None = None,
         params: dict | None = None,
-        cancel_event: threading.Event | None = None,
     ) -> Iterator[str]:
         text = self._respond(prepare_messages(messages, supports_vision=self.supports_vision))
         for word in text.split(" "):
-            if cancel_event is not None and cancel_event.is_set():
-                return
             if self.delay:
                 time.sleep(self.delay)
             yield word + " "
-
-    def _usage(self, messages: Iterable[Any], text: str) -> dict[str, int]:
-        prompt_tokens = sum(len(message_content(m).split()) for m in messages)
-        completion_tokens = len(text.split())
-        return {
-            "prompt_tokens": prompt_tokens,
-            "completion_tokens": completion_tokens,
-            "total_tokens": prompt_tokens + completion_tokens,
-        }

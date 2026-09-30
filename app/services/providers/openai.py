@@ -17,26 +17,20 @@ from typing import Any
 import requests
 
 from app.services.providers.base import (
-	LLMProvider,
-	ProviderAuthenticationError,
-	ProviderConfigurationError,
-	ProviderRateLimitError,
-	ProviderResponse,
-	ProviderResponseError,
-	ProviderUnavailableError,
-	prepare_messages,
+    LLMProvider,
+    ProviderAuthenticationError,
+    ProviderConfigurationError,
+    ProviderRateLimitError,
+    ProviderResponse,
+    ProviderResponseError,
+    ProviderStreamError,
+    ProviderUnavailableError,
+    prepare_messages,
 )
 
 TIMEOUT_SECONDS = 60
 DEFAULT_MODELS = ("gpt-4o-mini", "gpt-4o", "gpt-4.1-mini", "gpt-4.1")
-
-
-class ProviderStreamCancelled(Exception):
-    """Raised when a streaming provider call is cancelled by the caller."""
-
-    def __init__(self, partial_content: str = "") -> None:
-        super().__init__("Provider stream cancelled.")
-        self.partial_content = partial_content
+STREAM_DONE = "[DONE]"
 
 
 class OpenAIProvider(LLMProvider):
@@ -60,7 +54,7 @@ class OpenAIProvider(LLMProvider):
             base_url or os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1")
         ).rstrip("/")
         self.model = model or os.getenv("OPENAI_MODEL", "gpt-4o-mini")
-        env_temperature = os.getenv("OPENAI_TEMPIRATURE", "0.7")
+        env_temperature = os.getenv("OPENAI_TEMPERATURE", "0.7")
         self.temperature = float(temperature if temperature is not None else env_temperature)
 
     def _require_key(self) -> None:
@@ -177,7 +171,6 @@ class OpenAIProvider(LLMProvider):
         *,
         model: str | None = None,
         params: dict | None = None,
-        cancel_event: Any = None,
     ) -> Iterator[str]:
         self._require_key()
         payload = self._payload(messages, model=model, params=params, stream=True)
@@ -185,9 +178,6 @@ class OpenAIProvider(LLMProvider):
         self._raise_for_status(response)
         try:
             for line in response.iter_lines(decode_unicode=True):
-                if cancel_event is not None and cancel_event.is_set():
-                    response.close()
-                    raise ProviderStreamCancelled()
                 if not line or not line.startswith("data: "):
                     continue
                 chunk_payload = line[len("data: ") :].strip()
@@ -206,46 +196,43 @@ class OpenAIProvider(LLMProvider):
             raise ProviderUnavailableError(
                 f"OpenAI stream failed: {exc}", provider=self.name
             ) from exc
-        finally:
-            response.close()
 
-    def stream_with_usage(
+    def stream_events(
         self,
         messages: Iterable[Any],
         *,
         model: str | None = None,
         params: dict | None = None,
-        cancel_event: Any = None,
     ) -> Iterator[dict]:
-        """Stream deltas and yield a final ``usage`` event.
+        """Yield structured streaming events for SSE consumption.
 
-        Yields dicts of the form ``{"type": "delta", "content": str}`` for each
-        token chunk and a single ``{"type": "usage", ...}`` event at the end
-        containing token accounting and the resolved model name. Raises
-        :class:`ProviderStreamCancelled` if ``cancel_event``  is set mid-stream.
+        Emits ``message_start``, ``content`` deltas, and a terminal
+        ``message_end`` carrying token usage. Provider/transport failures are
+        surfaced as ``error`` events so callers can forward them to clients
+        instead of hanging. Closing the returned generator (e.g. on client
+        disconnect) closes the underlying HTTP response, cancelling the
+        provider stream.
         """
         self._require_key()
         payload = self._payload(messages, model=model, params=params, stream=True)
-        payload["stream_options"] = {"include_usage": True}
         response = self._post(payload, stream=True)
         self._raise_for_status(response)
-        usage: dict[str, Any] = {}
-        resolved_model = payload["model"]
+        yield {
+            "type": "message_start",
+            "model": payload["model"],
+        }
+        usage: dict = {}
         try:
             for line in response.iter_lines(decode_unicode=True):
-                if cancel_event is not None and cancel_event.is_set():
-                    raise ProviderStreamCancelled()
                 if not line or not line.startswith("data: "):
                     continue
                 chunk_payload = line[len("data: ") :].strip()
-                if chunk_payload == "[DONE]":
+                if chunk_payload == STREAM_DONE:
                     break
                 try:
                     chunk = json.loads(chunk_payload)
                 except ValueError:
                     continue
-                if chunk.get("model"):
-                    resolved_model = chunk["model"]
                 if chunk.get("usage"):
                     usage = chunk["usage"]
                 try:
@@ -253,16 +240,18 @@ class OpenAIProvider(LLMProvider):
                 except (KeyError, IndexError, TypeError):
                     delta = ""
                 if delta:
-                    yield {"type": "delta", "content": delta}
+                    yield {"type": "content", "delta": delta}
         except requests.RequestException as exc:
-            raise ProviderUnavailableError(
-                f"OpenAI stream failed: {exc}", provider=self.name
-            ) from exc
+            yield {
+                "type": "error",
+                "message": f"OpenAI stream failed: {exc}",
+            }
+            return
         finally:
             response.close()
         yield {
-            "type": "usage",
-            "model": resolved_model,
+            "type": "message_end",
+            "model": payload["model"],
             "prompt_tokens": usage.get("prompt_tokens"),
             "completion_tokens": usage.get("completion_tokens"),
         }
