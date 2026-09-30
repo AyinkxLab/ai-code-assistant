@@ -1,18 +1,19 @@
-{% extends "base.html" %}
+<!-- Chat template with rate limit UI surfacing -->
+{{ extends "base.html" }}
 
-{% block title %}Chat - {{ config.APP_NAME }}{% endblock %}
+{{ block title }}Chat - {{ config.APP_NAME }}{{ endblock }}
 
 {% block content %}
 <div class="chat-layout">
   <aside class="chat-sidebar">
     <div class="sidebar-header">
       <h2>Conversations</h2>
-      <button id="new-conversation" class="btn btn-primary btn-sm" type="button">+ New</button>
+      <button id="new-conversation" class="btn btn-primary btn-sm" type="button">+New</button>
     </div>
     <input id="conversation-search" class="sidebar-search" type="search" placeholder="Search conversations...">
     <ul id="conversation-list" class="conversation-list" aria-label="Conversations">
       {% for conversation in conversations %}
-        <li class="conversation-item{% if loop.first %} active{% endif %}"
+        <li class="conversation-item{% if loop.first %%} active{% endif %}"
             data-id="{{ conversation.id }}"
             data-title="{{ conversation.title }}"
             tabindex="0"
@@ -110,6 +111,7 @@
       </div>
       <p id="composer-error" class="composer-error" role="alert" hidden></p>
       <p id="conversation-usage" class="chat-hint" aria-live="polite"></p>
+      <p id="chat-rate-limit" class="chat-hint" aria-live="polite" data-rate-limit="{{ rate_limit | tojson if rate_limit else '{}' }}"></p>
       <p id="chat-composer-hint" class="chat-hint">Press Enter to send, Shift+Enter for a new line. The assistant streams its reply. Markdown and code blocks are supported. Attach up to 4 png/jpeg/webp images.</p>
     </div>
   </section>
@@ -130,4 +132,5 @@
 <script src="{{ url_for('static', filename='js/chat_markdown.js') }}"></script>
 <script src="{{ url_for('static', filename='js/chat.js') }}"></script>
 <script src="{{ url_for('static', filename='js/chat_files.js') }}"></script>
+<script src="{{ url_for('static', filename='js/chat_rate_limit.js') }}"></script>
 {% endblock %}

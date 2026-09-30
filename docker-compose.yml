@@ -18,12 +18,20 @@ services:
       APP_ENV: production
       SECRET_KEY: ${SECRET_KEY:-insecure-dev-secret-change-me}
       DATABASE_URL: postgresql://aica:aica_secret@db:5432/aica
+      RATE_LIMIT_BACKEND: ${RATE_LIMIT_BACKEND:-postgres}
+      RATE_LIMIT_REDIS_URL: ${RATE_LIMIT_REDIS_URL:-redis://redis:6379/0}
+      RATE_LIMIT_MESSAGES_PER_MINUTE: ${RATE_LIMIT_MESSAGES_PER_MINUTE:-20}
+      RATE_LIMIT_MESSAGES_PER_DAY: ${RATE_LIMIT_MESSAGES_PER_DAY:-200}
+      RATE_LIMIT_STREAMS_PER_MINUTE: ${RATE_LIMIT_STREAMS_PER_MINUTE:-10}
+      RATE_LIMIT_STREAMS_PER_DAY: ${RATE_LIMIT_STREAMS_PER_DAY:-100}
     ports:
       - "5000:5000"
     volumes:
       - ./migrations:/app/migrations:ro
     depends_on:
       db:
+        condition: service_healthy
+      redis:
         condition: service_healthy
     command: >
       sh -c "flask db upgrade &&
@@ -48,7 +56,22 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-aica} -d ${POSTGRES_DB:-aica}"]
+      test: ["CMD-SHBL", "pg_isready -U ${POSTGRES_USER:-aica} -d ${POSTGRES_DB:-aica}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    container_name: aica-redis
+    command: ["redis-server", "--appendonly", "yes", "--save", """]
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
       interval: 5s
       timeout: 5s
       retries: 10
@@ -56,3 +79,4 @@ services:
 
 volumes:
   postgres_data:
+  redis_data:

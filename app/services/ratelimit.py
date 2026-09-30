@@ -7,6 +7,11 @@ Limits are per-key (typically per client IP, or per user id for the endpoint
 limiter) over a configurable window. The limiter is process-local, which is
 acceptable for the default single-worker deployments and CI; multi-worker
 deployments should back it with a shared store (out of scope here).
+
+Chat endpoints additionally enforce a per-user daily cap via
+:func:`per_user_daily_limit`, which composes the sliding-window limiter with a
+long (24h) window so the daily budget is tracked persistently for the life of
+the process.
 """
 
 from __future__ import annotations
@@ -14,6 +19,7 @@ from __future__ import annotations
 import functools
 import threading
 import time
+from datetime import datetime, timezone
 
 from flask import current_app, jsonify
 from flask_login import current_user
@@ -104,6 +110,15 @@ def retry_after(key: str, *, window: int) -> int:
         return max(round(window - (time.monotonic() - timestamps[0])), 1)
 
 
+def _seconds_until_utc_midnight() -> int:
+    """Seconds remaining until the next UTC midnight (daily-cap reset)."""
+    now = datetime.now(timezone.utc)
+    tomorrow = (now + timedelta(days=1)).replace(
+        hour=0, minute=0, second=0, microsecond=0
+    )
+    return max(int((tomorrow - now).total_seconds()), 1)
+
+
 def clear(key: str) -> None:
     """Drop all recorded hits for a single ``key`` (e.g. after a success)."""
     with _LOCK:
@@ -143,6 +158,45 @@ def per_user_limit(bucket: str, *, max_config: str, window_config: str):
 
     return decorator
 
+
+def per_user_daily_limit(bucket: str, *, max_config: str):
+    """Decorator enforcing a per-user daily cap on a view.
+
+    The cap is read from ``max_config`` on the app config at request time. The
+    window is a rolling 24h period, and ``Retry-After`` reports the seconds
+    until the oldest hit in that window expires (i.e. when budget frees up).
+    """
+
+    def decorator(view):
+        @functools.wraps(view)
+        def wrapper(*args, **kwargs):
+            max_hits = current_app.config.get(max_config) or 0
+            window = 24 * 60 * 60
+            key = f"{bucket}:daily:user:{current_user.get_id()}"
+            allowed, retry_after = consume(key, max_hits=max_hits, window=window)
+            if not allowed:
+                response = jsonify(
+                    {
+                        "error": "Daily rate limit exceeded. Please retry later.",
+                        "kind": "rate_limited",
+                    }
+                )
+                response.status_code = 429
+                response.headers["Retry-After"] = str(retry_after)
+                return response
+            return view(*args, **kwargs)
+
+        return wrapper
+
+    return decorator
+
+
+def daily_remaining(bucket: str, *, max_config: str) -> int:
+    """Return the remaining daily budget for the current user (for UI hints)."""
+    max_hits = current_app.config.get(max_config) or 0
+    window = 24 * 60 * 60
+    key = f"{bucket}:daily:user:{current_user.get_id()}"
+    return max(max_hits - count(key, window=window), 0)
 
 def client_key(extra: str = "") -> str:
     """Build a per-client limiter key from the request's remote address."""

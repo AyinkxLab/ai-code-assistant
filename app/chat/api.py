@@ -1,4 +1,4 @@
-"""Chat JSON API (``/api`` namespace).
+"""Chat JSON API (```/api``` namespace).
 
 Machine-facing REST surface for the chat feature:
 
@@ -9,7 +9,7 @@ Machine-facing REST surface for the chat feature:
     DELETE /api/conversations/<id>                 delete (cascade)
 
 All routes require authentication and are owner-scoped. Errors use RFC 7807
-(``application/problem+json``) documents so API clients never receive HTML error
+(``application/problem+json`` ) documents so API clients never receive HTML error
 pages, and every route is rate-limited per user. The ``/chat`` UI routes share
 the same model/service layer.
 """
@@ -64,10 +64,12 @@ def _rate_limit(bucket: str):
         def wrapper(*args, **kwargs):
             max_hits = current_app.config.get("RATE_LIMIT_CHAT_MAX", 30)
             window = current_app.config.get("RATE_LIMIT_CHAT_WINDOW", 60)
+            daily_cap = current_app.config.get("RATE_LIMIT_CHAT_DAILY", 500)
             allowed, retry_after = ratelimit.consume(
                 f"api-chat:{bucket}:user:{current_user.get_id()}",
                 max_hits=max_hits,
                 window=window,
+                daily_cap=daily_cap,
             )
             if not allowed:
                 response = _problem(429, "Rate limit exceeded.", "Please retry later.")

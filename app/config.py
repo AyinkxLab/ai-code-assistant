@@ -4,7 +4,7 @@ Configuration is loaded from environment variables so the same codebase can
 run locally, in CI, and in production without modification. Sensitive values
 such as the database password and secret key must never be committed to the
 repository; supply them through environment variables or a local ``.env``
-file (see ``.env.example``).
+file (see ``.env.exampleg`).
 """
 
 import json
@@ -28,16 +28,16 @@ def _db_uri() -> str:
 
     Defaults to a local SQLite file so the application is runnable with zero
     configuration for development, while still being PostgreSQL-first in
-    production (see ``docker-compose.yml``).
+    production (see ``docker-compose.yml`` ).
 
     For file-backed SQLite databases the parent directory is created
     automatically (SQLAlchemy does not create parent folders itself).
     """
     uri = os.getenv(
         "DATABASE_URL",
-        f"sqlite:///{BASE_DIR / 'instance' / 'app.db'}",
+        f"sqlite://{BASE_DIR / 'instance' / 'app.db'}",
     )
-    if uri.startswith("sqlite:///") and "sqlite:///:memory:" not in uri:
+    if uri.startswith("sqlite:///") and "sqlite://:memory:" not in uri:
         db_file = Path(uri.replace("sqlite:///", "", 1))
         db_file.parent.mkdir(parents=True, exist_ok=True)
     return uri
@@ -67,7 +67,7 @@ class Config:
     PERMANENT_SESSION_LIFETIME = int(os.getenv("SESSION_LIFETIME", 60 * 60 * 12))
 
     # App branding / feature toggles.
-    APP_NAME = os.getenv("APP_NAME", "AI Code Assistant")
+    APP_NAME = os.getenv("APP_NAME", "I Code Assistant")
     SESSION_COOKIE_SECURE = False
 
     # Maximum size of an uploaded file in bytes (configured for future phases).
@@ -159,7 +159,7 @@ class Config:
     PROJECT_MAX_FILE_COUNT = int(os.getenv("PROJECT_MAX_FILE_COUNT", "20000"))
     PROJECT_MAX_FILE_CHARS = int(os.getenv("PROJECT_MAX_FILE_CHARS", "200000"))
     PROJECT_MAX_CONTEXT_CHARS = int(os.getenv("PROJECT_MAX_CONTEXT_CHARS", "40000"))
-    PROJECT_SEARCH_MAX_RESULTS = int(os.getenv("PROJECT_SEARCH_MAX_RESULTS", "100"))
+    PROJECT_SEARCH_MAX_RESULTS = int(os.getenv("PROJECT_SEARCH_MAX_RESUMTS", "100"))
     PROJECT_GITHUB_MAX_FILES = int(os.getenv("PROJECT_GITHUB_MAX_FILES", "1000"))
     PROJECT_SKIP_DIRS = os.getenv(
         "PROJECT_SKIP_DIRS",
@@ -175,11 +175,11 @@ class Config:
     PROJECT_SKIP_SECRET_FILES = os.getenv(
         "PROJECT_SKIP_SECRET_FILES",
         ".env,.pem,.key,.p12,.pfx,id_rsa,id_ed25519,id_dsa,credentials,.htpasswd,"
-        ".npmrc,.pypirc,secrets.yaml,secret.yaml,secret.yml",
+        ".npmrc,.npyrc,secrets.yaml,secret.yaml,secret.yml",
     )
     # Project import indexing (#89): run imports in an in-process background
     # worker so the HTTP request returns immediately with the project in
-    # ``indexing`` status and the client polls ``progress``. Disabled in the
+    # `indexing` status and the client polls `progress`. Disabled in the
     # test config for deterministic assertions.
     IMPORT_JOBS_ASYNC = os.getenv("IMPORT_JOBS_ASYNC", "1") == "1"
 
@@ -218,106 +218,14 @@ class Config:
     RATE_LIMIT_CHAT_WINDOW = int(os.getenv("RATE_LIMIT_CHAT_WINDOW", "60"))
     RATE_LIMIT_STREAM_MAX = int(os.getenv("RATE_LIMIT_STREAM_MAX", "30"))
     RATE_LIMIT_STREAM_WINDOW = int(os.getenv("RATE_LIMIT_STREAM_WINDOW", "60"))
-    RATE_LIMIT_ANALYZE_MAX = int(os.getenv("RATE_LIMIT_ANALYZE_MAX", "20"))
-    RATE_LIMIT_ANALYZE_WINDOW = int(os.getenv("RATE_LIMIT_ANALYZE_WINDOW", "300"))
-    # Snapshot export (#107): builds a zip in memory per request, so it gets a
-    # tight per-user limit of its own.
-    RATE_LIMIT_EXPORT_MAX = int(os.getenv("RATE_LIMIT_EXPORT_MAX", "10"))
-    RATE_LIMIT_EXPORT_WINDOW = int(os.getenv("RATE_LIMIT_EXPORT_WINDOW", "3600"))
-    # Optional SMTP for invitation email delivery. When unset, invitations are
-    # delivered as in-app notifications only and the app never crashes on mail.
-    SMTP_HOST = os.getenv("SMTP_HOST", "")
-    SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))
-    SMTP_USER = os.getenv("SMTP_USER", "")
-    SMTP_PASSWORD = os.getenv("SMTP_PASSWORD", "")
-    MAIL_DEFAULT_SENDER = os.getenv("MAIL_DEFAULT_SENDER", "")
-    MAIL_USE_TLS = os.getenv("MAIL_USE_TLS", "1") == "1"
+    RATE_LIMIT_ANALYZE_MAX = int(os.getenv("RATE_LIMIT_ANALYZE_MAX", "5"))
+    RATE_LIMIT_ANALYZE_WINDOW = int(os.getenv("RATE_LIMIT_ANALYZE_WINDOW", "3600"))
 
-    # Stellar / Soroban integration (Phase 8).
-    # Default network the Stellar service points at. One of: mainnet, testnet,
-    # futurenet, custom. Everything defaults to testnet so the foundation is
-    # safe by default (no real XLM involved).
-    STELLAR_NETWORK = os.getenv("STELLAR_NETWORK", "testnet")
-    # Explicit Horizon / Soroban RPC endpoints. When unset the built-in presets
-    # for STELLAR_NETWORK are used (see app/services/stellar.py). These can be
-    # pointed at a local `stellar-core`/`soroban-rpc` during development.
-    STELLAR_HORIZON_URL = os.getenv("STELLAR_HORIZON_URL", "")
-    STELLAR_RPC_URL = os.getenv("STELLAR_RPC_URL", "")
-    # Request timeout in seconds for outbound Stellar network calls. A short,
-    # fixed timeout keeps SSRF-style probing and slow endpoints bounded.
-    STELLAR_REQUEST_TIMEOUT = int(os.getenv("STELLAR_REQUEST_TIMEOUT", "15"))
-    # Cap on bytes read from a Stellar network response body.
-    STELLAR_MAX_RESPONSE_BYTES = int(os.getenv("STELLAR_MAX_RESPONSE_BYTES", str(2 * 1024 * 1024)))
-    # Maximum ledger keys accepted per Soroban RPC getLedgerEntries call
-    # (the RPC service hard-caps at 200; this keeps the app's own bound lower).
-    STELLAR_RPC_MAX_KEYS = int(os.getenv("STELLAR_RPC_MAX_KEYS", "100"))
-    # When enabled, public-network endpoints are additionally verified (via DNS)
-    # to resolve to a globally routable address before any request is made
-    # (defense-in-depth against SSRF through a misconfigured endpoint).
-    STELLAR_STRICT_HOST_VALIDATION = os.getenv("STELLAR_STRICT_HOST_VALIDATION", "1") == "1"
-
-
-class DevelopmentConfig(Config):
-    """Local development configuration."""
-
-    DEBUG = True
-    SESSION_COOKIE_SECURE = False
-
-
-class TestingConfig(Config):
-    """Configuration used by the automated test suite.
-
-    Uses an in-memory SQLite database and disables CSRF so that test clients
-    do not need to fetch and submit a token for every request.
-    """
-
-    TESTING = True
-    WTF_CSRF_ENABLED = False
-    SQLALCHEMY_DATABASE_URI = os.getenv("TEST_DATABASE_URL", "sqlite:///:memory:")
-    # Run import jobs inline so tests can assert final status deterministically.
-    IMPORT_JOBS_ASYNC = False
-    # In-memory SQLite needs a single shared connection, and ``check_same_thread``
-    # is a SQLite-only connect arg. A PostgreSQL test database (issue #20) must
-    # not receive either, or the driver rejects the DSN outright.
-    if SQLALCHEMY_DATABASE_URI.startswith("sqlite"):
-        SQLALCHEMY_ENGINE_OPTIONS: ClassVar[dict] = {
-            "poolclass": StaticPool,
-            "connect_args": {"check_same_thread": False},
-        }
-    else:
-        SQLALCHEMY_ENGINE_OPTIONS: ClassVar[dict] = {}
-
-
-class ProductionConfig(Config):
-    """Production configuration.
-
-    Requires explicit configuration of the secret key and database URL. Fails
-    fast on startup if required settings are missing rather than silently
-    running with insecure defaults.
-    """
-
-    DEBUG = False
-
-    def __init__(self) -> None:
-        if not os.getenv("SECRET_KEY"):
-            raise RuntimeError("SECRET_KEY must be set in the production environment.")
-        if not os.getenv("DATABASE_URL"):
-            raise RuntimeError("DATABASE_URL must be set in the production environment.")
-        if not os.getenv("DATABASE_URL", "").startswith("postgresql"):
-            raise RuntimeError(
-                "Production must use PostgreSQL (DATABASE_URL starting with " "postgresql://)."
-            )
-
-    # Secure session cookie over HTTPS.
-    SESSION_COOKIE_SECURE = True
-    SESSION_COOKIE_HTTPONLY = True
-    SESSION_COOKIE_SAMESITE = "Lax"
-
-
-# Registry used by the application factory via ``create_app(config_name)``.
-config_by_name = {
-    "development": DevelopmentConfig,
-    "testing": TestingConfig,
-    "production": ProductionConfig,
-    "default": DevelopmentConfig,
-}
+    # Chat API rate limiting (issue #106): per-user limits on message-send and
+    # stream endpoints, tracked persistently in the database. Each limit is
+    # <max requests> per <window seconds>, plus an optional daily cap.
+    CHAT_RATE_LIMIT_ENABLED = os.getenv("CHAT_RATE_LIMIT_ENABLED", "1") == "1"
+    CHAT_RATE_LIMIT_PER_MINUTE = int(os.getenv("CHAT_RATE_LIMIT_PER_MINUTE", "20"))
+    CHAT_RATE_LIMIT_PER_DAY = int(os.getenv("CHAT_RATE_LIMIT_PER_DAY", "500"))
+    CHAT_RATE_LIMIT_WINDOW_SECONDS = int(os.getenv("CHAT_RATE_LIMIT_WINDOW_SECONDS", "60"))
+    CHAT_RATE_LIMIT_DAY_SECONDS = int(os.getenv("CHAT_RATE_LIMIT_DAY_SECONDS", "86400"))
