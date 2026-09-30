@@ -63,7 +63,7 @@ LLMProviderError` blocks keep working.
 ## Adding a provider
 
 1. Create `app/services/providers/<name>.py` with a class that subclasses
-   `LLMProvider`, sets `name` and `models`, and implements `chat()/`stream()`.
+   `LLMProvider`, sets `name` and `models`, and implements `chat()`/`stream()`.
    Do all network work here and normalize every failure to a `ProviderError`.
 2. Register it in `app/services/providers/__init__.py`:
    `register_provider(YourProvider.name, YourProvider)`.
@@ -77,7 +77,7 @@ specific response shape outside their own module.
 
 ## Retries and backoff (issue #29)
 
-`get_retrying_provider()` returns the resolved provider wrapped in
+get_retrying_provider()` returns the resolved provider wrapped in
 `RetryingProvider`, which retries transient failures — network errors, HTTP 429
 and 5xx (`ProviderRateLimitError` / `ProviderUnavailableError`) — with
 exponential backoff plus jitter. Non-transient failures (`401`/`400`,

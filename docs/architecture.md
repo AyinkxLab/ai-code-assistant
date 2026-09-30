@@ -1,1 +1,209 @@
-IyBBcmNoaXRlY3R1cmUKClRoaXMgZG9jdW1lbnQgZGVzY3JpYmVzIHRoZSBoaWdoLWxldmVsIGFyY2hpdGVjdHVyZSBvZiB0aGUgQUkgQ29kZSBBc3Npc3RhbnQsCndpdGggYSBmb2N1cyBvbiBob3cgdGhlIFN0ZWxsYXIvU29yb2JhbiBkZXZlbG9wZXIgdG9vbGluZyBmaXRzIGluLgoKIyMgT3ZlcnZpZXcKClRoZSBBSSBDb2RlIEFzc2lzdGFudCBpcyBhIGRldmVsb3Blci1mb2N1c2VkIEFJIGNvZGUgaW50ZWxsaWdlbmNlIHBsYXRmb3JtLiBJdAppcyBhIEZsYXNrIGFwcGxpY2F0aW9uIChhcHBsaWNhdGlvbi1mYWN0b3J5IHBhdHRlcm4pIHdpdGggUG9zdGdyZVNRTApwZXJzaXN0ZW5jZSwgYSB2YW5pbGxhLUpTL0NTUyBmcm9udGVuZCwgYW5kIGEgc2VydmljZSBsYXllciB0aGF0IGtlZXBzIHRoZQphcHBsaWNhdGlvbiBsb2dpYyBzZXBhcmF0ZSBmcm9tIHRoZSB3ZWIgbGF5ZXIuCgpgYGAKQnJvd3NlciAodmFuaWxsYSBKUykKICAg4pSCICBKU09OIC8gU1NFCiAgIOKWvApGbGFzayBibHVlcHJpbnRzICAgICAgICAgICAgYXBwLzxibHVlcHJpbnQ+LwogICDigIIgICAgICAgICAgICAgICAgICAgICAgICBhdXRoLCBjaGF0LCBjb2xsYWJvcmF0aW9uLCBnaXRodWIsIG1haW4sIHBsdWdpbnMsCiAgIOKUgiAgICAgICAgICAgICAgICAgICAgICAgIHByb21wdHMsIHJldmlld3MsIHN0ZWxsYXIsIHRvb2xzLCB3b3Jrc3BhY2VzCiAgIOKWvApTZXJ2aWNlIGxheWVyICAgICAgICAgICAgICAgYXBwL3NlcnZpY2VzLwogICDigIIgICAgICAgICAgICAgICAgICAgICAgICBhbmFseXNpcywgZ2l0aHViLCBpbXBvcnRpbmcsIGxsbSwgcGVybWlzc2lvbnMsCiAgIOKUgiAgICAgICAgICAgICAgICAgICAgICAgIHJldmlld3MsIHNlYXJjaCwgc3RlbGxhciwgc29yb2Jhbl9ycGMsCiAgIOKUgiAgICAgICAgICAgICAgICAgICAgICAgIHN0ZWxsYXJfaW5zcGVjdGlvbiwgc3RlbGxhcl9kZXRlY3Rpb24sIOKApgrilIIKICAg4pa8ClBlcnNpc3RlbmNlICAgICAgICAgICAgICAgICBTUUFsY2hlbXkgbW9kZWxzIChhcHAvbW9kZWxzLykgKyBBbGVtYmljIChtaWdyYXRpb25zLykKYGBgCgojIyBMYXllcmluZwoKIyMjIDEuIFdlYiBsYXllciAoYmx1ZXByaW50cykKCkJsdWVwcmludHMgb3duIEhUVFAgY29uY2VybnM6IGF1dGhlbnRpY2F0aW9uIChAbG9naW5fcmVxdWlyZWQpLCBKU09OCnNlcmlhbGl6YXRpb24sIENTUkYsIGFuZCB0ZW1wbGF0ZSByZW5kZXJpbmcuIEF1dGhvcml6YXRpb24gZGVjaXNpb25zIGFyZQpkZWxlZ2F0ZWQgdG8gdGhlIHNlcnZpY2UgbGF5ZXIgKGFwcC9zZXJ2aWNlcy9wZXJtaXNzaW9ucy5weSk7IHJvdXRlcyBuZXZlcgpyZS1pbXBsZW1lbnQgc2VjdXJpdHkuIFRoZSBzdGVsbGFyIGJsdWVwcmludCBleHBvc2VzIHJlYWQtb25seSBTdGVsbGFyCmRldmVsb3BlciBBUElzIGFuZCB0aGUgL3N0ZWxsYXIgcGFnZS4gVGhlIGNoYXQgYmx1ZXByaW50IGV4cG9zZXMgdGhlCmNvbnZlcnNhdGlvbiBBUEkgYW5kIHRoZSBTU0Ugc3RyZWFtaW5nIGVuZHBvaW50IGRlc2NyaWJlZCBpbgpbZG9jcy9jaGF0Lm1kXShjaGF0Lm1kKS4KCiMjIyAyLiBTZXJ2aWNlIGxheWVyCgpTZXJ2aWNlcyBpbXBsZW1lbnQgdGhlIHJlYWwgbG9naWM6CgotICoqTExNKiogKGxsbS5weSkg4oCUIHByb3ZpZGVyLWFnbm9zdGljIGNvbXBsZXRpb25zIHdpdGggYW4gb2ZmbGluZSBtb2NrCiAgcHJvdmlkZXIgYnkgZGVmYXVsdC4gU2VlIFtkb2NzL2NoYXQubWRdKGNoYXQubWQpIGZvciB0aGUgcHJvdmlkZXIKICBhYnN0cmFjdGlvbiBhbmQgdGhlIHN0ZXAtYnktc3RlcCBndWlkZSB0byBhZGRpbmcgbmV3IHByb3ZpZGVycy4KLSAppR2l0SHViKiogKGdpdGh1Yi5weSkg4oCUIE9BdXRoLCByZXBvc2l0b3J5L2NvbW1pdC9pc3N1ZS9QUiBkYXRhLCB0eXBlZAogIGVycm9ycywgcmV0cmllcywgYm91bmRlZCBjb250ZXh0LgotICoqSW1wb3J0aW5nKiogKGltcG9ydGluZy5weSkg4oCUIHNhZmUgYXJjaGl2ZS9HaXRIdWIgaW1wb3J0IHdpdGgKICBwYXRoLXRyYXZlcnNhbCwgc2l6ZSwgYW5kIHNlY3JldC1maWxlIGd1YXJkcy4KLSAppRXhwb3J0aW5nKiogKGV4cG9ydGluZy5weSkg4oCUIHN0cmVhbXMgYSBwcm9qZWN0IHNuYXBzaG90IHppcCAoIzEwNykgYnVpbHQKICBlbnRpcmVseSBpbiBtZW1vcnkgZnJvbSBzdG9yZWQgcm93cyAobm8gZmlsZXN5c3RlbSk7IGJpbmFyeS9vdmVyc2l6ZWQgZmlsZXMKICBiZWNvbWUgY2xlYXJseSBtYXJrZWQgLlBMQUNFSE9MREVSLnR4dCBzdHVicyBhbmQgYSBKU09OIG1hbmlmZXN0IGRvY3VtZW50cwpICIHdoYXQgd2FzIGluY2x1ZGVkLgotICoqV29ya3NwYWNlcyAvIGFuYWx5c2lzKiogKHByb2plY3RfYW5hbHlzaXMucHkpIOKAlCBib3VuZGVkIGNvbnRleHQKICByZXRyaWV2YWwsIHByb2plY3QgY2hhdCwgYW5kIHByb2plY3QgYW5hbHlzZXMgKGluY2x1ZGluZyB0aGUgU3RlbGxhci1hd2FyZQogIGtpbmRzKS4KLSAppUNoYXQqKiAoY2hhdC5weSkg4oCUIGNvbnZlcnNhdGlvbiBwZXJzaXN0ZW5jZSwgbWVzc2FnZSBoaXN0b3J5LAogIHByb3ZpZGVyIHNlbGVjdGlvbiwgYW5kIHRoZSBTRVZFIHN0cmVhbSBnZW5lcmF0b3IgdXNlZCBieSB0aGUKICAvYXBpL2NoYXQvLi4uL3N0cmVhbSByb3V0ZS4gU2VlIFtkb2NzL2NoYXQubWRdKGNoYXQubWQpLgotICoqU3RlbGxhcioqIChzdGVsbGFyLnB5LCBzb3JvYmFuX3JwYy5weSwgc3RlbGxhcl9pbnNwZWN0aW9uLnB5LAogIHN0ZWxsYXJfZGV0ZWN0aW9uLnB5LCBzdGVsbGFyX3hkci5weSwgc3RlbGxhcl94ZHJfZGVjb2RlLnB5LAogIHN0ZWxsYXJfbW9jay5weSwgc3RlbGxhcl9maW5kaW5ncy5weSwgc29yb2Jhbl9zY2FmZm9sZC5weSkg4oCUIHNlZQogIFtTdGVsbGFyIGFyY2hpdGVjdHVyZV0oI3N0ZWxsYXItYXJjaGl0ZWN0dXJlKS4KLSAppUGx1Z2lucyoqIChwbHVnaW5zLnB5LCBjYXBhYmlsaXRpZXMucHksIGV2ZW50cy5weSwgcGx1Z2luX2F1ZGl0LnB5LAogIHBsdWdpbl9jb21wYXQucHksIHBsdWdpbl9jb25maWcucHksIHBsdWdpbl9lcnJvcnMucHksIHBsdWdpbl9vcHMucHkpCiAg4oCUIG1hbmlmZXN0IHBhcnNpbmcvdmFsaWRhdGlvbiwgZXhwbGljaXQgcGVyLXdvcmtzcGFjZSBjYXBhYmlsaXR5IGdyYW50cywKICBjYXBhYmlsaXR5LWNoZWNrZWQgZXZlbnQgZGlzcGF0Y2gsIGF1ZGl0ICsgYm91bmRlZCBlcnJvciByZXBvcnRpbmcsCiAgUEVQIDQ0MCBjb21wYXRpYmlsaXR5LCBwZXItd29ya3NwYWNlIGNvbmZpZ3VyYXRpb24sIGFuZCB0aGUgb3BlcmF0b3IgQ0xJCiAgbG9naWMuIFNlZSBbUGx1Z2luIGFyY2hpdGVjdHVyZV0oI3BsdWdpbi1hcmNoaXRlY3R1cmUpLgoKIyMjIDMuIFBlcnNpc3RlbmNlIGxheWVyCgpTUUFsY2hlbXkgbW9kZWxzIGluIGFwcC9tb2RlbHMvLCBzY2hlbWEgY2hhbmdlcyB2aWEgRmxhc2stTWlncmF0ZS9BbGVtYmljLgpNb2RlbCBjaGFuZ2VzIGFyZSBhdm9pZGVkIHVubGVzcyBnZW51aW5lbHkgcmVxdWlyZWQuCgojIyBTdGVsbGFyIGFyY2hpdGVjdHVyZQoKYGBgClN0ZWxsYXIgY29uZmlnIChlbnYpICAgICAgICAgICAgICAgIFNURUxMQVJfTkVUV09SSywgU1RFTExBUl9IT1JJWk9OX1VSTCwKICAg4pSCICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICBTVEVMTEFSX1JQQ19VUkwsIHRpbWVvdXRzLCBjYXBzCiAgIOKWvApyZXNvbHZlX25ldHdvcmtfY29uZmlnKCkgICAgICAgICAgICBhcHAvc2VydmljZXMvc3RlbGxhci5weQogICDimrYKK+0tLS0tLS0tLS0tLS0tLS0tLS0rICAgICArLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0rICAgICArLS0tLS0tLS0tLS0tLS0tLS0tLS0tLSsKfCBTdGVsbGFyU2VydmljZSAgICB8ICAgICB8IFNvcm9iYW5ScGNDbGllbnQgICAgIHwgICAgIHwgc3RlbGxhcl94ZHIgICAgICAgICAgfAp8IChIb3Jpem9uLCBwYXJzZWQpIHwgICAgIHwgKFN0ZWxsYXIgUlBDLCByZWFkKSAgfCAgICAgfCAoc3Rya2V5ICsgTGVkZ2VyS2V5KSB8CistLS0tLS0tLS0tLS0tLS0tLS0tKyAgICAgKy0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tKyAgICAgKy0tLS0tLS0tLS0tLS0tLS0tLS0tLS0rCiAgIOKUgiAgYWNjb3VudHMsIHR4cywgICAgICAgICAgICDigIIgIGhlYWx0aCwgbGVkZ2VycywgZW50cmllcywgZXZlbnRzLCDigKYKICAg4pSCICBsZWRnZXJzLCBhc3NldHMgICAgICAgICAgICDigIIgIGNvbnRyYWN0L2NvZGUgaW5zcGVjdGlvbgogICDimrYgICAgICAgICAgICAgICAgICAgICAgICAgICAg4pa8CistLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0rCnwgc3RlbGxhcl9pbnNwZWN0aW9uICDihpIgIGluc3BlY3RfYWNjb3VudCAvIGluc3BlY3RfY29udHJhY3QgLyAgIHwKfCAgICAgICAgICAgICAgICAgICAgICAgaW5zcGVjdF9sZWRnZXJfZW50cnkgLyBuZXR3b3JrX3N0YXR1cyAgICB8CistLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0rCiAgIOKUggogICDilJzilIDilrYgYXBwL3N0ZWxsYXIvICAocGFnZSArIHJlYWQtb25seSBBUElzKQogICDilJzilIDilrYgcHJvamVjdCBleHBsb3JlciAiU3RlbGxhciIgdGFiIChwZXItcHJvamVjdCBkZXRlY3Rpb24pCiAgIOKUnOKUgOKWtiBmbGFzayBzdGVsbGFyIOKApiAgKENMSSkKICAg4pSU4pSA4pa2IEFJIGFuYWx5c2lzIChwcm9qZWN0X2FuYWx5c2lzLnN0ZWxsYXIgLyBzdGVsbGFyX3NlY3VyaXR5KQpgYGAKClRoZSBTdGVsbGFyIGxheWVyIGlzICoqcmVhZC1vbmx5KiogYW5kICoqY29uZmlndXJhdGlvbi1kcml2ZW4qKjoKCi0gRW5kcG9pbnQgVVJMcyBjb21lIG9ubHkgZnJvbSBlbnZpcm9ubWVudCBjb25maWd1cmF0aW9uICh2YWxpZGF0ZWQgcHJlc2V0cyBvcgogIG9wZXJhdG9yIG92ZXJyaWRlcyksIG5ldmVyIGZyb20gdXNlcnMgb3IgaW1wb3J0ZWQgcHJvamVjdHMuCi0gUHVibGljIG5ldHdvcmtzIHJlcXVpcmUgaHR0cHMgYW5kIGFyZSBjaGVja2VkIHRvIHJlc29sdmUgdG8gcHVibGljCiAgYWRkcmVzc2VzOyBjdXN0b20gbmV0d29ya3MgYXJlIGxvb3BiYWNrLW9ubHkuCi0gUmVkaXJlY3RzIGFyZSByZWZ1c2VkLCByZXNwb25zZSBib2RpZXMgYXJlIHNpemUtY2FwcGVkLCBhbmQgZXZlcnkgcmVxdWVzdAogIGhhcyBhIHRpbWVvdXQuCi0gTm90aGluZyBzaWducywgc2ltdWxhdGVzLCBvciBzdWJtaXRzIHRyYW5zYWN0aW9ucywgYW5kIG5vIHNlY3JldHMva2V5cyBhcmUKICBldmVyIHN0b3JlZCBvciBoYW5kbGVkLgoKIyMjIFN0ZWxsYXIvU29yb2JhbiBwcm9qZWN0IGRldGVjdGlvbgoKc3RlbGxhcl9kZXRlY3Rpb24ucHkgY2xhc3NpZmllcyBpbXBvcnRlZCBwcm9qZWN0cyBmcm9tIGZpbGUtbGV2ZWwgZXZpZGVuY2UKb25seSAobmV2ZXIgbmV0d29yayBjYWxscyk6CgotIGxpa2VseSDigJQgU29yb2JhbiBjcmF0ZSBpbiBDYXJnby50b21sLCBvciBSdXN0IGNvbnRyYWN0IGF0dHJpYnV0ZXMgLwogIHNvcm9iYW5fc2RrOjogaW1wb3J0cy4KLSBwb3NzaWJsZSDigJQgU3RlbGxhciBTREsgZGVwZW5kZW5jeSwgU3RlbGxhci9Tb3JvYmFuIGNvbmZpZyBmaWxlcywKICAuc29yb2JhbiBkaXJlY3RvcmllcywgY29udHJhY3RzLyBsYXlvdXQsIG9yIFN0ZWxsYXIvU29yb2JhbiBDTEkgdG9vbGluZy4KLSBub25lIOKAlCBvdGhlcndpc2UgKGEgcGxhaW4gUnVzdCBjcmF0ZSBpcyBuZXZlciBjbGFzc2lmaWVkIGFzIFNvcm9iYW4pLgoKZGV0ZWN0X3N0ZWxsYXJfbmV0d29yayBhZGRpdGlvbmFsbHkgZXh0cmFjdHMgYSBuZXR3b3JrIGhpbnQKKHRlc3RuZXQvbWFpbm5ldC9mdXR1cmVuZXQpIGZyb20gY29uZmlnIHBhc3NwaHJhc2VzIGFuZCBmaWxlIG5hbWVzLCBuZXZlciBmcm9tCmxpdmUgZGF0YS4KCiMjIyBTdGVsbGFyLWF3YXJlIEFJIGFuYWx5c2lzCgpwcm9qZWN0X2FuYWx5c2lzLnB5IGFkZHMgc3RlbGxhciBhbmQgc3RlbGxhcl9zZWN1cml0eSBhbmFseXNpcyBraW5kcyB0aGF0OgoKLSBSZXVzZSB0aGUgUGhhc2UgNyBjb250ZW50LWFjY2VzcyBnYXRlIChvd25lci1vbmx5LCBmYWlscyBjbG9zZWQpLgotIFJlcG9ydCBob25lc3RseSB3aGVuIGEgcHJvamVjdCBpcyBub3QgU3RlbGxhciAobm8gZmFicmljYXRlZCBjbGFpbXMpLgotIEdyb3VuZCBldmVyeSBjbGFpbSBpbiB0aGUgaW5kZXhlZCBmaWxlcywgbWFyayBbQ09ORklSTUVEXSB2cyBbU1VHR0VTVElPTl0sCiAgYW5kIG5ldmVyIGNsYWltIGxpdmUgZGF0YSB0aGUgUlBDIGNvdWxkIG5vdCBwcm92aWRlLgoKU3VwcG9ydGluZyByZWFkLW9ubHkgbW9kdWxlczoKCi0gc3RlbGxhcl94ZHJfZGVjb2RlLnB5IOKAlCBib3VuZGVkLCBmaXh0dXJlLXBpbm5lZCBkZWNvZGluZyBvZiBMZWRnZXJLZXksCiAgTGVkZ2VyRW50cnlEYXRhLCBTQ1ZhbHMsIGFuZCB0cmFuc2FjdGlvbiBlbnZlbG9wZXMgKFYxL1YwL2ZlZS1idW1wKSB3aXRoCiAgY29tbW9uIG9wZXJhdGlvbnM7IHVuc3VwcG9ydGVkL21hbGZvcm1lZCBYRFIgaXMgcmVwb3J0ZWQgZXhwbGljaXRseS4KLSBzdGVsbGFyX21vY2sucHkg4oCUIGEgZGV0ZXJtaW5pc3RpYyBvZmZsaW5lIEhvcml6b24gKyBTdGVsbGFyIFJQQyBzZXJ2ZXIgdXNlZAogIGJ5IHRlc3RzIGFuZCBsb2NhbCBkZXZlbG9wbWVudCAobm8gZXh0ZXJuYWwgbmV0d29yaykuCi0gc3RlbGxhcl9maW5kaW5ncy5weSDigJQgZGVmZW5zaXZlIHBhcnNpbmcgKyBwZXItcHJvamVjdCBwZXJzaXN0ZW5jZSBvZgogIHN0ZWxsYXJfc2VjdXJpdHkgZmluZGluZ3MgKG93bmVyLXNjb3BlZCByZWFkcykuCi0gc29yb2Jhbl9zY2FmZm9sZC5weSDigJQgZGV0ZXJtaW5pc3RpYyBTb3JvYmFuIGNvbnRyYWN0IHNjYWZmb2xkIGdlbmVyYXRpb24KICAobm8gY2FyZ28vbmV0d29yazsgaW1wb3J0YWJsZSBpbnRvIGEgd29ya3NwYWNlKS4KCiMjIFBsdWdpbiBhcmNoaXRlY3R1cmUKClBsdWdpbnMgYXJlICoq d29ya3NwYWNlLXNjb3BlZCoqIGF0IHJ1bnRpbWUgYnV0IGdsb2JhbGx5IGRlY2xhcmVkOgoKLSAgQSB2YWxpZGF0ZWQgbWFuaWZlc3QuanNvbiAocGx1Z2lucy5weSkgZGVzY3JpYmVzIGEgcGx1Z2luOyB0aGUgbWFuYWdlbWVudAogICBBUEkvQ0xJIHBlcnNpc3QgaXQgYXMgYSBQbHVnaW4gcm93IGFuZCBwZXItd29ya3NwYWNlIFBsdWdpbkluc3RhbGxhdGlvbgogICByb3dzIChlbmFibGVkIHN0YXRlICsgY29uZmlnKS4gSW5zdGFsbC9lbmFibGUvZGlzYWJsZS91bmluc3RhbGwgbmV2ZXIgbG9hZAogICBvciBleGVjdXRlIHBsdWdpbiBjb2RlIGFuZCBuZXZlciBncmFudCBjYXBhYmlsaXRpZXMgaW1wbGljaXRseS4KLSAgQ2FwYWJpbGl0aWVzIGFyZSBncmFudGVkIGV4cGxpY2l0bHkgcGVyIHdvcmtzcGFjZSAoQ2FwYWJpbGl0eVN0b3JlIOKGkgogICBDYXBhYmlsaXR5R3JhbnQpIGFuZCByZXN0cmljdGVkIHRvIG1hbmlmZXN0LWRlY2xhcmVkIGNhcGFiaWxpdGllcy4KLSAgZXZlbnRzLnB5IGRpc3BhdGNoZXMgc3VwcG9ydGVkIGV2ZW50czsgYmVmb3JlIGEgcGx1Z2luIGhhbmRsZXIgcnVucywgaXQKICAgdmVyaWZpZXMgdGhlIHBsdWdpbiBpcyBpbnN0YWxsZWQrZW5hYmxlZCBpbiB0aGUgZXZlbnQncyB3b3Jrc3BhY2UsIHRoZQogICBlbWl0dGluZyB1c2VyIGlzIGF1dGhvcml6ZWQsIHRoZSBldmVudCdzIHByb2plY3Qvd29ya3NwYWNlIGNvbnRleHQgaXMKICAgY29uc2lzdGVudCwgYW5kIHRoZSBwbHVnaW4gaG9sZHMgdGhlIGV2ZW50J3MgbWFwcGVkIGNhcGFiaWxpdHkKICAgKEVWRU5UX0NBUEFCSUxJVFlfTUFQKS4gSGFuZGxlciBmYWlsdXJlcyBhcmUgaXNvbGF0ZWQuCi0gIFNlY3VyaXR5LXJlbGV2YW50IGFjdGlvbnMgYXBwZW5kIHRvIHRoZSBvd25lci12aXNpYmxlIGF1ZGl0IHRyYWlsCiAgIChwbHVnaW5fYXVkaXQucHkg4oaSIEFjdGl2aXR5RXZlbnQpOyBoYW5kbGVyL2xpZmVjeWNsZSBmYWlsdXJlcyBhcmUKICAgcmVjb3JkZWQgYXMgYm91bmRlZCBQbHVnaW5FcnJvclJlcG9ydCByb3dzIChwbHVnaW5fZXJyb3JzLnB5KS4KLSAgT3BlcmF0b3Igc3VyZmFjZXM6IHRoZSB3b3Jrc3BhY2UgbWFuYWdlbWVudCBBUEkgKGFwcC9wbHVnaW5zL3JvdXRlcy5weSksCiAgIHRoZSBwbHVnaW4gVUkgcGFnZSwgYW5kIHRoZSBmbGFzayBwbHVnaW5zIOKApiBDTEkgKHBsdWdpbnNfY2xpLnB5ICsKICAgcGx1Z2luX29wcy5weSksIHdoaWNoIHN1cHBvcnRzIC0tanNvbiwgZGlzdGluY3QgZXhpdCBjb2RlcywgYW5kIGxvY2FsLW9ubHkKICAgaW5zdGFsbHMuIFNlZSBbZG9jcy9wbHVnaW5zLm1kXShwbHVnaW5zLm1kKS4KCiMjIENoYXQgYXJjaGl0ZWN0dXJlCgpUaGUgY2hhdCBmZWF0dXJlIGxldHMgYSB1c2VyIGhvbGQgYSBjb252ZXJzYXRpb24gd2l0aCBhIGNvbmZpZ3VyZWQgTExNCnByb3ZpZGVyLiBJdCBpcyBpbXBsZW1lbnRlZCBhY3Jvc3MgdGhyZWUgbGF5ZXJzOgoKYGBgCkJyb3dzZXIgKGNoYXQgVUkpCiAgIOKUgiAgSlNPTiAoY3JlYXRlL2xpc3QgbWVzc2FnZXMpICsgU1NFICgvc3RyZWFtKQogICDilr4KYXBwL2NoYXQvcm91dGVzLnB5CiAgIOKUgiAgQVBJIGVuZHBvaW50cyArIFNTRSBnZW5lcmF0b3IKICAg4pa8CmFwcC9zZXJ2aWNlcy9jaGF0LnB5CiAgIOKUgiAgY29udmVyc2F0aW9uL21lc3NhZ2UgcGVyc2lzdGVuY2UsIGhpc3RvcnkgYXNzZW1ibHkKICAg4pa8CmFwcC9zZXJ2aWNlcy9sbG0ucHkKICAg4pSCICBwcm92aWRlciByZWdpc3RyeSArIGNvbXBsZXRpb24gY2FsbAogICDilr4KUHJvdmlkZXJzOiBtb2NrIChkZWZhdWx0KSwgT3BlbkFJLCBBbnRocm9waWMsIOKApiAoZW52LWNvbmZpZ3VyZWQpCmBgYAoKLSBUaGUgKipjaGF0IGJsdWVwcmludCoqIG93bnMgSFRUUCBjb25jZXJucyAobG9naW4gcmVxdWlyZW1lbnQsIENTUkYsIEpTT04KICBzZXJpYWxpemF0aW9uLCBTRVZFIHJlc3BvbnNlIGhlYWRlcnMpIGFuZCBkZWxlZ2F0ZXMgYWxsIGxvZ2ljIHRvIHRoZQogIHNlcnZpY2UgbGF5ZXIuCi0gVGhlICoqY2hhdCBzZXJ2aWNlKiogcGVyc2lzdHMgY29udmVyc2F0aW9ucyBhbmQgbWVzc2FnZXMgKFNRTEFsY2hlbXkKICBtb2RlbHMpIGFuZCBidWlsZHMgdGhlIGJvdW5kZWQgaGlzdG9yeSBzZW50IHRvIHRoZSBwcm92aWRlci4KLSBUaGUgKipMTHkgc2VydmljZSoqIGV4cG9zZXMgYSBwcm92aWRlci1hZ25vc3RpYyBpbnRlcmZhY2UuIFByb3ZpZGVycyBhcmUKICBzZWxlY3RlZCBieSBuYW1lIGFuZCBjb25maWd1cmVkIGZyb20gZW52aXJvbm1lbnQgdmFyaWFibGVzOyB0aGUgbW9jawogIHByb3ZpZGVyIGlzIGFsd2F5cyBhdmFpbGFibGUgZm9yIG9mZmxpbmUgZGV2ZWxvcG1lbnQgYW5kIHRlc3RzLgoKU2VlIFtkb2NzL2NoYXQubWRdKGNoYXQubWQpIGZvciB0aGUgZnVsbCBBUEkgcmVmZXJlbmNlLCB0aGUgU1NFIGV2ZW50CnNjaGVtYSwgdGhlIHByb3ZpZGVyIG9uYm9hcmRpbmcgZ3VpZGUsIGFuZCB0aGUgZGV2ZWxvcGVyIHdvcmtmbG93LgoKIyMgU2VjdXJpdHkgbW9kZWwKClNlZSBbZG9jcy9zZWN1cml0eS5tZF0oc2VjdXJpdHkubWQpIGZvciB0aGUgZnVsbCB0aHJlYXQgcmV2aWV3LiBIaWdobGlnaHRzOgoKLSBGYWlsLWNsb3NlZCBhdXRob3JpemF0aW9uIChhc3NlcnRfY29udGVudF9hY2Nlc3MsIHdvcmtzcGFjZSBzY29waW5nKS4KLSBVbnRydXN0ZWQgcmVwb3NpdG9yeSBjb250ZW50IGlzIHRyZWF0ZWQgYXMgZGF0YSwgbmV2ZXIgaW5zdHJ1Y3Rpb25zCiAgKHByb21wdC1pbmplY3Rpb24gcmVzaXN0YW5jZSkuCi0gU1NSRi1ib3VuZGVkIG91dGJvdW5kIG5ldHdvcmtpbmcgKHNjaGVtZSwgaG9zdCwgYmFzZS1VUkwsIHJlZGlyZWN0LAogIHNpemUsIGFuZCBETlMtbGV2ZWwgZ3VhcmRzKS4KLSBTZWNyZXRzIGFyZSBuZXZlciBzdG9yZWQgb3IgbG9nZ2VkOyBzZWNyZXQgZmlsZXMgYXJlIHNraXBwZWQgb24gaW1wb3J0LgotIFRoZSBTdGVsbGFyL1JQQyBzdXJmYWNlIGlzIHJlYWQtb25seSBieSBjb25zdHJ1Y3Rpb24uCi0gQ2hhdCBwcm92aWRlciBjcmVkZW50aWFscyBhcmUgcmVhZCBmcm9tIHRoZSBlbnZpcm9ubWVudCBvbmx5IGFuZCBhcmUKICBuZXZlciByZXR1cm5lZCB0byB0aGUgY2xpZW50IG9yIHBlcnNpc3RlZCBpbiB0aGUgZGF0YWJhc2UuCgojIyBUZXN0aW5nCgotIHRlc3RzLyBpcyBhIHB5dGVzdCBzdWl0ZSBydW5uaW5nIGFnYWluc3QgYW4gaW4tbWVtb3J5IFNRTGl0ZSBkYXRhYmFzZS4KLSBOZXR3b3JrIGJlaGF2aW9yIGlzIHRlc3RlZCB3aXRoIGRldGVybWluaXN0aWMgZml4dHVyZXMgYW5kIG1vY2tlZCB0cmFuc3BvcnQKICAobm8gcmVhbCBuZXR3b3JrIGFjY2Vzcyk7IHRoZSBlbmNvZGVycyBhcmUgdmVyaWZpZWQgYWdhaW5zdCBhdXRob3JpdGF0aXZlCiAgU3RlbGxhciBmaXh0dXJlcy4KLSBUaGUgY2hhdCBmZWF0dXJlIGlzIGV4ZXJjaXNlZCB0aHJvdWdoIHRoZSBtb2NrIExMTSBwcm92aWRlciwgc28gbm8gQVBJCiAga2V5IGlzIG5lZWRlZCB0byBydW4gdGhlIHN1aXRlLgotIHJ1ZmYgY2hlY2sgLiBhbmQgYmxhY2sgLS1jaGVjayAuIG11c3Qgc3RheSBncmVlbiAoQ0kgZW5mb3JjZXMgdGhpcykuCi0gVGhlIEpTIHNpZGUgb2YgdGhlIGNoYXQgVUkgKGluY2x1ZGluZyB0aGUgU1NFIGNvbnN1bWVyKSBpcyBjb3ZlcmVkIGJ5CiAgdGhlIEpTIHJ1bm5lciBkZXNjcmliZWQgaW4gW2RvY3MvY2hhdC5tZF0oY2hhdC5tZCkuCg==
+# Architecture
+
+This document describes the high-level architecture of the AI Code Assistant,
+with a focus on how the Stellar/Soroban developer tooling fits in.
+
+For the chat feature (providers, API reference, SSE event schema, and how to
+add a new LLM provider) see [docs/chat.md](chat.md). For the day-to-day
+developer workflow (migrations, tests, JS test runner) see
+[docs/development.md](development.md).
+
+## Overview
+
+The AI Code Assistant is a developer-focused AI code intelligence platform. It
+is a Flask application (application-factory pattern) with PostgreSQL
+persistence, a vanilla-JS/CSS frontend, and a service layer that keeps the
+application logic separate from the web layer.
+
+```
+Browser (vanilla JS)
+   │  JSON / SSE
+   ▼
+Flask blueprints            app/<blueprint>/
+   │                        auth, chat, collaboration, github, main, plugins,
+   │                        prompts, reviews, stellar, tools, workspaces
+   ▼
+Service layer               app/services/
+   │                        analysis, github, importing, llm, permissions,
+   │                        reviews, search, stellar, soroban_rpc,
+   │                        stellar_inspection, stellar_detection, …
+   ▼
+Persistence                 SQLAlchemy models (app/models/) + Alembic (migrations/)
+```
+
+## Layering
+
+### 1. Web layer (blueprints)
+
+Blueprints own HTTP concerns: authentication (`@login_required`), JSON
+serialization, CSRF, and template rendering. Authorization decisions are
+delegated to the service layer (`app/services/permissions.py`); routes never
+re-implement security. The `stellar` blueprint exposes read-only Stellar
+developer APIs and the `/stellar` page.
+
+The `chat` blueprint (`app/chat/`) exposes the chat endpoints: creating and
+listing conversations, posting messages, and streaming assistant replies over
+Server-Sent Events. It delegates provider selection and completion to the LLM
+service and authorization to the permissions service. See
+[docs/chat.md](chat.md) for the endpoint and SSE reference.
+
+### 2. Service layer
+
+Services implement the real logic:
+
+- **LLM** (`llm.py`) — provider-agnostic completions with an offline mock
+  provider by default.
+
+  Providers are registered behind a common abstraction: each provider
+  implements the same completion interface and is selected by configuration
+  (provider name + API key from environment). Adding a provider means adding a
+  module that satisfies the interface and registering it — no changes to the
+  chat blueprint are required. The step-by-step guide lives in
+  [docs/chat.md](chat.md#adding-a-new-llm-provider).
+- **GitHub** (`github.py`) — OAuth, repository/commit/issue/PR data, typed
+  errors, retries, bounded context.
+- **Importing** (`importing.py`) — safe archive/GitHub import with
+  path-traversal, size, and secret-file guards.
+- **Exporting** (`exporting.py`) — streams a project snapshot zip (#107) built
+  entirely in memory from stored rows (no filesystem); binary/oversized files
+  become clearly marked `.PLACEHOLDER.txt` stubs and a JSON manifest documents
+  what was included.
+- **Workspaces / analysis** (`project_analysis.py`) — bounded context
+  retrieval, project chat, and project analyses (including the Stellar-aware
+  kinds).
+- **Stellar** (`stellar.py`, `soroban_rpc.py`, `stellar_inspection.py`,
+  `stellar_detection.py`, `stellar_xdr.py`, `stellar_xdr_decode.py`,
+  `stellar_mock.py`, `stellar_findings.py`, `soroban_scaffold.py`) — see
+  [Stellar architecture](#stellar-architecture).
+- **Plugins** (`plugins.py`, `capabilities.py`, `events.py`, `plugin_audit.py`,
+  `plugin_compat.py`, `plugin_config.py`, `plugin_errors.py`, `plugin_ops.py`)
+  — manifest parsing/validation, explicit per-workspace capability grants,
+  capability-checked event dispatch, audit + bounded error reporting,
+  PEP 440 compatibility, per-workspace configuration, and the operator CLI
+  logic. See [Plugin architecture](#plugin-architecture).
+
+### 3. Persistence layer
+
+SQLAlchemy models in `app/models/`, schema changes via Flask-Migrate/Alembic.
+Model changes are avoided unless genuinely required.
+
+## Stellar architecture
+
+```
+Stellar config (env)                STELLAR_NETWORK, STELLAR_HORIZON_URL,
+   │                                STELLAR_RPC_URL, timeouts, caps
+   ▼
+resolve_network_config()            app/services/stellar.py
+   ▼
++-------------------+     +----------------------+     +----------------------+
+| StellarService    |     | SorobanRpcClient     |     | stellar_xdr          |
+| (Horizon, parsed) |     | (Stellar RPC, read)  |     | (strkey + LedgerKey) |
++-------------------+     +----------------------+     +----------------------+
+   │  accounts, txs,            │  health, ledgers, entries, events, …
+   │  ledgers, assets           │  contract/code inspection
+   ▼                            ▼
++--------------------------------------------------------------+
+| stellar_inspection  →  inspect_account / inspect_contract /   |
+|                       inspect_ledger_entry / network_status    |
++--------------------------------------------------------------+
+   │
+   ├──▶ app/stellar/  (page + read-only APIs)
+   ├──▶ project explorer "Stellar" tab (per-project detection)
+   ├──▶ flask stellar …  (CLI)
+   └──▶ AI analysis (project_analysis.stellar / stellar_security)
+```
+
+The Stellar layer is **read-only** and **configuration-driven**:
+
+- Endpoint URLs come only from environment configuration (validated presets or
+  operator overrides), never from users or imported projects.
+- Public networks require https and are checked to resolve to public
+  addresses; custom networks are loopback-only.
+- Redirects are refused, response bodies are size-capped, and every request
+  has a timeout.
+- Nothing signs, simulates, or submits transactions, and no secrets/keys are
+  ever stored or handled.
+
+### Stellar/Soroban project detection
+
+`stellar_detection.py` classifies imported projects from file-level evidence
+only (never network calls):
+
+- `likely` — Soroban crate in `Cargo.toml`, or Rust contract attributes /
+  `soroban_sdk::` imports.
+- `possible` — Stellar SDK dependency, Stellar/Soroban config files,
+  `.soroban` directories, `contracts/` layout, or Stellar/Soroban CLI tooling.
+- `none` — otherwise (a plain Rust crate is never classified as Soroban).
+
+`detect_stellar_network` additionally extracts a network hint
+(testnet/mainnet/futurenet) from config passphrases and file names, never from
+live data.
+
+### Stellar-aware AI analysis
+
+`project_analysis.py` adds `stellar` and `stellar_security` analysis kinds that:
+
+- Reuse the Phase 7 content-access gate (owner-only, fails closed).
+- Report honestly when a project is not Stellar (no fabricated claims).
+- Ground every claim in the indexed files, mark `[CONFIRMED]` vs `[SUGGESTION]`,
+  and never claim live data the RPC could not provide.
+
+Supporting read-only modules:
+
+- `stellar_xdr_decode.py` — bounded, fixture-pinned decoding of `LedgerKey`,
+  `LedgerEntryData`, `SCVal`s, and transaction envelopes (V1/V0/fee-bump) with
+  common operations; unsupported/malformed XDR is reported explicitly.
+- `stellar_mock.py` — a deterministic offline Horizon + Stellar RPC server used
+  by tests and local development (no external network).
+- `stellar_findings.py` — defensive parsing + per-project persistence of
+  `stellar_security` findings (owner-scoped reads).
+- `soroban_scaffold.py` — deterministic Soroban contract scaffold generation
+  (no cargo/network; importable into a workspace).
+
+## Plugin architecture
+
+Plugins are **workspace-scoped** at runtime but globally declared:
+
+- A validated `manifest.json` (`plugins.py`) describes a plugin; the management
+  API/CLI persist it as a `Plugin` row and per-workspace `PluginInstallation`
+  rows (enabled state + `config`). Install/enable/disable/uninstall never load
+  or execute plugin code and never grant capabilities implicitly.
+- Capabilities are granted explicitly per workspace (`CapabilityStore` →
+  `CapabilityGrant`) and restricted to manifest-declared capabilities.
+- `events.py` dispatches supported events; before a plugin handler runs, it
+  verifies the plugin is installed+enabled in the event's workspace, the
+  emitting user is authorized, the event's project/workspace context is
+  consistent, and the plugin holds the event's mapped capability
+  (`EVENT_CAPABILITY_MAP`). Handler failures are isolated.
+- Security-relevant actions append to the owner-visible audit trail
+  (`plugin_audit.py` → `ActivityEvent`); handler/lifecycle failures are
+  recorded as bounded `PluginErrorReport` rows (`plugin_errors.py`).
+- Operator surfaces: the workspace management API (`app/plugins/routes.py`),
+  the plugin UI page, and the `flask plugins …` CLI (`plugins_cli.py` +
+  `plugin_ops.py`), which supports `--json`, distinct exit codes, and local-only
+  installs. See [docs/plugins.md](plugins.md).
+
+## Security model
+
+See [docs/security.md](security.md) for the full threat review. Highlights:
+
+- Fail-closed authorization (`assert_content_access`, workspace scoping).
+- Untrusted repository content is treated as data, never instructions
+  (prompt-injection resistance).
+- SSRF-bounded outbound networking (scheme, host, base-URL, redirect,
+  size, and DNS-level guards).
+- Secrets are never stored or logged; secret files are skipped on import.
+- The Stellar/RPC surface is read-only by construction.
+
+## Testing
+
+- `tests/` is a pytest suite running against an in-memory SQLite database.
+- Network behavior is tested with deterministic fixtures and mocked transport
+  (no real network access); the encoders are verified against authoritative
+  Stellar fixtures.
+- `ruff check .` and `black --check .` must stay green (CI enforces this).
+
+The developer workflow — running Alembic migrations, the pytest suite, and the
+JavaScript test runner — is documented in
+[docs/development.md](development.md). The roadmap reflects Phase 2 (chat)
+as complete in [docs/roadmap.md](roadmap.md).
