@@ -1,3 +1,4 @@
+
 # Architecture
 
 This document describes the high-level architecture of the AI Code Assistant,
@@ -184,3 +185,87 @@ See [docs/security.md](security.md) for the full threat review. Highlights:
   (no real network access); the encoders are verified against authoritative
   Stellar fixtures.
 - `ruff check .` and `black --check .` must stay green (CI enforces this).
+
+## GitHub integration
+
+The GitHub integration lets users connect a GitHub account, browse
+repositories, and import repository content into a workspace. It spans three
+layers: the OAuth/HTTP surface (`app/github/routes.py`), the API client and
+OAuth logic (`app/services/github.py`), and encrypted token storage
+(`app/services/crypto.py`).
+
+### Setup
+
+The setup steps mirror the README's GitHub section. In summary:
+
+1. Create a GitHub OAuth App (Settings → Developer settings → OAuth Apps) and
+   set the **Authorization callback URL** to
+   `<APP_BASE_URL>/github/callback`.
+2. Copy the **Client ID** and generate a **Client secret**.
+3. Configure the environment (see below) and restart the app.
+4. Sign in, open the GitHub page, and click **Connect GitHub** to complete the
+   OAuth handshake.
+
+### Environment variables
+
+| Variable | Purpose |
+| --- | --- |
+| `GITHUB_CLIENT_ID` | OAuth App client ID. |
+| `GITHUB_CLIENT_SECRET` | OAuth App client secret. |
+| `GITHUB_OAUTH_SCOPES` | Space-separated scopes to request (defaults to the minimum needed, e.g. `read:user repo`). |
+| `GITHUB_TOKEN_ENCRYPTION_KEY` | Key material used by `crypto.py` to encrypt stored access tokens. |
+| `GITHUB_API_BASE_URL` | API base URL; overridable for GitHub Enterprise/testing. |
+| `GITHUB_API_TIMEOUT` | Per-request timeout in seconds. |
+
+If the OAuth variables are unset, the GitHub integration is disabled and the
+GitHub page reports that it is not configured rather than failing opaquely.
+
+### Encrypted-token storage design
+
+Access tokens are never stored in plaintext:
+
+- `app/services/crypto.py` provides authenticated symmetric encryption
+  (encrypt/decrypt) keyed from `GITHUB_TOKEN_ENCRYPTION_KEY`.
+- `app/services/github.py` encrypts the token at rest and only decrypts it
+  in-memory, immediately before an outbound API call.
+- Tokens are scoped to the owning user and are never returned to the browser,
+  logged, or included in error messages.
+- A revoked or undecryptable token is treated as "not connected" and the user
+  is prompted to reconnect.
+
+### API client behaviour (retries and rate limits)
+
+`app/services/github.py` wraps outbound calls with:
+
+- **Timeouts** on every request (`GITHUB_API_TIMEOUT`).
+- **Bounded retries** with backoff for transient failures (5xx, connection
+  errors, and secondary rate limits), capped so a request cannot loop forever.
+- **Rate-limit handling** — primary rate limits (`403`/`429` with
+  `X-RateLimit-Remaining: 0`) surface as a typed error carrying the reset time
+  instead of being retried blindly.
+- **Typed errors** so the web layer can map failures to clear HTTP responses
+  without leaking internals.
+
+### Troubleshooting
+
+- **Missing scope** — the API returns `403` for an endpoint the granted scopes
+  do not cover. Disconnect and reconnect GitHub, ensuring the required scopes
+  (see `GITHUB_OAUTH_SCOPES`) are granted.
+- **Rate limited** — the client reports the reset time from the rate-limit
+  headers. Wait until the reset, or reduce request volume; secondary limits
+  are retried with backoff automatically.
+- **Token revoked / invalid** — GitHub returns `401`. The stored token is
+  treated as invalid, the connection is marked disconnected, and the user must
+  reconnect to obtain a fresh token.
+- **Not configured** — `GITHUB_CLIENT_ID`/`GITHUB_CLIENT_SECRET` are unset. Set
+  them and restart the app.
+- **Decryption failures** — `GITHUB_TOKEN_ENCRYPTION_KEY` changed or is
+  missing. Restore the original key or have affected users reconnect.
+
+### Security note on token handling
+
+GitHub access tokens are treated as secrets: they are encrypted at rest via
+`crypto.py`, decrypted only in-memory for the duration of an API call, scoped
+to the owning user, and never logged, echoed to the client, or persisted in
+plaintext. Repository content fetched with a token is treated as untrusted
+data, never as instructions.
