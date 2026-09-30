@@ -1,6 +1,6 @@
 // AI Code Assistant — project explorer
 // Lazy file tree, file viewer, project search, bounded AI chat (SSE), project
-// analyses, and the health dashboard.
+// analyses, the health dashboard, and full-text project search.
 
 (function () {
   "use strict";
@@ -22,6 +22,7 @@
   var chatLoaded = false;
   var activeSessionId = null;
   var pendingAttachments = [];
+  var searchIndexState = { available: true, engine: "like", indexed: 0 };
 
   function getCsrf() {
     var meta = document.querySelector('meta[name="csrf-token"]');
@@ -326,6 +327,34 @@
 
   // ---------------------------------------------------------------- search
 
+  // Full-text search index status. The server exposes whether a dedicated
+  // FTS engine (SQLite FTS5 / Postgres tsvector) backs the project; when it
+  // does not, search transparently falls back to the LIKE scan.
+  function loadSearchIndexStatus() {
+    var statusEl = document.getElementById("search-index-status");
+    if (!statusEl) return;
+    api("/workspaces/api/projects/" + PROJECT_ID + "/search/index")
+      .then(function (data) {
+        searchIndexState = {
+          available: data.available !== false,
+          engine: data.engine || "like",
+          indexed: data.indexed_files || 0,
+        };
+        if (!searchIndexState.available) {
+          statusEl.textContent = "Full-text index unavailable — using fallback scan.";
+          statusEl.className = "search-index-status search-index-fallback";
+        } else {
+          statusEl.textContent =
+            "Full-text index (" + searchIndexState.engine + ") · " +
+            searchIndexState.indexed + " files indexed";
+          statusEl.className = "search-index-status";
+        }
+      })
+      .catch(function () {
+        statusEl.textContent = "";
+      });
+  }
+
   function renderChatAttachments() {
     if (!chatAttachmentsEl) return;
     chatAttachmentsEl.innerHTML = pendingAttachments.map(function (path, index) {
@@ -360,6 +389,7 @@
     }
     var language = languageEl ? languageEl.value.trim() : "";
     if (language) params.push("language=" + encodeURIComponent(language));
+    params.push("mode=fts");
     var url = "/workspaces/api/projects/" + PROJECT_ID + "/search?" + params.join("&");
     api(url)
       .then(function (data) {
@@ -368,10 +398,20 @@
           resultsEl.innerHTML = '<p class="sidebar-empty">No matches found.</p>';
           return;
         }
+        if (data.engine) {
+          searchIndexState.engine = data.engine;
+          searchIndexState.available = data.engine !== "like";
+        }
         data.results.forEach(function (result) {
           var row = document.createElement("div");
           row.className = "search-result";
           var meta = result.matched === "path" ? "file name" : "contents";
+          if (result.score != null) {
+            meta = meta + " · " + Number(result.score).toFixed(2);
+          }
+          if (result.engine) {
+            meta = meta + " · " + result.engine;
+          }
           row.innerHTML =
             '<div class="search-result-path"><code>' + escapeHtml(result.path) + "</code>" +
             '<span class="tag">' + escapeHtml(meta) + "</span></div>" +
@@ -1213,6 +1253,7 @@
     document.getElementById("search-query").addEventListener("keydown", function (event) {
       if (event.key === "Enter") runSearch();
     });
+    loadSearchIndexStatus();
 
     if (window.StellarTools) {
       window.StellarTools.onOpenFile = openStellarFile;
@@ -1312,6 +1353,8 @@
         refreshBtn.textContent = "Refreshing...";
         api("/workspaces/api/projects/" + PROJECT_ID + "/refresh", { method: "POST" })
           .then(function () {
+            // The server rebuilds the full-text index during refresh; reload
+            // so the status panel reflects the new index generation.
             window.location.reload();
           })
           .catch(function (error) {
