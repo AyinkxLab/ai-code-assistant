@@ -1,8 +1,12 @@
-# Security model
+# Security model and developer notes
 
 This document records the security posture of the Phase 8 plugin and Stellar
 architecture. It is the result of a review pass over the new code and should be
 kept in sync as the plugin system grows.
+
+This document also records developer-facing notes for the Phase 5 workspaces
+feature: the bounded-context design, the import pipeline, and the analysis
+services that consume imported project content.
 
 ## Principles
 
@@ -20,6 +24,43 @@ kept in sync as the plugin system grows.
 - **Read-only by construction.** The Stellar/Horizon/RPC surface never signs,
   simulates, or submits transactions, and never stores or handles keys.
 
+## Bounded-context design
+
+Phase 5 introduces workspaces as the top-level tenancy boundary. The codebase
+is organized as bounded contexts so that each context owns its data and
+enforces its own invariants; cross-context reads go through explicit service
+interfaces rather than reaching into another context's tables.
+
+- **Workspaces** own membership, roles, and the workspace-scoped capability
+  grants that gate plugins. Every workspace-scoped row carries a
+  `workspace_id` and every query is filtered by the caller's trusted
+  membership, never by client-supplied ownership.
+- **Projects** belong to a workspace and own imported files, the file index,
+  and analysis findings. Project file access reuses `assert_content_access`
+  (owner-only, fails closed) so a project can never leak across workspaces.
+- **Import** is the only writer of project file content. It is a bounded
+  pipeline (archive extraction or GitHub fetch) that normalizes, validates,
+  and indexes content before any analysis service can read it.
+- **Analysis services** (search, chat, Stellar analysis, security findings)
+  are read-only consumers of the indexed project slice. They never mutate
+  imported content and never widen access beyond the caller's project
+  authorization.
+- **Plugins** are workspace-scoped and capability-gated; the dispatcher
+  verifies the event type, plugin state, workspace membership, and an explicit
+  `CapabilityGrant` before a handler runs (fail closed).
+
+The import pipeline is the trust boundary for untrusted content:
+
+- Archive imports reject traversal, symlinks, and oversized entries, and skip
+  `.env`/key files so secrets are never indexed.
+- GitHub imports fetch a bounded repo slice through the user's own token, so
+  GitHub's permission model decides what is reachable.
+- Imported text is treated as **data, not instructions**. Prompt-injection
+  defenses frame PR/issue text, commit messages, and repository files as
+  untrusted content; detection and analysis never follow instructions found in
+  that content, and endpoint/network configuration is read from
+  `current_app.config` only.
+
 ## Threat review
 
 | Threat                          | Control                                                                                          | Status |
@@ -30,6 +71,9 @@ kept in sync as the plugin system grows.
 | Project isolation               | The Stellar AI analysis reuses `assert_content_access` (owner-only, fails closed). Project files are only ever read for projects the caller may access. | Implemented |
 | GitHub analysis authorization   | Stellar-aware PR/issue analysis is detection-driven; the bounded repo slice is fetched through the user's own GitHub token (GitHub's permission model decides access). No manual `stellar=true` flag exists and no additional access is granted. | Implemented |
 | Prompt-injection resistance (GitHub analysis) | The Stellar PR/issue guidance frames PR/issue text, commit messages, and repository files as untrusted data, not instructions; detection never follows content from untrusted sources. | Implemented |
+| Prompt-injection resistance (chat/analyses) | Chat and analysis prompts treat imported project content as untrusted data; retrieved snippets are delimited and never interpreted as instructions, and no analysis service can widen project access. | Implemented |
+| Import pipeline integrity | Archive imports reject traversal/symlink/size abuse and skip `.env`/key files; GitHub imports are bounded and use the caller's token. Imported content is only read through owner-scoped project access. | Implemented |
+| Workspace health dashboard | The health dashboard is workspace-scoped and read-only; it reports aggregate import/analysis/plugin status derived from trusted membership and never exposes another workspace's data. | Implemented |
 | Stellar data access             | `StellarService` is read-only; it never signs, sends, or funds. | Implemented |
 | Secret exposure                 | `.env`/key files are skipped at project import; the Stellar prompt explicitly flags hard-coded credentials; service config uses env vars only; no secrets are stored or logged. | Implemented |
 | Endpoint manipulation           | Endpoint URLs come from `current_app.config` only. | Implemented |
@@ -119,6 +163,10 @@ configuration (see "Known limitations / planned hardening").
   project/workspace consistency (confused-deputy defense), no auto-grant, and
   the Stellar/AI event capability requirements.
 - `tests/test_project_import.py` — archive traversal/symlink/size guards.
+- `tests/test_workspaces.py` — workspace membership/role enforcement and
+  workspace-scoped access (fail closed for non-members).
+- `tests/test_health_dashboard.py` — workspace-scoped health reporting and
+  read-only aggregate status.
 - `tests/test_stellar_security_findings.py` — findings parsing/normalization,
   persistence, owner read access, and non-Stellar gating.
 - `tests/test_stellar_network_switcher.py` — validated network selection,
@@ -170,3 +218,10 @@ configuration (see "Known limitations / planned hardening").
 - The `/stellar` read-only endpoints are login-required and lightly rate
   limited but not workspace-scoped: they query public network data bound to the
   configured network (equivalent to a block explorer).
+- The health dashboard reports only what the indexed files and recorded
+  activity demonstrate; it does not probe live services and does not fabricate
+  integration status.
+- Prompt-injection defenses are best-effort heuristics layered on top of
+  treating imported content as data. They reduce, but cannot eliminate, the
+  risk of a model following adversarial text; analysis output is never treated
+  as authorization.

@@ -1,3 +1,4 @@
+
 # AI Code Assistant
 
 A developer-focused AI code intelligence platform with GitHub integration,
@@ -32,6 +33,9 @@ developer tooling. This project is built incrementally across phases:
   services, contract/account inspection, evidence-based project detection, and
   Stellar-aware AI analysis).
 
+> **Developer notes:** see [docs/developer-notes.md](docs/developer-notes.md)
+> for the bounded-context design, the import pipeline, and prompt-injection defenses.
+
 > **Status:** Phases 1–7 implemented. Phase 8 foundation implemented; the
 > plugin/Stellar surface area is intentionally small and the remaining work is
 > tracked as contributor issues under the **Phase 8 - Plugins & Extensions**
@@ -55,6 +59,8 @@ developer tooling. This project is built incrementally across phases:
 
 - [Reviews & quality tooling](docs/reviews.md) — the Reviews pages, the
   `REVIEW_*` settings, the finding vocabulary, and the review API.
+- [Developer notes](docs/developer-notes.md) — bounded-context design, the
+  import pipeline, security invariants, and analysis services.
 - [Team collaboration guide](docs/team-collaboration.md) — feature guide,
   roles matrix, invitation flow, FAQ, and developer guide.
 - [Collaboration API reference](docs/api-collaboration.md) — every Phase 7
@@ -73,6 +79,8 @@ developer tooling. This project is built incrementally across phases:
   plugin and Stellar architecture.
 - [Security policy](SECURITY.md) — how to report a vulnerability.
 - [Code of conduct](CODE_OF_CONDUCT.md) — community standards.
+
+## Workspaces & project intelligence (Phase 5)
 
 ## Features
 
@@ -193,6 +201,8 @@ developer tooling. This project is built incrementally across phases:
   imported files are not followed.
 - **Health dashboard** — per-project stats: file/searchable/test/doc counts,
   languages, dependency count, manifests, and indexing duration.
+
+### Workspaces, project import, search, chat/analyses, and health dashboard
 
 ### Phase 6 — Collaboration, AI code review & quality tooling
 
@@ -560,6 +570,10 @@ All configuration is environment-driven (see `.env.example`):
 | `IMPORT_JOBS_ASYNC` | `1` | Run imports in a background worker (client polls `progress`) |
 | `PROJECT_SKIP_DIRS`    | `.git,node_modules,…` | Directory basenames skipped on import |
 | `PROJECT_SKIP_SECRET_FILES` | `.env,.pem,…` | File names/prefixes skipped on import |
+| `PROJECT_IMPORT_TIMEOUT` | `600` | Wall-clock timeout for a single import job (seconds) |
+| `PROJECT_IMPORT_MAX_RETRIES` | `2` | Retries for transient import failures |
+| `PROJECT_INDEX_BATCH_SIZE` | `200` | Files indexed per batch during import |
+| `PROJECT_HEALTH_CACHE_TTL` | `300` | Health-dashboard metric cache TTL (seconds) |
 | `REVIEW_MAX_FILES`     | `40`        | Max changed files analyzed in one review |
 | `REVIEW_MAX_CONTEXT_CHARS` | `40000` | Max diff/repo context sent to the LLM per review |
 | `REVIEW_MAX_FINDINGS`  | `100`       | Max findings stored per review |
@@ -612,6 +626,9 @@ GitHub Actions runs on every push to `main` and on pull requests:
 3. **Docker** — verifies the production image builds successfully.
 
 ## Roadmap
+
+See [docs/developer-notes.md](docs/developer-notes.md) for the bounded-context
+design, import pipeline, security invariants, and analysis services.
 
 Phases are built incrementally and tracked as GitHub issues and milestones.
 
