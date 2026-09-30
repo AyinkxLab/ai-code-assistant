@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+
+{% block title %}Compare {{ owner }}/{{ repo }} - {{ config.APP_NAME }}{% endblock %}
+
+{% block content %}
+<div class="github-header repo-header">
+  <div>
+    <h1><a class="repo-breadcrumb" href="{{ url_for('github.repos') }}">Repositories</a> / <a class="repo-breadcrumb" href="{{ url_for('github.repo_detail', owner=owner, repo=repo) }}">{{ owner }}/{{ repo }}</a> / Compare</h1>
+    <div id="compare-meta" class="repo-meta">Loading comparison...</div>
+  </div>
+</div>
+
+<div class="compare-toolbar">
+  <input id="compare-base" class="sidebar-search" type="text" placeholder="Base ref (e.g. main)" value="{{ base }}">
+  <span class="compare-sep">...</span>
+  <input id="compare-head" class="sidebar-search" type="text" placeholder="Head ref (e.g. feature)" value="{{ head }}">
+  <button id="compare-go" class="btn btn-primary" type="button">Compare</button>
+</div>
+
+<div id="compare-summary" class="compare-summary"></div>
+<div id="compare-files" class="compare-files"></div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/github.js') }}"></script>
+<script src="{{ url_for('static', filename='js/github_compare.js') }}"></script>
+<script>
+  window.COMPARE_CONTEXT = {
+    owner: {{ owner | tojson }},
+    repo: {{ repo | tojson }},
+    base: {{ base | tojson }},
+    head: {{ head | tojson }},
+  };
+</script>
+{% endblock %}
