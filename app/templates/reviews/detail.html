@@ -1,4 +1,4 @@
-{% extends "base.html" %}
+<%extends "base.html" %}
 
 {% block title %}Review #{{ review_id }} - {{ config.APP_NAME }}{% endblock %}
 
@@ -16,6 +16,12 @@
 </div>
 
 <div id="review-detail" class="issue-detail"><p class="sidebar-empty">Loading review...</p></div>
+
+<div class="analysis-panel">
+  <h3>Action items</h3>
+  <p class="field-hint">Copy an item to paste it into a GitHub review comment.</p>
+  <div id="action-items" class="issue-list"><p class="sidebar-empty">Loading action items...</p></div>
+</div>
 
 <div class="analysis-panel">
   <h3>Findings</h3>

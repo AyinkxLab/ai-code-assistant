@@ -12,7 +12,20 @@ import re
 from app.models.review_comment import ReviewComment
 from app.services.permissions import can
 
-_FENCE_RE = re.compile(r"```")
+_FENCE_RE = re.compile(r"""```""")
+
+# Action-item lines in a review body look like:
+#   - [defect] Off-by-one in pagination cursor.
+#   - [suggestion] Extract the loop bound into a constant.
+ACTION_ITEM_RE = re.compile(
+    r"^\s*(?:[*-]|\d+[.)])\s*\[(?P<kind>defect|suggestion|confirmed|issue)\]\s*(?P<text>.+?)\s*$""",
+    re.IGNORECASE,
+)
+ACTION_ITEM_HEAD_RE = re.compile(
+    r"^\s*#{1,6}\s*action\s+items\s*:?\s*$""",
+    re.IGNORECASE,
+)
+DEFECT_KINDS = {"defect", "confirmed", "issue"}
 
 
 def count_code_blocks(content: str) -> int:
@@ -23,11 +36,7 @@ def count_code_blocks(content: str) -> int:
 def validate_anchor(data: dict, message_content: str) -> tuple[dict, str | None]:
     """Validate an optional code-block/line-range anchor against a message.
 
-    Returns ``(anchor, error)`` where ``anchor`` maps the review-comment anchor
-    columns to validated values (``block_index``/``line_start``/``line_end``) and
-    ``error`` is a human-readable message when the anchor is invalid. Both are
-    ``None``/empty when no anchor was supplied (whole-message comment).
-    """
+    Returns ``anchor, error``..."""
     anchor: dict = {}
 
     block_index = data.get("block_index")
@@ -91,6 +100,65 @@ def _current_id():
     from flask_login import current_user
 
     return getattr(current_user, "id", None)
+
+
+def extract_action_items(review_body: str) -> list[dict]:
+    """Parse structured action items from an AI review body.
+
+    Each item is a bullet tagged with a kind marker, e.g.:
+
+        - [defect] Off-by-one in the pagination cursor.
+        - [suggestion] Extract the loop bound into a constant.
+
+    Returns a list of dicts with ``kind``(``defect``/``suggestion``), ``text``,
+    ``confirmed`` and ``copy_text``. Confirmed defects remain distinguished
+    from suggestions so the UI can render them differently. When the body
+    contains no explicit markers but has an "Action items" section, every
+    bullet in that section is treated as a suggestion.
+    """
+    if not review_body:
+        return []
+
+    lines = review_body.splitlines()
+    in_section = False
+    section_bullets: list[str] = []
+    marked_items: list[dict] = []
+
+    for line in lines:
+        if ACTION_ITEM_HEAD_RE.match(line):
+            in_section = True
+            continue
+        if in_section and line.strip() == "":
+            continue
+        if in_section and not re.match(r"\s*(?:[*-]|\d+[.)])\s+", line):
+            in_section = False
+
+        match = ACTION_ITEM_RE.match(line)
+        if match:
+            kind = match.group("kind").lower()
+            text = match.group("text").strip()
+            if not text:
+                continue
+            marked_items.append(_build_action_item(kind, text))
+        elif in_section and re.match(r"\r*(?:[*-]|\d+[.)])\s+", line):
+            text = re.sub(r"\s*({:[*-]|\d+[.)])\s+", "", line, count=1).strip()
+            if text:
+                section_bullets.append(text)
+
+    if marked_items:
+        return marked_items
+
+    return [_build_action_item("suggestion", text) for text in section_bullets]
+
+
+def _build_action_item(kind: str, text: str) -> dict:
+    confirmed = kind in DEFECT_KINDS
+    return {
+        "kind": "defect" if confirmed and kind != "suggestion" else "suggestion",
+        "confirmed": confirmed,
+        "text": text,
+        "copy_text": text,
+    }
 
 
 def conversation_review_summary(project) -> dict:
