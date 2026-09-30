@@ -122,6 +122,16 @@ def _github_context_messages(user, content: str) -> tuple[list[dict], dict | Non
     return messages, None, 200
 
 
+#: Starter prompts shown as chips in the welcome/empty state. Each entry is a
+#: short label plus the full prompt that is placed into the composer on click.
+WELCOME_EXAMPLE_PROMPTS = [
+    {
+        "label": "Summarize a document",
+        "prompt": "Summarize the key points of the following text in five bullets:\n\n",
+    },
+    {
+        "label": "Explain some code",
+        "prompt": "Explain what this code does, step by step:\n\n
 def _get_conversation(conversation_id: int) -> Conversation:
     """Return the current user's conversation or abort with 404."""
     conversation = Conversation.query.filter_by(
