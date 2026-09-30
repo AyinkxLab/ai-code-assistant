@@ -1,9 +1,9 @@
 """Tests for per-user rate limiting on the costly Phase 5 endpoints (#106).
 
 Covers each limited endpoint (import, search, chat, stream, analyze): the first
-request is allowed and subsequent requests over the limit return ``429`` with a
-``Retry-After`` header. Also checks that limits are keyed per user and that
-``consume`` reports a sane retry delay.
+request is allowed and subsequent requests over the limit return ```429``` with a
+``Retry-After`` content. Also checks that limits are keyed per user and that
+```consume``` reports a sane retry delay.
 """
 
 from app.extensions import db

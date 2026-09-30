@@ -16,6 +16,7 @@ the same model/service layer.
 
 from __future__ import annotations
 
+import datetime as dt
 import functools
 
 from flask import Blueprint, current_app, jsonify, request
@@ -56,6 +57,24 @@ def _login_required(view):
     return wrapper
 
 
+def _rate_limit_headers(bucket: str) -> dict:
+    """Return informational rate-limit headers for the given bucket."""
+    max_hits = current_app.config.get("RATE_LIMIT_CHAT_MAX", 30)
+    window = current_app.config.get("RATE_LIMIT_CHAT_WINDOW", 60)
+    daily_cap = current_app.config.get("RATE_LIMIT_CHAT_DAILY", 500)
+    remaining, reset_after = ratelimit.peek(
+        f"api-chat:{bucket}:user:{current_user.get_id()}",
+        max_hits=max_hits,
+        window=window,
+        daily_cap=daily_cap,
+    )
+    return {
+        "X-RateLimit-Limit": str(max_hits),
+        "X-RateLimit-Remaining": str(max(remaining, 0)),
+        "X-RateLimit-Reset": str(reset_after),
+    }
+
+
 def _rate_limit(bucket: str):
     """Enforce the per-user chat rate limit, returning 429 as RFC 7807."""
 
@@ -64,16 +83,29 @@ def _rate_limit(bucket: str):
         def wrapper(*args, **kwargs):
             max_hits = current_app.config.get("RATE_LIMIT_CHAT_MAX", 30)
             window = current_app.config.get("RATE_LIMIT_CHAT_WINDOW", 60)
-            allowed, retry_after = ratelimit.consume(
+            daily_cap = current_app.config.get("RATE_LIMIT_CHAT_DAILY", 500)
+            allowed, retry_after, reason = ratelimit.consume(
                 f"api-chat:{bucket}:user:{current_user.get_id()}",
                 max_hits=max_hits,
                 window=window,
+                daily_cap=daily_cap,
             )
             if not allowed:
-                response = _problem(429, "Rate limit exceeded.", "Please retry later.")
+                detail = (
+                    "Daily message limit reached. Please retry tomorrow."
+                    if reason == "daily"
+                    else "Please retry later."
+                )
+                response = _problem(429, "Rate limit exceeded.", detail)
                 response.headers["Retry-After"] = str(retry_after)
+                for header, value in _rate_limit_headers(bucket).items():
+                    response.headers[header] = value
                 return response
-            return view(*args, **kwargs)
+            response = view(*args, **kwargs)
+            if hasattr(response, "headers"):
+                for header, value in _rate_limit_headers(bucket).items():
+                    response.headers[header] = value
+            return response
 
         return wrapper
 
@@ -83,6 +115,36 @@ def _rate_limit(bucket: str):
 def _owned_conversation(conversation_id: int) -> Conversation | None:
     """Return the conversation only when it belongs to the current user."""
     return Conversation.query.filter_by(id=conversation_id, user_id=current_user.id).first()
+
+
+@bp.route("/rate-limit", methods=["GET"])
+@_login_required
+def rate_limit_status():
+    """Expose the caller's remaining chat quota so the UI can warn early."""
+    max_hits = current_app.config.get("RATE_LIMIT_CHAT_MAX", 30)
+    window = current_app.config.get("RATE_LIMIT_CHAT_WINDOW", 60)
+    daily_cap = current_app.config.get("RATE_LIMIT_CHAT_DAILY", 500)
+    remaining, reset_after = ratelimit.peek(
+        f"api-chat:message:user:{current_user.get_id()}",
+        max_hits=max_hits,
+        window=window,
+        daily_cap=daily_cap,
+    )
+    daily_remaining, daily_reset = ratelimit.peek_daily(
+        f"api-chat:message:user:{current_user.get_id()}",
+        daily_cap=daily_cap,
+    )
+    return jsonify(
+        {
+            "limit": max_hits,
+            "remaining": max(remaining, 0),
+            "reset_after": reset_after,
+            "window": window,
+            "daily_limit": daily_cap,
+            "daily_remaining": max(daily_remaining, 0),
+            "daily_reset_after": daily_reset,
+        }
+    )
 
 
 def _json_object() -> dict | None:

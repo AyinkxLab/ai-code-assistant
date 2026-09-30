@@ -17,6 +17,8 @@ kept in sync as the plugin system grows.
 - **Outbound is opt-in.** Plugin network access is denied unless an operator
   explicitly allowlists the target host; private and internal ranges are never
   reachable by default.
+- **Abuse is bounded.** Chat API endpoints are rate limited per authenticated
+  user, persistently, with a `Retry-After` on exceedance.
 - **Read-only by construction.** The Stellar/Horizon/RPC surface never signs,
   simulates, or submits transactions, and never stores or handles keys.
 
@@ -57,6 +59,7 @@ kept in sync as the plugin system grows.
 | Plugin CLI                      | `flask plugins …` acts as the operator on persisted rows; installs are local-path only (URLs refused) and never grant capabilities or load code. | Implemented |
 | Stellar security findings       | `stellar_security` findings are evidence-labelled rows owned by a single project; reads are owner-scoped (404 for non-owners, no existence oracle). | Implemented |
 | XDR decoding                    | Transaction/envelope + contract-data decoding is bounded and read-only; decoded values are never guessed, malformed/unsupported XDR is explicit, and no signing/submission/keys exist. | Implemented |
+| Chat API rate limiting          | Message-send and stream endpoints enforce per-authenticated-user limits (requests/minute plus a daily cap) backed by a persistent store; exceedances return 429 with `Retry-After`. Limits are configurable via environment with sane defaults, and the UI surfaces the limit before it is hit. | Implemented |
 
 ## Testing
 
@@ -139,6 +142,8 @@ configuration (see "Known limitations / planned hardening").
 - `tests/test_plugin_lifecycle.py` — lifecycle hooks and plugin events.
 - `tests/test_plugins_cli.py` — CLI commands, `--json`, exit codes, URL
   refusal, and no implicit grants.
+- `tests/test_chat_rate_limit.py` — per-user limit enforcement, 429 with
+  `Retry-After`, persistent tracking across requests, and window/daily reset.
 
 ## Known limitations / planned hardening
 
@@ -170,3 +175,5 @@ configuration (see "Known limitations / planned hardening").
 - The `/stellar` read-only endpoints are login-required and lightly rate
   limited but not workspace-scoped: they query public network data bound to the
   configured network (equivalent to a block explorer).
+- Chat rate limits are per authenticated user; unauthenticated requests are
+  rejected before the limiter runs, so anonymous abuse is out of scope.

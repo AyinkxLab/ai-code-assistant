@@ -1,7 +1,7 @@
 # Development and production orchestration for AI Code Assistant.
 #
 # Usage:
-#   docker compose up --build        # start web + postgres
+#   docker compose up --build        # start web + postgres + redis
 #   docker compose down              # stop everything
 #
 # The web service applies pending migrations before starting gunicorn.
@@ -18,12 +18,16 @@ services:
       APP_ENV: production
       SECRET_KEY: ${SECRET_KEY:-insecure-dev-secret-change-me}
       DATABASE_URL: postgresql://aica:aica_secret@db:5432/aica
+      RATE_LIMIT_STORE: ${RATE_LIMIT_STORE:-redis}
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
     ports:
       - "5000:5000"
     volumes:
       - ./migrations:/app/migrations:ro
     depends_on:
       db:
+        condition: service_healthy
+      redis:
         condition: service_healthy
     command: >
       sh -c "flask db upgrade &&
@@ -54,5 +58,21 @@ services:
       retries: 10
     restart: unless-stopped
 
+  redis:
+    image: redis:7-alpine
+    container_name: aica-redis
+    command: ["redis-server", "--appendonly", "yes", "--save", "60", "1"]
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
 volumes:
   postgres_data:
+  redis_data:
