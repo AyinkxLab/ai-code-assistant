@@ -1,3 +1,5 @@
+
+
 // AI Code Assistant — project explorer
 // Lazy file tree, file viewer, project search, bounded AI chat (SSE), project
 // analyses, and the health dashboard.
@@ -10,6 +12,7 @@
   var viewerEl = document.getElementById("file-viewer");
   var breadcrumbsEl = document.getElementById("file-breadcrumbs");
   var currentPath = "";
+  var currentSearchTerm = "";
   var chatMessagesEl = document.getElementById("project-chat-messages");
   var chatSessionListEl = document.getElementById("chat-session-list");
   var newChatSessionBtn = document.getElementById("new-chat-session");
@@ -316,12 +319,349 @@
         var codeClass = data.language ? ' class="language-' + escapeHtml(data.language) + '"' : "";
         viewerEl.innerHTML =
           header +
-          '<pre class="code-view"><code' + codeClass + ">" + escapeHtml(data.content) + "</code></pre>";
+          '<pre class="code-view"><code' + codeClass + ">" + highlightContent(data.content, currentSearchTerm) + "</code></pre>";
         if (window.AICASyntaxHighlight) window.AICASyntaxHighlight.apply(viewerEl);
       })
       .catch(function (error) {
         viewerEl.innerHTML = '<p class="sidebar-empty">' + escapeHtml(error.message) + "</p>";
       });
+  }
+
+  function highlightContent(content, term) {
+    var escaped = escapeHtml(content);
+    if (!term) return escaped;
+    var escapedTerm = escapeHtml(term);
+    if (!escapedTerm) return escaped;
+    var pattern = escapedTerm.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    try {
+      return escaped.replace(new RegExp(pattern, "gi"), function (match) {
+        return '<mark class="search-highlight">' + match + "</mark>";
+      });
+    } catch (e) {
+      return escaped;
+    }
+  }
+
+  // ---------------------------------------------------------------- search
+
+  function runSearch(term) {
+    currentSearchTerm = term || "";
+    var resultsEl = document.getElementById("search-results");
+    if (!resultsEl) return;
+    if (!currentSearchTerm) {
+      resultsEl.innerHTML = '<p class="sidebar-empty">Enter a search term.</p>';
+      return;
+    }
+    resultsEl.innerHTML = '<p class="sidebar-empty">Searching...</p>';
+    api("/workspaces/api/projects/" + PROJECT_ID + "/search?q=" + encodeURIComponent(currentSearchTerm))
+      .then(function (data) {
+        var results = data.results || [];
+        if (!results.length) {
+          resultsEl.innerHTML = '<p class="sidebar-empty">No matches found.</p>';
+          return;
+        }
+        var html = '<p class="repo-meta">' + results.length + " file(s) matched.</p><ul class=\"search-results-list\">";
+        results.forEach(function (result) {
+          html +=
+            '<li class="search-result"><button type="button" class="search-result-link" data-path="' +
+            escapeHtml(result.path) +
+            '"><code>' +
+            escapeHtml(result.path) +
+            "</code><span class=\"search-result-count\">" +
+            (result.count || 0) +
+            " match(es)</span></button></li>";
+        });
+        html += "</ul>";
+        resultsEl.innerHTML = html;
+        resultsEl.querySelectorAll(".search-result-link").forEach(function (btn) {
+          btn.addEventListener("click", function () {
+            loadFile(btn.dataset.path);
+          });
+        });
+      })
+      .catch(function (error) {
+        resultsEl.innerHTML = '<p class="sidebar-empty">' + escapeHtml(error.message) + "</p>";
+      });
+  }
+
+  function initSearch() {
+    var form = document.getElementById("project-search-form");
+    var input = document.getElementById("project-search-input");
+    if (!form || !input) return;
+    form.addEventListener("submit", function (event) {
+      event.preventDefault();
+      runSearch(input.value.trim());
+    });
+  }
+
+  // ------------------------------------------------------------------ chat
+
+  function renderChatAttachments() {
+    if (!chatAttachmentsEl) return;
+    chatAttachmentsEl.innerHTML = "";
+    pendingAttachments.forEach(function (path) {
+      var chip = document.createElement("span");
+      chip.className = "chat-attachment";
+      chip.innerHTML =
+        '<code>' + escapeHtml(path) + '</code><button type="button" class="chat-attachment-remove">×</button>';
+      chip.querySelector(".chat-attachment-remove").addEventListener("click", function () {
+        pendingAttachments = pendingAttachments.filter(function (p) {
+          return p !== path;
+        });
+        renderChatAttachments();
+      });
+      chatAttachmentsEl.appendChild(chip);
+    });
+  }
+
+  function appendChatMessage(role, content) {
+    if (!chatMessagesEl) return;
+    var wrapper = document.createElement("div");
+    wrapper.className = "chat-message chat-message-" + role;
+    wrapper.innerHTML =
+      '<div class="chat-role">' +
+      escapeHtml(role === "user" ? "You" : "Assistant") +
+      '</div><div class="chat-content">' +
+      renderMarkdown(content) +
+      "</div>";
+    chatMessagesEl.appendChild(wrapper);
+    scrollChat();
+    return wrapper;
+  }
+
+  function loadChatHistory() {
+    if (!chatMessagesEl) return;
+    chatLoaded = true;
+    api("/workspaces/api/projects/" + PROJECT_ID + "/chat/sessions")
+      .then(function (data) {
+        renderChatSessions(data.sessions || []);
+        if (data.sessions && data.sessions.length) {
+          loadChatSession(data.sessions[0].id);
+        } else {
+          chatMessagesEl.innerHTML = '<p class="sidebar-empty">No chat history yet.</p>';
+        }
+      })
+      .catch(function (error) {
+        chatMessagesEl.innerHTML = '<p class="sidebar-empty">' + escapeHtml(error.message) + "</p>";
+      });
+  }
+
+  function renderChatSessions(sessions) {
+    if (!chatSessionListEl) return;
+    chatSessionListEl.innerHTML = "";
+    sessions.forEach(function (session) {
+      var li = document.createElement("li");
+      li.className = "chat-session" + (session.id === activeSessionId ? " active" : "");
+      li.innerHTML = '<button type="button" class="chat-session-link">' + escapeHtml(session.title || "Session") + "</button>";
+      li.querySelector(".chat-session-link").addEventListener("click", function () {
+        loadChatSession(session.id);
+      });
+      chatSessionListEl.appendChild(li);
+    });
+  }
+
+  function loadChatSession(sessionId) {
+    activeSessionId = sessionId;
+    api("/workspaces/api/projects/" + PROJECT_ID + "/chat/sessions/" + sessionId)
+      .then(function (data) {
+        chatMessagesEl.innerHTML = "";
+        (data.messages || []).forEach(function (message) {
+          appendChatMessage(message.role, message.content);
+        });
+        renderChatSessions(data.sessions || []);
+      })
+      .catch(function (error) {
+        chatMessagesEl.innerHTML = '<p class="sidebar-empty">' + escapeHtml(error.message) + "</p>";
+      });
+  }
+
+  function sendChat() {
+    if (streaming || !chatInputEl) return;
+    var text = chatInputEl.value.trim();
+    if (!text) return;
+    streaming = true;
+    chatInputEl.value = "";
+    appendChatMessage("user", text);
+    var assistant = appendChatMessage("assistant", "");
+    var contentEl = assistant.querySelector(".chat-content");
+    var payload = { message: text, attachments: pendingAttachments.slice() };
+    pendingAttachments = [];
+    renderChatAttachments();
+    fetch("/workspaces/api/projects/" + PROJECT_ID + "/chat", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-CSRFToken": getCsrf(),
+      },
+      body: JSON.stringify(payload),
+    })
+      .then(function (response) {
+        if (!response.ok || !response.body) {
+          throw new Error("Chat request failed (" + response.status + ").");
+        }
+        var reader = response.body.getReader();
+        var decoder = new TextDecoder();
+        var buffer = "";
+        function pump() {
+          return reader.read().then(function (result) {
+            if (result.done) {
+              streaming = false;
+              return;
+            }
+            buffer += decoder.decode(result.value, { stream: true });
+            var lines = buffer.split("\n");
+            buffer = lines.pop();
+            lines.forEach(function (line) {
+              if (!line.startsWith("data:")) return;
+              var data = line.slice(5).trim();
+              if (!data) return;
+              try {
+                var parsed = JSON.parse(data);
+                if (parsed.delta) {
+                  contentEl.innerHTML = renderMarkdown(contentEl.dataset.raw ? contentEl.dataset.raw + parsed.delta : parsed.delta);
+                  contentEl.dataset.raw = (contentEl.dataset.raw || "") + parsed.delta;
+                  scrollChat();
+                }
+              } catch (e) {
+                /* ignore malformed chunk */
+              }
+            });
+            return pump();
+          });
+        }
+        return pump();
+      })
+      .catch(function (error) {
+        streaming = false;
+        contentEl.innerHTML = '<p class="sidebar-empty">' + escapeHtml(error.message) + "</p>";
+      });
+  }
+
+  function loadReviewSummary() {
+    if (!reviewSummaryEl) return;
+    api("/workspaces/api/projects/" + PROJECT_ID + "/reviews/summary")
+      .then(function (data) {
+        reviewSummaryEl.innerHTML =
+          '<span class="tag">' + (data.total || 0) + " reviews</span>" +
+          '<span class="tag tag-confirmed">' + (data.confirmed || 0) + " confirmed</span>";
+      })
+      .catch(function () {
+        reviewSummaryEl.innerHTML = "";
+      });
+  }
+
+  function loadStats() {
+    var el = document.getElementById("tab-stats");
+    if (!el) return;
+    api("/workspaces/api/projects/" + PROJECT_ID + "/stats")
+      .then(function (data) {
+        el.innerHTML =
+          '<div class="stats-grid"><div class="stat"><span class="stat-value">' +
+          (data.files || 0) +
+          '</span><span class="stat-label">Files</span></div><div class="stat"><span class="stat-value">' +
+          (data.lines || 0) +
+          '</span><span class="stat-label">Lines</span></div></div>';
+      })
+      .catch(function (error) {
+        el.innerHTML = '<p class="sidebar-empty">' + escapeHtml(error.message) + "</p>";
+      });
+  }
+
+  function loadProjectReviews() {
+    var el = document.getElementById("tab-reviews");
+    if (!el) return;
+    api("/workspaces/api/projects/" + PROJECT_ID + "/reviews")
+      .then(function (data) {
+        var reviews = data.reviews || [];
+        if (!reviews.length) {
+          el.innerHTML = '<p class="sidebar-empty">No reviews yet.</p>';
+          return;
+        }
+        el.innerHTML = reviews
+          .map(function (review) {
+            return '<div class="review-item"><strong>' + escapeHtml(review.title || "Review") + "</strong></div>";
+          })
+          .join("");
+      })
+      .catch(function (error) {
+        el.innerHTML = '<p class="sidebar-empty">' + escapeHtml(error.message) + "</p>";
+      });
+  }
+
+  function loadStellar() {
+    var el = document.getElementById("tab-stellar");
+    if (!el) return;
+    api("/workspaces/api/projects/" + PROJECT_ID + "/stellar")
+      .then(function (data) {
+        el.innerHTML = '<p class="repo-meta">' + (data.count || 0) + " stellar item(s).</p>";
+      })
+      .catch(function (error) {
+        el.innerHTML = '<p class="sidebar-empty">' + escapeHtml(error.message) + "</p>";
+      });
+  }
+
+  function loadComments() {
+    var el = document.getElementById("tab-discussion");
+    if (!el) return;
+    api("/workspaces/api/projects/" + PROJECT_ID + "/comments")
+      .then(function (data) {
+        var comments = data.comments || [];
+        if (!comments.length) {
+          el.innerHTML = '<p class="sidebar-empty">No comments yet.</p>';
+          return;
+        }
+        el.innerHTML = comments
+          .map(function (comment) {
+            return '<div class="comment-item">' + escapeHtml(comment.body || "") + "</div>";
+          })
+          .join("");
+      })
+      .catch(function (error) {
+        el.innerHTML = '<p class="sidebar-empty">' + escapeHtml(error.message) + "</p>";
+      });
+  }
+
+  function init() {
+    var root = document.getElementById("project-root");
+    if (!root) return;
+    PROJECT_ID = root.dataset.projectId;
+    document.querySelectorAll("#project-tabs .repo-tab").forEach(function (tab) {
+      tab.addEventListener("click", function () {
+        switchTab(tab.dataset.tab);
+      });
+    });
+    if (treeEl) {
+      var ul = document.createElement("ul");
+      ul.className = "tree-children";
+      treeEl.appendChild(ul);
+      loadDir("", ul);
+    }
+    initSearch();
+    if (newChatSessionBtn) {
+      newChatSessionBtn.addEventListener("click", function () {
+        activeSessionId = null;
+        chatMessagesEl.innerHTML = '<p class="sidebar-empty">New session started.</p>';
+      });
+    }
+    if (chatSendBtn) chatSendBtn.addEventListener("click", sendChat);
+    if (chatInputEl) {
+      chatInputEl.addEventListener("keydown", function (event) {
+        if (event.key === "Enter" && !event.shiftKey) {
+          event.preventDefault();
+          sendChat();
+        }
+      });
+    }
+    renderChatAttachments();
+  }
+
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", init);
+  } else {
+    init();
+  }
+})();rn escaped;
+    }
   }
 
   // ---------------------------------------------------------------- search
@@ -361,6 +701,7 @@
     var language = languageEl ? languageEl.value.trim() : "";
     if (language) params.push("language=" + encodeURIComponent(language));
     var url = "/workspaces/api/projects/" + PROJECT_ID + "/search?" + params.join("&");
+    currentSearchTerm = query;
     api(url)
       .then(function (data) {
         resultsEl.innerHTML = "";
@@ -377,6 +718,7 @@
             '<span class="tag">' + escapeHtml(meta) + "</span></div>" +
             (result.snippet ? '<p class="search-result-snippet">' + escapeHtml(result.snippet) + "</p>" : "");
           row.addEventListener("click", function () {
+            currentSearchTerm = query;
             loadFile(result.path);
           });
           resultsEl.appendChild(row);
