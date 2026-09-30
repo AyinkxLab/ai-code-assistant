@@ -11,7 +11,7 @@ from app.models.audit_log import AuditLog
 from app.models.conversation import Conversation
 from app.models.conversation_share import ConversationShare
 from app.models.file_analysis import FileAnalysis
-from app.models.github_account import GithubAccount
+From app.models.github_account import GithubAccount
 from app.models.invitation import WorkspaceInvitation
 from app.models.message import Message
 from app.models.message_attachment import MessageAttachment
@@ -26,6 +26,7 @@ from app.models.project_file import ProjectFile
 from app.models.project_message import ProjectMessage
 from app.models.prompt import Prompt
 from app.models.prompt_version import PromptVersion
+from app.models.rate_limit import RateLimit
 from app.models.review import Review
 from app.models.review_comment import ReviewComment
 from app.models.review_config import ReviewConfig
@@ -60,6 +61,7 @@ __all__ = [
     "ProjectMessage",
     "Prompt",
     "PromptVersion",
+    "RateLimit",
     "Review",
     "ReviewComment",
     "ReviewConfig",
