@@ -1,0 +1,27 @@
+{
+  "name": "chat-frontend",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "check:syntax": "node --check app/static/js/chat.js || true"
+  },
+  "devDependencies": {
+    "@testing-library/dom": "^10.4.0",
+    "@testing-library/react": "^16.1.0",
+    "@testing-library/user-event": "^14.5.2",
+    "@vitest/coverage-v8": "^2.1.0",
+    "@vitest/ui": "^2.1.0",
+    "jsdom": "^25.0.0",
+    "vitest": "^2.1.0"
+  },
+  "dependencies": {
+    "dompurify": "^3.1.6",
+    "marked": "^14.1.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  }
+}
