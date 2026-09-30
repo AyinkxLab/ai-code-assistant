@@ -13,8 +13,10 @@
 <div class="repo-lookup">
   <form id="repo-lookup-form" class="repo-lookup-form" autocomplete="off">
     <input id="repo-lookup-input" class="sidebar-search" type="text" name="repo"
-           placeholder="owner/name" aria-label="Repository (owner/name)" required
-           value="{{ owner }}/{{ repo }}">
+           placeholder="Owner/name (e.g. owner/repo)"
+           value="{{ owner }}/{{ repo }}"
+           pattern="[A-Za-z0-9-_.]+/[A-Za-z0-9-_.]+"
+           required>
     <button class="btn btn-primary" type="submit">Open</button>
   </form>
   <div id="repo-lookup-error" class="repo-lookup-error" hidden></div>
@@ -90,17 +92,9 @@
     <div id="file-analysis" class="analysis-output" hidden></div>
   </div>
 </div>
-<script>
-  window.REPO_LOOKUP_CONFIG = {
-    owner: "{{ owner }}",
-    repo: "{{ repo }}",
-    lookupUrl: "{{ url_for('github.repos_lookup') }}"
-  };
-</script>
 {% endblock %}
 
-{& block scripts %}
+{% block scripts %}
 <script src="{{ url_for('static', filename='js/github.js') }}"></script>
 <script src="{{ url_for('static', filename='js/github_repo.js') }}"></script>
-<script src="{{ url_for('static', filename='js/github_repo_lookup.js') }}"></script>
 {% endblock %}

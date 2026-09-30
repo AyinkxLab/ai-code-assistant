@@ -1,9 +1,8 @@
-<!-- GitHub repositories page -->
-{{% extends "base.html" %}}
+{{ extends "base.html" %}
 
-{{% block title %}}Repositories - {{ config.APP_NAME }}{{% endblock %}}
+{k block title %}Repositories - {{ config.APP_NAME }}{% endblock %}
 
-{{% block content %}}
+{% block content %}
 <div class="github-header">
   <h1>Repositories</h1>
   <div class="github-toolbar">
@@ -11,20 +10,19 @@
   </div>
 </div>
 
-<div class="repo-lookup">
-  <form id="repo-lookup-form" class="repo-lookup-form">
-    <input id="repo-lookup-input" class="sidebar-search" type="text" placeholder="Open a public repo by owner/name" autocomplete="off" required>
-    <button id="repo-lookup-button" class="btn btn-primary" type="submit">Open</button>
-  </form>
-  <p id="repo-lookup-error" class="repo-lookup-error" hidden></p>
-</div>
+<form id="repo-lookup-form" class="repo-lookup-form">
+  <label for="repo-lookup-input">Open a public repository</label>
+  <input id="repo-lookup-input" name="repo" name="repo" type="text" placeholder="owner/name" autocomplete="off" required>
+  <button type="submit">Open</button>
+</form>
+<p id="repo-lookup-error" class="repo-lookup-error" role="alert" hidden></p>
 
 <div id="repo-list" class="repo-list">
   <p class="sidebar-empty">Loading repositories...</p>
 </div>
-{%- endblock %}}
+{% endblock %}
 
-{{% block scripts %}
+{% block scripts %}
 <script src="{{ url_for('static', filename='js/github.js') }}"></script>
 <script src="{{ url_for('static', filename='js/github_repos.js') }}"></script>
-{% endblock %}}
+{% endblock %}
