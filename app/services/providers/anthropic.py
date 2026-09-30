@@ -1,4 +1,4 @@
-"""Anthropic Messages API provider (issue #2, #3).
+"""Anthropic Messages API provider (issue #2).
 
 Demonstrates that the abstraction is genuinely vendor-neutral: Anthropic uses a
 different endpoint, auth header, request shape (a top-level ``system`` field),
@@ -8,7 +8,6 @@ of that is encapsulated here behind the same :class:`LLMProvider` contract.
 
 from __future__ import annotations
 
-import contextlib
 import json
 import os
 import time
@@ -24,7 +23,6 @@ from app.services.providers.base import (
     ProviderRateLimitError,
     ProviderResponse,
     ProviderResponseError,
-    ProviderStreamEvent,
     ProviderUnavailableError,
     prepare_messages,
 )
@@ -40,7 +38,6 @@ class AnthropicProvider(LLMProvider):
     models = DEFAULT_MODELS
     requires_key = True
     supports_vision = True
-    supports_streaming = True
 
     def __init__(
         self,
@@ -214,67 +211,66 @@ class AnthropicProvider(LLMProvider):
         *,
         model: str | None = None,
         params: dict | None = None,
-    ) -> Iterator[ProviderStreamEvent]:
-        """Yield structured streaming events for SSE delivery.
+    ) -> Iterator[dict]:
+        """Yield structured streaming events for SSE.
 
         Emits ``message_start``, ``content`` deltas, ``message_end`` (with token
-        usage), and ``error`` events. Closing the returned generator (e.g. on
-        client disconnect) closes the underlying HTTP response, which cancels
-        the provider stream.
+        usage), and ``error`` events. The underlying HTTP response is closed
+        when the generator is closed (e.g. on client disconnect), which cancels
+        the provider call.
         """
         self._require_key()
         payload = self._payload(messages, model=model, params=params, stream=True)
         response = self._post(payload, stream=True)
-        self._raise_for_status(response)
-
-        model_name = payload["model"]
-        prompt_tokens: int | None = None
-        completion_tokens: int | None = None
-        started = time.perf_counter()
-
         try:
-            yield ProviderStreamEvent(type="message_start", model=model_name)
-            for line in response.iter_lines(decode_unicode=True):
-                if not line or not line.startswith("data: "):
-                    continue
-                try:
-                    event = json.loads(line[len("data: ") :].strip())
-                except ValueError:
-                    continue
-                event_type = event.get("type")
-                if event_type == "message_start":
-                    usage = (event.get("message") or {}).get("usage") or {}
-                    if usage.get("input_tokens") is not None:
-                        prompt_tokens = usage["input_tokens"]
-                elif event_type == "content_block_delta":
-                    text = (event.get("delta") or {}).get("text", "")
-                    if text:
-                        yield ProviderStreamEvent(type="content", delta=text)
-                elif event_type == "message_delta":
-                    usage = event.get("usage") or {}
-                    if usage.get("output_tokens") is not None:
-                        completion_tokens = usage["output_tokens"]
-                elif event_type == "error":
-                    error = event.get("error") or {}
-                    raise ProviderResponseError(
-                        error.get("message", "Anthropic stream error."),
-                        provider=self.name,
-                    )
-            yield ProviderStreamEvent(
-                type="message_end",
-                model=model_name,
-                prompt_tokens=prompt_tokens,
-                completion_tokens=completion_tokens,
-                latency_seconds=time.perf_counter() - started,
-            )
-        except GeneratorExit:
-            raise
-        except Exception as exc:  # noqa: BLE001 - surface as SSE error event
-            yield ProviderStreamEvent(
-                type="error",
-                error=str(exc),
-                error_type=type(exc).__name__,
-            )
+            try:
+                self._raise_for_status(response)
+            except (
+                ProviderAuthenticationError,
+                ProviderRateLimitError,
+                ProviderResponseError,
+                ProviderUnavailableError,
+            ) as exc:
+                yield {"type": "error", "message": str(exc)}
+                return
+            yield {
+                "type": "message_start",
+                "model": payload["model"],
+            }
+            prompt_tokens: int | None = None
+            completion_tokens: int | None = None
+            try:
+                for line in response.iter_lines(decode_unicode=True):
+                    if not line or not line.startswith("data: "):
+                        continue
+                    try:
+                        event = json.loads(line[len("data: ") :].strip())
+                    except ValueError:
+                        continue
+                    event_type = event.get("type")
+                    if event_type == "message_start":
+                        usage = (event.get("message") or {}).get("usage") or {}
+                        prompt_tokens = usage.get("input_tokens", prompt_tokens)
+                    elif event_type == "content_block_delta":
+                        text = (event.get("delta") or {}).get("text", "")
+                        if text:
+                            yield {"type": "content", "delta": text}
+                    elif event_type == "message_delta":
+                        usage = event.get("usage") or {}
+                        completion_tokens = usage.get("output_tokens", completion_tokens)
+                    elif event_type == "message_stop":
+                        break
+            except requests.RequestException as exc:
+                yield {
+                    "type": "error",
+                    "message": f"Anthropic stream failed: {exc}",
+                }
+                return
+            yield {
+                "type": "message_end",
+                "model": payload["model"],
+                "prompt_tokens": prompt_tokens,
+                "completion_tokens": completion_tokens,
+            }
         finally:
-            with contextlib.suppress(Exception):
-                response.close()
+            response.close()

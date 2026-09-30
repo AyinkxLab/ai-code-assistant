@@ -22,6 +22,7 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from collections.abc import Iterable, Iterator
 from dataclasses import dataclass
+from enum import Enum
 from typing import Any, ClassVar
 
 
@@ -109,21 +110,6 @@ class ProviderResponse:
         }
 
 
-@dataclass(frozen=True)
-class StreamChunk:
-    """A single incremental chunk yielded by :meth:`LLMProvider.stream_events`.
-
-    ``content`` is the delta text (empty for usage-only terminal chunks) and
-    ``usage`` carries token accounting when the provider reports it, so the
-    SSE layer can emit a final ``message_end`` event with token usage.
-    """
-
-    content: str = ""
-    prompt_tokens: int | None = None
-    completion_tokens: int | None = None
-    model: str | None = None
-
-
 class ProviderError(RuntimeError):
     """Base class for every LLM provider failure."""
 
@@ -154,6 +140,89 @@ class ProviderUnavailableError(ProviderError):
 
 class ProviderResponseError(ProviderError):
     """The provider returned a response in an unexpected shape."""
+
+
+class StreamEventType(str, Enum):
+    """Canonical SSE event names emitted by the streaming endpoint."""
+
+    MESSAGE_START = "message_start"
+    CONTENT = "content"
+    MESSAGE_END = "message_end"
+    ERROR = "error"
+
+
+@dataclass(frozen=True)
+class StreamEvent:
+    """A single SSE event in the streaming protocol.
+
+    ``event`` is one of :class:`StreamEventType`; ``data`` is the JSON-ready
+    payload for that event. ``message_start`` carries ``{"model": ...}``,
+    ``content`` carries ``{"delta": ...}``, ``message_end`` carries usage
+    fields from :class:`ProviderResponse`, and ``error`` carries
+    ``{"message": ..., "type": ...}``.
+    """
+
+    event: StreamEventType
+    data: dict[str, Any]
+
+    def to_sse(self) -> str:
+        """Render this event as a single SSE frame (``event:`` + ``data:``)."""
+        import json
+
+        payload = json.dumps(self.data, separators=(",", ":"))
+        return f"event: {self.event.value}\ndata: {payload}\n\n"
+
+
+class StreamCancelled(Exception):
+    """Raised internally when a client disconnects mid-stream.
+
+    Providers may raise this from their ``stream`` generator when they detect
+    that the consumer has gone away; the streaming service catches it, stops
+    iterating, and persists whatever partial content was produced.
+    """
+
+
+def stream_events(
+    provider: "LLMProvider",
+    messages: Iterable[Any],
+    *,
+    model: str | None = None,
+    params: dict[str, Any] | None = None,
+) -> Iterator[StreamEvent]:
+    """Adapt a provider's ``stream`` iterator into the SSE event protocol.
+
+    Yields ``message_start``, then one ``content`` event per chunk, then
+    ``message_end``. Provider errors are surfaced as an ``error`` event so the
+    transport never hangs. Callers are responsible for persisting the
+    accumulated content and usage after the iterator is exhausted.
+    """
+    yield StreamEvent(StreamEventType.MESSAGE_START, {"model": model or provider.name})
+    chunks: list[str] = []
+    usage: dict[str, Any] = {}
+    try:
+        for chunk in provider.stream(messages, model=model, params=params):
+            if not chunk:
+                continue
+            chunks.append(chunk)
+            yield StreamEvent(StreamEventType.CONTENT, {"delta": chunk})
+    except StreamCancelled:
+        raise
+    except ProviderError as exc:
+        yield StreamEvent(
+            StreamEventType.ERROR,
+            {"message": str(exc), "type": type(exc).__name__},
+        )
+        return
+    yield StreamEvent(
+        StreamEventType.MESSAGE_END,
+        {
+            "content": "".join(chunks),
+            "model": model or provider.name,
+            "prompt_tokens": usage.get("prompt_tokens"),
+            "completion_tokens": usage.get("completion_tokens"),
+            "total_tokens": usage.get("total_tokens"),
+        },
+    )
 
 
 class LLMProvider(ABC):
@@ -197,22 +266,20 @@ class LLMProvider(ABC):
     ) -> Iterator[str]:
         """Yield incremental content chunks for ``messages``."""
 
-    def stream_events(
+    def stream_response(
         self,
         messages: Iterable[Any],
         *,
         model: str | None = None,
         params: dict[str, Any] | None = None,
-    ) -> Iterator[StreamChunk]:
-        """Yield :class:`StreamChunk` deltas, including terminal usage.
+    ) -> Iterator[StreamEvent]:
+        """Yield :class:`StreamEvent` frames for the SSE endpoint.
 
-        The default implementation adapts the plain-text :meth:`stream` so
-        providers that do not report usage still work with the SSE endpoint.
-        Providers that surface usage should override this method.
+        Default implementation wraps :meth:`stream` via :func:`stream_events`.
+        Providers with native usage reporting may override to attach token
+        counts to the ``message_end`` event.
         """
-        for chunk in self.stream(messages, model=model, params=params):
-            if chunk:
-                yield StreamChunk(content=chunk)
+        return stream_events(self, messages, model=model, params=params)
 
     def complete(self, messages: Iterable[Any], *, stream: bool = False) -> str:
         """Backward-compatible convenience returning just the content string."""

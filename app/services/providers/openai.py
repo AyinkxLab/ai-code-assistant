@@ -11,40 +11,32 @@ from __future__ import annotations
 import json
 import os
 import time
-from dataclasses import dataclass
 from collections.abc import Iterable, Iterator
 from typing import Any
 
 import requests
 
 from app.services.providers.base import (
-    LLMProvider,
-    ProviderAuthenticationError,
-    ProviderConfigurationError,
-    ProviderRateLimitError,
-    ProviderResponse,
-    ProviderResponseError,
-    ProviderUnavailableError,
-    prepare_messages,
+	LLMProvider,
+	ProviderAuthenticationError,
+	ProviderConfigurationError,
+	ProviderRateLimitError,
+	ProviderResponse,
+	ProviderResponseError,
+	ProviderUnavailableError,
+	prepare_messages,
 )
 
 TIMEOUT_SECONDS = 60
 DEFAULT_MODELS = ("gpt-4o-mini", "gpt-4o", "gpt-4.1-mini", "gpt-4.1")
 
 
-@dataclass
-class StreamDelta:
-    """A single streamed chunk from the provider.
+class ProviderStreamCancelled(Exception):
+    """Raised when a streaming provider call is cancelled by the caller."""
 
-    ``content`` is the incremental text (may be empty for usage-only chunks).
-    ``prompt_tokens``/``completion_tokens`` are populated on the final chunk
-    when the provider reports usage (``stream_options.include_usage``).
-    """
-
-    content: str = ""
-    prompt_tokens: int | None = None
-    completion_tokens: int | None = None
-    model: str | None = None
+    def __init__(self, partial_content: str = "") -> None:
+        super().__init__("Provider stream cancelled.")
+        self.partial_content = partial_content
 
 
 class OpenAIProvider(LLMProvider):
@@ -68,7 +60,7 @@ class OpenAIProvider(LLMProvider):
             base_url or os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1")
         ).rstrip("/")
         self.model = model or os.getenv("OPENAI_MODEL", "gpt-4o-mini")
-        env_temperature = os.getenv("OPENAI_TEMPERATURE", "0.7")
+        env_temperature = os.getenv("OPENAI_TEMPIRATURE", "0.7")
         self.temperature = float(temperature if temperature is not None else env_temperature)
 
     def _require_key(self) -> None:
@@ -116,8 +108,6 @@ class OpenAIProvider(LLMProvider):
             "temperature": self.temperature,
             "stream": stream,
         }
-        if stream:
-            payload["stream_options"] = {"include_usage": True}
         if params:
             payload.update(params)
         return payload
@@ -187,6 +177,7 @@ class OpenAIProvider(LLMProvider):
         *,
         model: str | None = None,
         params: dict | None = None,
+        cancel_event: Any = None,
     ) -> Iterator[str]:
         self._require_key()
         payload = self._payload(messages, model=model, params=params, stream=True)
@@ -194,6 +185,9 @@ class OpenAIProvider(LLMProvider):
         self._raise_for_status(response)
         try:
             for line in response.iter_lines(decode_unicode=True):
+                if cancel_event is not None and cancel_event.is_set():
+                    response.close()
+                    raise ProviderStreamCancelled()
                 if not line or not line.startswith("data: "):
                     continue
                 chunk_payload = line[len("data: ") :].strip()
@@ -212,28 +206,35 @@ class OpenAIProvider(LLMProvider):
             raise ProviderUnavailableError(
                 f"OpenAI stream failed: {exc}", provider=self.name
             ) from exc
+        finally:
+            response.close()
 
-    def stream_events(
+    def stream_with_usage(
         self,
         messages: Iterable[Any],
         *,
         model: str | None = None,
         params: dict | None = None,
-    ) -> Iterator[StreamDelta]:
-        """Yield :class:`StreamDelta` chunks, including a final usage delta.
+        cancel_event: Any = None,
+    ) -> Iterator[dict]:
+        """Stream deltas and yield a final ``usage`` event.
 
-        Unlike :meth:`stream`, this surfaces token usage and the resolved model
-        so the SSE endpoint can emit a ``message_end`` event. A client that
-        stops iterating (e.g. on disconnect) causes the underlying HTTP
-        response to be closed, which aborts the provider request.
+        Yields dicts of the form ``{"type": "delta", "content": str}`` for each
+        token chunk and a single ``{"type": "usage", ...}`` event at the end
+        containing token accounting and the resolved model name. Raises
+        :class:`ProviderStreamCancelled` if ``cancel_event``  is set mid-stream.
         """
         self._require_key()
         payload = self._payload(messages, model=model, params=params, stream=True)
+        payload["stream_options"] = {"include_usage": True}
         response = self._post(payload, stream=True)
         self._raise_for_status(response)
+        usage: dict[str, Any] = {}
         resolved_model = payload["model"]
         try:
             for line in response.iter_lines(decode_unicode=True):
+                if cancel_event is not None and cancel_event.is_set():
+                    raise ProviderStreamCancelled()
                 if not line or not line.startswith("data: "):
                     continue
                 chunk_payload = line[len("data: ") :].strip()
@@ -245,22 +246,23 @@ class OpenAIProvider(LLMProvider):
                     continue
                 if chunk.get("model"):
                     resolved_model = chunk["model"]
-                usage = chunk.get("usage") or {}
-                delta = ""
+                if chunk.get("usage"):
+                    usage = chunk["usage"]
                 try:
-                    delta = chunk["choices"][0]["delta"].get("content", "") or ""
+                    delta = chunk["choices"][0]["delta"].get("content", "")
                 except (KeyError, IndexError, TypeError):
                     delta = ""
-                if delta or usage:
-                    yield StreamDelta(
-                        content=delta,
-                        prompt_tokens=usage.get("prompt_tokens"),
-                        completion_tokens=usage.get("completion_tokens"),
-                        model=resolved_model,
-                    )
+                if delta:
+                    yield {"type": "delta", "content": delta}
         except requests.RequestException as exc:
             raise ProviderUnavailableError(
                 f"OpenAI stream failed: {exc}", provider=self.name
             ) from exc
         finally:
             response.close()
+        yield {
+            "type": "usage",
+            "model": resolved_model,
+            "prompt_tokens": usage.get("prompt_tokens"),
+            "completion_tokens": usage.get("completion_tokens"),
+        }

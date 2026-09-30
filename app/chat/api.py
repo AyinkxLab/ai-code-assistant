@@ -1,3 +1,4 @@
+
 """Chat JSON API (``/api`` namespace).
 
 Machine-facing REST surface for the chat feature:
@@ -6,6 +7,7 @@ Machine-facing REST surface for the chat feature:
     GET    /api/conversations                      list the user's conversations
     GET    /api/conversations/<id>                 conversation with its messages
     POST   /api/conversations/<id>/messages        send a message (LLM reply)
+    POST   /api/conversations/<id>/stream          stream a reply over SSE
     DELETE /api/conversations/<id>                 delete (cascade)
 
 All routes require authentication and are owner-scoped. Errors use RFC 7807
@@ -16,11 +18,13 @@ the same model/service layer.
 
 from __future__ import annotations
 
-import json
-import time
 import functools
+import json
+import queue
+import threading
+import time
 
-from flask import Blueprint, current_app, jsonify, request
+from flask import Blueprint, Response, current_app, jsonify, request, stream_with_context
 from flask_login import current_user
 
 from app.chat import routes as chat_routes
@@ -93,21 +97,6 @@ def _json_object() -> dict | None:
     if data is None:
         return {}
     return data if isinstance(data, dict) else None
-
-
-def _sse_event(event: str, data: dict) -> str:
-    """Format a single Server-Sent Event frame."""
-    return f"event: {event}\ndata: {json.dumps(data)}\n\n"
-
-
-def _sse_headers() -> dict:
-    """Headers that disable buffering so deltas flush immediately."""
-    return {
-        "Content-Type": "text/event-stream; charset=utf-8",
-        "Cache-Control": "no-cache, no-transform",
-        "X-Accel-Buffering": "no",
-        "Connection": "keep-alive",
-    }
 
 
 @bp.route("/conversations", methods=["GET"])
@@ -235,6 +224,20 @@ def send_message(conversation_id: int):
     return jsonify({"assistant_message": conversation.messages[-1].to_dict()}), 201
 
 
+def _sse_event(event: str, data: dict) -> str:
+    """Serialize a single Server-Sent Event frame."""
+    return f"event: {event}\ndata: {json.dumps(data)}\n\n"
+
+
+def _sse_response(generator):
+    """Wrap a generator in an SSE ``Response`` with no-buffering headers."""
+    response = Response(stream_with_context(generator), mimetype="text/event-stream")
+    response.headers["Cache-Control"] = "no-cache, no-transform"
+    response.headers["X-Accel-Buffering"] = "no"
+    response.headers["Connection"] = "keep-alive"
+    return response
+
+
 @bp.route("/conversations/<int:conversation_id>/stream", methods=["POST"])
 @_login_required
 @_rate_limit("message")
@@ -283,57 +286,104 @@ def stream_message(conversation_id: int):
         return _problem(400, "Invalid attachment.", error)
 
     messages = chat_routes._conversation_messages(conversation, context_messages)
-    conversation_id_value = conversation.id
+    kwargs = chat_routes._generation_kwargs(conversation)
     provider_name = conversation.provider
-    generation_kwargs = chat_routes._generation_kwargs(conversation)
-    db.session.commit()
-
-    heartbeat_interval = current_app.config.get("SSE_HEARTBEAT_INTERVAL", 15)
+    conversation_id_value = conversation.id
+    user_id = current_user.id
+    heartbeat = current_app.config.get("SSE_HEARTBEAT_SECONDS", 15)
 
     def generate():
-        collected: list[str] = []
-        usage: dict | None = None
-        cancelled = False
-        last_beat = time.monotonic()
+        # Commit the user message immediately so it is durable even if the
+        # client disconnects mid-stream.
+        db.session.commit()
         yield _sse_event("message_start", {"conversation_id": conversation_id_value})
-        try:
-            provider = RetryingProvider(build_provider(current_user, provider_name))
-            stream = provider.stream(messages, **generation_kwargs)
-            for chunk in stream:
-                if time.monotonic() - last_beat >= heartbeat_interval:
-                    yield ": keep-alive\n\n"
-                    last_beat = time.monotonic()
-                delta = getattr(chunk, "delta", None)
-                if delta is None and isinstance(chunk, dict):
-                    delta = chunk.get("delta")
-                if delta:
-                    collected.append(delta)
-                    yield _sse_event("content", {"delta": delta})
-                chunk_usage = getattr(chunk, "usage", None)
-                if chunk_usage is None and isinstance(chunk, dict):
-                    chunk_usage = chunk.get("usage")
-                if chunk_usage:
-                    usage = chunk_usage
-        except GeneratorExit:
-            cancelled = True
-        except LLMProviderError as exc:
-            yield _sse_event("error", {"message": str(exc)})
-            cancelled = True
-        finally:
-            reply = "".join(collected)
-            try:
-                conv = db.session.get(Conversation, conversation_id_value)
-                if conv is not None:
-                    if reply:
-                        conv.messages.append(Message(role="assistant", content=reply))
-                    if conv.title == "New conversation":
-                        conv.title = content.strip()[:60] or "New conversation"
-                    db.session.commit()
-            except Exception:
-                db.session.rollback()
-        if not cancelled:
-            yield _sse_event("message_end", {"usage": usage or {}})
 
-    response = current_app.response_class(generate(), mimetype="text/event-stream")
-    response.headers.update(_sse_headers())
-    return response
+        events: queue.Queue = queue.Queue()
+        cancelled = threading.Event()
+        collected: list[str] = []
+        usage: dict = {}
+        failure: dict = {}
+
+        def worker():
+            try:
+                provider = RetryingProvider(build_provider(current_user, provider_name))
+                stream = getattr(provider, "stream", None)
+                if stream is None:
+                    reply = provider.chat(messages, **kwargs).content
+                    collected.append(reply)
+                    events.put(("content", reply))
+                else:
+                    for chunk in stream(messages, **kwargs):
+                        if cancelled.is_set():
+                            break
+                        text = getattr(chunk, "content", None)
+                        if text is None and isinstance(chunk, str):
+                            text = chunk
+                        if text:
+                            collected.append(text)
+                            events.put(("content", text))
+                        chunk_usage = getattr(chunk, "usage", None)
+                        if chunk_usage:
+                            usage.update(chunk_usage)
+            except LLMProviderError as exc:
+                failure["message"] = str(exc)
+            except Exception as exc:  # pragma: no cover - defensive
+                failure["message"] = str(exc)
+            finally:
+                events.put(("__done__", None))
+
+        thread = threading.Thread(target=worker, daemon=True)
+        thread.start()
+
+        last_beat = time.monotonic()
+        try:
+            while True:
+                try:
+                    kind, payload = events.get(timeout=1.0)
+                except queue.Empty:
+                    if time.monotonic() - last_beat >= heartbeat:
+                        last_beat = time.monotonic()
+                        yield ": keep-alive\n\n"
+                    continue
+                if kind == "__done__":
+                    break
+                if kind == "content":
+                    yield _sse_event("content", {"delta": payload})
+        except GeneratorExit:
+            cancelled.set()
+            raise
+
+        cancelled.set()
+        thread.join(timeout=5)
+
+        partial = "".join(collected)
+        if failure:
+            # Persist whatever partial content we managed to collect.
+            if partial:
+                conversation_obj = db.session.get(Conversation, conversation_id_value)
+                if conversation_obj is not None:
+                    conversation_obj.messages.append(
+                        Message(role="assistant", content=partial)
+                    )
+                    db.session.commit()
+            yield _sse_event("error", {"message": failure["message"]})
+            return
+
+        conversation_obj = db.session.get(Conversation, conversation_id_value)
+        if conversation_obj is None:
+            yield _sse_event("error", {"message": "Conversation no longer exists."})
+            return
+        assistant_message = Message(role="assistant", content=partial)
+        conversation_obj.messages.append(assistant_message)
+        if conversation_obj.title == "New conversation":
+            conversation_obj.title = content.strip()[:60] or "New conversation"
+        db.session.commit()
+        yield _sse_event(
+            "message_end",
+            {
+                "message": assistant_message.to_dict(),
+                "usage": usage,
+            },
+        )
+
+    return _sse_response(generate())
