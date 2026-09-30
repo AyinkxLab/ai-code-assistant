@@ -619,6 +619,60 @@ a:hover {
   font-weight: 600;
 }
 
+/* File modal raw view toggle (issue: raw view toggle for file contents). */
+.file-modal-toggle {
+  display: inline-flex;
+  gap: 4px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 2px;
+}
+
+.file-modal-toggle button {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  font-family: inherit;
+  font-size: 0.8rem;
+  font-weight: 600;
+  padding: 4px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.file-modal-toggle button.active {
+  background: var(--accent);
+  color: var(--bg);
+}
+
+.file-raw-view {
+  display: flex;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow-x: auto;
+  font-family: var(--font-mono);
+  font-size: 0.82rem;
+  line-height: 1.5;
+}
+
+.file-raw-lines {
+  display: flex;
+  flex-direction: column;
+  padding: 12px 8px 12px 12px;
+  color: var(--text-muted);
+  text-align: right;
+  user-select: none;
+  border-right: 1px solid var(--border);
+}
+
+.file-raw-code {
+  padding: 12px;
+  white-space: pre;
+  margin: 0;
+}
+
 /* Copy button injected into every rendered code block (issue #9). */
 .code-copy-btn {
   position: absolute;

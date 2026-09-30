@@ -1,4 +1,4 @@
-{% extends "base.html" %}
+{{ extends "base.html" %}
 
 {% block title %}{{ project.name }} - {{ config.APP_NAME }}{% endblock %}
 
@@ -11,18 +11,18 @@
       / {{ project.name }}
     </h1>
     <p class="repo-meta">
-      {{ project.source }}{% if project.source_url %} · <span id="project-source-url">{{ project.source_url }}</span>{% endif %}
-      · <span id="project-status" class="project-status project-status-{{ project.status }}">{{ project.status }}</span>
-      {% if project.status == 'ready' %} · {{ project.file_count }} files{% endif %}
+      {{ project.source }}{% if project.source_url % } &#183; <span id="project-source-url">{{ project.source_url }}</span>{% endif % }
+      &#183; <span id="project-status" class="project-status project-status-{{ project.status }}">{{ project.status }}</span>
+      {% if project.status == 'ready' % } &#183; {{ project.file_count }} files{% endif % }
     </p>
   </div>
   <div class="repo-toolbar">
-    {% if project.status != 'indexing' %}
+    {% if project.status != 'indexing' % }
     <a id="export-project" class="btn btn-ghost btn-sm" href="{{ url_for('workspaces.api_export_project', project_id=project.id) }}" title="Download a zip snapshot of the stored files (text files only; binary files become placeholders)">Export</a>
-    {% endif %}
-    {% if project.status == 'ready' and project.source in ('github', 'scaffold') %}
+    {% endif % }
+    {% if project.status == 'ready' and project.source in ('github', 'scaffold') % }
     <button id="refresh-project" class="btn btn-ghost btn-sm" type="button" title="Re-import this project from its source">Refresh</button>
-    {% endif %}
+    {% endif % }
     <button id="delete-project" class="btn btn-ghost btn-sm btn-danger" type="button">Delete</button>
   </div>
 </div>
@@ -50,6 +50,13 @@
 
     <div id="tab-files" class="project-tab">
       <nav id="file-breadcrumbs" class="file-breadcrumbs" aria-label="Current path"></nav>
+      <div id="file-viewer-toolbar" class="file-viewer-toolbar" hidden>
+        <span id="file-viewer-path" class="file-viewer-path"></span>
+        <div class="file-viewer-toggles" role="group" aria-label="File view mode">
+          <button id="file-view-rendered" class="btn btn-ghost btn-sm active" type="button" aria-pressed="true">Rendered</button>
+          <button id="file-view-raw" class="btn btn-ghost btn-sm" type="button" aria-pressed="false">Raw</button>
+        </div>
+      </div>
       <div id="file-viewer" class="analysis-output">
         <p class="sidebar-empty">Select a file on the left to view it.</p>
       </div>
