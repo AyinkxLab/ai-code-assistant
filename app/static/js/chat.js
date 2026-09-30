@@ -161,6 +161,66 @@
     return el;
   }
 
+  var STARTER_PROMPTS = [
+    "Explain this code snippet and what it does.",
+    "Help me debug an error I'm seeing.",
+    "Write unit tests for a function.",
+    "Summarize the changes in a pull request.",
+  ];
+
+  // First-run welcome panel: shown for new/empty threads instead of a blank
+  // page. Renders example prompt chips that prefill the composer on click.
+  function renderWelcome() {
+    if (!messagesEl) return;
+    var panel = document.createElement("div");
+    panel.className = "chat-welcome";
+    var heading = document.createElement("h2");
+    heading.className = "chat-welcome-title";
+    heading.textContent = "Welcome to the AI Code Assistant";
+    var intro = document.createElement("p");
+    intro.className = "chat-welcome-intro";
+    intro.textContent =
+      "Ask questions about your code, get explanations, debug errors, or draft tests. Pick a starter below or type your own message.";
+    panel.appendChild(heading);
+    panel.appendChild(intro);
+    var chips = document.createElement("div");
+    chips.className = "chat-welcome-chips";
+    STARTER_PROMPTS.forEach(function (prompt) {
+      var chip = document.createElement("button");
+      chip.type = "button";
+      chip.className = "chat-welcome-chip";
+      chip.textContent = prompt;
+      chip.addEventListener("click", function () {
+        if (!inputEl) return;
+        inputEl.value = prompt;
+        autoGrowComposer();
+        clearComposerError();
+        inputEl.focus();
+      });
+      chips.appendChild(chip);
+    });
+    panel.appendChild(chips);
+    var details = document.createElement("details");
+    details.className = "chat-welcome-details";
+    var summary = document.createElement("summary");
+    summary.textContent = "What can the assistant do?";
+    var list = document.createElement("ul");
+    [
+      "Explain unfamiliar code and summarize repositories.",
+      "Suggest fixes and help debug errors.",
+      "Draft tests, refactors, and documentation.",
+      "Reference GitHub issues, pull requests, and files when connected.",
+    ].forEach(function (item) {
+      var li = document.createElement("li");
+      li.textContent = item;
+      list.appendChild(li);
+    });
+    details.appendChild(summary);
+    details.appendChild(list);
+    panel.appendChild(details);
+    messagesEl.appendChild(panel);
+  }
+
   function addTypingIndicator() {
     var el = document.createElement("div");
     el.className = "chat-message chat-assistant typing";
@@ -313,8 +373,7 @@
           data.usage || { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 };
         renderUsage();
         if (data.messages.length === 0) {
-          messagesEl.innerHTML =
-            '<div class="chat-placeholder"><p>Ask the AI assistant for help with your code.</p></div>';
+          renderWelcome();
         }
         applySettingsToPanel(data);
         clearComposerError();
@@ -349,7 +408,8 @@
 
   function newConversation() {
     currentId = null;
-    messagesEl.innerHTML = '<div class="chat-placeholder"><p>Start a new conversation.</p></div>';
+    messagesEl.innerHTML = "";
+    renderWelcome();
     actionsEl.hidden = true;
     conversationUsage = { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 };
     renderUsage();
@@ -861,6 +921,7 @@
     updateTimestamps();
     autoGrowComposer();
     inputEl.focus();
+    if (messagesEl && !messagesEl.querySelector(".chat-message")) renderWelcome();
 
     listEl.addEventListener("click", function (event) {
       var item = event.target.closest(".conversation-item");

@@ -2844,3 +2844,139 @@ a:hover {
   gap: 8px;
   flex-wrap: wrap;
 }
+
+/* Welcome / empty-state experience for new conversations -------------- */
+
+.welcome-panel {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 18px;
+  padding: 40px 24px;
+  margin: auto;
+  max-width: 640px;
+}
+
+.welcome-mark {
+  font-family: var(--font-mono);
+  font-size: 1.4rem;
+  color: var(--accent);
+  background: rgba(88, 166, 255, 0.12);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 10px 16px;
+}
+
+.welcome-title {
+  font-size: clamp(1.4rem, 3vw, 1.9rem);
+  font-weight: 700;
+  line-height: 1.25;
+}
+
+.welcome-subtitle {
+  color: var(--text-muted);
+  font-size: 0.98rem;
+  max-width: 520px;
+}
+
+.welcome-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  justify-content: center;
+  width: 100%;
+}
+
+.welcome-chip {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--text);
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 0.85rem;
+  padding: 8px 16px;
+  transition: border-color 0.15s ease, background 0.15s ease, color 0.15s ease;
+}
+
+.welcome-chip:hover,
+.welcome-chip:focus-visible {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: rgba(88, 166, 255, 0.08);
+  outline: none;
+}
+
+.welcome-capabilities {
+  width: 100%;
+  border-top: 1px solid var(--border);
+  padding-top: 14px;
+  text-align: left;
+}
+
+.welcome-capabilities summary {
+  cursor: pointer;
+  color: var(--text-muted);
+  font-size: 0.85rem;
+  font-weight: 600;
+  list-style: none;
+}
+
+.welcome-capabilities summary::-webkit-details-marker {
+  display: none;
+}
+
+.welcome-capabilities summary::before {
+  content: "\25B8";
+  display: inline-block;
+  margin-right: 6px;
+  transition: transform 0.15s ease;
+}
+
+.welcome-capabilities[open] summary::before {
+  transform: rotate(90deg);
+}
+
+.welcome-capabilities summary:hover {
+  color: var(--text);
+}
+
+.welcome-capabilities ul {
+  list-style: none;
+  margin: 10px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.welcome-capabilities li {
+  color: var(--text-muted);
+  font-size: 0.85rem;
+  padding-left: 18px;
+  position: relative;
+}
+
+.welcome-capabilities li::before {
+  content: "\2713";
+  position: absolute;
+  left: 0;
+  color: var(--success);
+}
+
+.welcome-capabilities li.welcome-limit::before {
+  content: "\26A0";
+  color: var(--warning);
+}
+
+@media (max-width: 600px) {
+  .welcome-panel {
+    padding: 28px 16px;
+  }
+
+  .welcome-chip {
+    font-size: 0.8rem;
+    padding: 7px 12px;
+  }
+}

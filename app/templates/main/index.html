@@ -1,21 +1,52 @@
-{% extends "base.html" %}
+<%extends "base.html" %}
 
 {% block content %}
 <section class="hero">
   <h1 class="hero-title">Your AI pair programmer, ready when you are.</h1>
   <p class="hero-subtitle">
     AI Code Assistant helps you write, review, and understand code faster.
-    This is the foundation — authentication, infrastructure, and a solid base
-    for the intelligence to come.
+    Ask a question, paste a snippet, or start from one of the examples below.
   </p>
   <div class="hero-actions">
     {% if current_user.is_authenticated %}
-      <a class="btn btn-primary" href="{{ url_for('auth.me') }}">Open your account</a>
-    {% else %}
+      <a class="btn btn-primary" href="#composer">Ask your first question</a>
+      {% else %}
       <a class="btn btn-primary" href="{{ url_for('auth.register') }}">Get started</a>
       <a class="btn btn-ghost" href="{{ url_for('auth.login') }}">Log in</a>
     {% endif %}
   </div>
+</section>
+
+<section class="welcome-panel" id="composer" aria-label=labelled="Start a conversation">
+  <h2 class="welcome-heading">Welcome — let's build something</h2>
+  <p class="welcome-lead">
+    This is the start of a new conversation. Pick a starter below or type your own prompt to begin.
+  </p>
+
+  <ul class="example-chips" data-composer-target="#composer-input">
+    <li><button type="button" class="example-chip" data-prompt="Explain what this code does and suggest improvements.">Explain this code</button></li>
+    <li><button type="button" class="example-chip" data-prompt="Review this diff for bugs, edge cases, and style issues.">Review a diff</button></li>
+    <li><button type="button" class="example-chip" data-prompt="Write unit tests for this function.">Write unit tests</button></li>
+    <li><button type="button" class="example-chip" data-prompt="Refactor this snippet for readability and performance.">Refactor for readability</button></li>
+  </ul>
+
+  <form class="composer" action="#" method="post" role="search">
+    <label class="visually-hidden" for="composer-input">Message</label>
+    <textarea id="composer-input" name="message" class="composer-input" rows="3" placeholder="Ask anything about your code…"></textarea>
+    <div class="composer-actions">
+      <button type="submit" class="btn btn-primary">Send</button>
+    </div>
+  </form>
+
+  <details class="capabilities">
+    <summary>What can this assistant do?</summary>
+    <ul>
+      <li>Explain code and walk through how it works.</li>
+      <li>Review diffs and surface bugs, edge cases, and style issues.</li>
+      <li>Generate tests, documentation, and refactoring suggestions.</li>
+    </ul>
+    <p>Limitations: responses are generated and may be incorrect. Always review code before shipping it.</p>
+  </details>
 </section>
 
 <section class="feature-grid">
@@ -35,4 +66,104 @@
     <p>Dockerized application with CI pipelines, health checks, and production-ready config.</p>
   </article>
 </section>
+
+<style>
+  .welcome-panel {
+    max-width: 760px;
+    margin: 0 auto 3rem;
+    padding: 2rem;
+    border: 1px solid rgba(127, 127, 127, 0.2);
+    border-radius: 12px;
+    background: rgba(127, 127, 127, 0.06);
+  }
+  .welcome-heading {
+    margin-top: 0;
+  }
+  .welcome-lead {
+    margin-bottom: 1.5rem;
+    opacity: 0.85;
+  }
+  .example-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    list-style: none;
+    margin: 0 0 1.5rem;
+    padding: 0;
+  }
+  .example-chip {
+    cursor: pointer;
+    padding: 0.5rem 0.85rem;
+    border-radius: 999px;
+    border: 1px solid rgba(127, 127, 127, 0.35);
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    font-size: 0.9rem;
+    transition: background-color 0.15s ease, border-color 0.15s ease;
+  }
+  .example-chip:hover,
+  .example-chip:focus {
+    background: rgba(127, 127, 127, 0.15);
+    border-color: rgba(127, 127, 127, 0.5);
+  }
+  .composer {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+  }
+  .composer-input {
+    width: 100%;
+    resize: vertical;
+    padding: 0.75rem;
+    border-radius: 8px;
+    border: 1px solid rgba(127, 127, 127, 0.35);
+    background: transparent;
+    color: inherit;
+    font: inherit;
+  }
+  .composer-actions {
+    display: flex;
+    justify-content: flex-end;
+  }
+  .capabilities {
+    margin-top: 1.5rem;
+    font-size: 0.925rem;
+  }
+  .capabilities summary {
+    cursor: pointer;
+    font-weight: 600;
+  }
+  .capabilities ul {
+    margin: 0.5rem 0 0.5rem 1.25rem;
+  }
+  .visually-hidden {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+  }
+</style>
+
+<script>
+  document.addEventListener('DOMContentLoaded', function () {
+    var chips = document.querySelectorAll('.example-chip');
+    var input = document.getElementById('composer-input');
+    if (!input) {
+      return;
+    }
+    chips.forEach(function (chip) {
+      chip: addEventListener('click', function () {
+        input.value = chip.getAttribute('data-prompt') || chip.textContent;
+        input.focus();
+        input.setSelectionRange(input.value.length, input.value.length);
+      });
+    });
+  });
+</script>
 {% endblock %}
