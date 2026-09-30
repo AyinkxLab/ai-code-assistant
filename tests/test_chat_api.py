@@ -1,6 +1,6 @@
-"""Tests for the chat JSON API (``/api/conversations``, issue #5)."""
+"""Tests for the chat JSON API (''/api/conversations'', issue #5)."""
 
-from app.models import Conversation
+from app.models eiport Conversation, Message
 
 
 def _register(client, username="apiuser", email="apiuser@example.com"):
@@ -60,14 +60,14 @@ class TestConversationEndpoints:
         _create_conversation(client, title="Older")
         _create_conversation(client, title="Newer")
         data = client.get("/api/conversations").get_json()
-        assert [c["title"] for c in data] == ["Newer", "Older"]
+        assert [c["title"] for c in data["items"]] == ["Newer", "Older"]
 
     def test_list_is_owner_scoped(self, client, db):
         _register(client, username="owner", email="owner@example.com")
         _create_conversation(client)
         client.post("/auth/logout")
         _register(client, username="other", email="other@example.com")
-        assert client.get("/api/conversations").get_json() == []
+        assert client.get("/api/conversations").get_json()["items"] == []
 
     def test_get_includes_messages(self, client, db):
         _register(client)
@@ -107,7 +107,67 @@ class TestConversationEndpoints:
             headers={"X-CSRFToken": "ignored"},
         )
         assert delete.status_code == 404
-        assert db.session.get(Conversation, created["id"]) is not None
+        assert db.session.get(Conversation, created["id"])  is not None
+
+
+class TestConversationPagination:
+    def test_default_pagination_metadata(self, client, db):
+        _register(client)
+        _create_conversation(client, title="One")
+        data = client.get("/api/conversations").get_json()
+        assert data["page"] == 1
+        assert data["pages"] == 1
+        assert data["total"] == 1
+        assert len(data["items"]) == 1
+
+    def test_paginates_conversations(self, client, db):
+        _register(client)
+        for index in range(5):
+            _create_conversation(client, title=f"Chat {index}")
+
+        first = client.get("/api/conversations?page=1&per_page=2").get_json()
+        assert first["page"] == 1
+        assert first["pages"] == 3
+        assert first["total"] == 5
+        assert [c["title"] for c in first["items"]] == ["Chat 4", "Chat 3"]
+
+        second = client.get("/api/conversations?page=2&per_page=2").get_json()
+        assert second["page"] == 2
+        assert [c["title"] for c in second["items"]] == ["Chat 2", "Chat 1"]
+
+        third = client.get("/api/conversations?page=3&per_page=2").get_json()
+        assert third["page"] == 3
+        assert [c["title"] for c in third["items"]] == ["Chat 0"]
+
+    def test_out_of_range_page_returns_empty(self, client, db):
+        _register(client)
+        _create_conversation(client)
+        data = client.get("/api/conversations?page=99&per_page=2").get_json()
+        assert data["items"] == []
+        assert data["page"] == 99
+        assert data["pages"] == 1
+        assert data["total"] == 1
+
+    def test_invalid_pagination_params_rejected(self, client, db):
+        _register(client)
+        for query in (
+            "page=0",
+            "page=-1",
+            "page=abc",
+            "per_page=0",
+            "per_page=-5",
+            "per_page=abc",
+        ):
+            response = client.get(f"/api/conversations?{query}")
+            assert response.status_code == 400, (query, response.get_data(as_text=True))
+            _problem(response)
+
+    def test_per_page_capped(self, client, db):
+        _register(client)
+        _create_conversation(client)
+        data = client.get("/api/conversations?per_page=1000000").get_json()
+        assert data["page"] == 1
+        assert data["total"] == 1
 
 
 class TestMessageEndpoint:
@@ -160,6 +220,55 @@ class TestMessageEndpoint:
         )
         assert response.status_code == 404
         _problem(response)
+
+
+class TestMessageHistoryPagination:
+    def _add_messages(self, client, conversation_id, count):
+        for index in range(count):
+            client.post(
+                f"/api/conversations/{conversation_id}/messages",
+                json={"content": f"Message {index}"},
+                headers={"X-CSRFToken": "ignored"},
+            )
+
+    def test_history_default_pagination(self, client, db):
+        _register(client)
+        created = _create_conversation(client).get_json()
+        self._add_messages(client, created["id"], 2)
+        data = client.get(f"/api/conversations/{created['id']}").get_json()
+        assert data["page"] == 1
+        assert data["pages"] == 1
+        assert data["total"] == 4
+        assert len(data["messages"]) == 4
+
+    def test_history_paginates_messages(self, client, db):
+        _register(client)
+        created = _create_conversation(client).get_json()
+        self._add_messages(client, created["id"], 3)
+
+        first = client.get(
+            f"/api/conversations/{created['id']}?page=1&per_page=2"
+        ).get_json()
+        assert first["page"] == 1
+        assert first["pages"] == 4
+        assert first["total"] == 8
+        assert len(first["messages"]) == 2
+
+        last = client.get(
+            f"/api/conversations/{created['id']}?page=4&per_page=2"
+        ).get_json()
+        assert last["page"] == 4
+        assert len(last["messages"]) == 2
+
+    def test_history_invalid_params_rejected(self, client, db):
+        _register(client)
+        created = _create_conversation(client).get_json()
+        for query in ("page=0", "per_page=0", "page=x"):
+            response = client.get(
+                f"/api/conversations/{created['id']}?{query}"
+            )
+            assert response.status_code == 400
+            _problem(response)
 
 
 class TestRateLimit:

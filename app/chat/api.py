@@ -17,6 +17,7 @@ the same model/service layer.
 from __future__ import annotations
 
 import functools
+import math
 
 from flask import Blueprint, current_app, jsonify, request
 from flask_login import current_user
@@ -93,17 +94,41 @@ def _json_object() -> dict | None:
     return data if isinstance(data, dict) else None
 
 
+def _pagination_params() -> tuple[int, int] | None:
+    """Parse ``page`` and ``per_page`` query params, or ``None`` when invalid."""
+    try:
+        page = int(request.args.get("page", 1))
+        per_page = int(request.args.get("per_page", 20))
+    except (TypeError, ValueError):
+        return None
+    if page < 1 or per_page < 1 or per_page > 100:
+        return None
+    return page, per_page
+
+
+def _paginated(items, page: int, per_page: int, total: int) -> dict:
+    """Build the ``{items, page, pages, total}`` pagination envelope."""
+    pages = max(1, math.ceil(total / per_page)) if total else 0
+    return {"items": items, "page": page, "pages": pages, "total": total}
+
+
 @bp.route("/conversations", methods=["GET"])
 @_login_required
 @_rate_limit("list")
 def list_conversations():
     """List the current user's conversations, newest first."""
-    conversations = (
+    params = _pagination_params()
+    if params is None:
+        return _problem(400, "Invalid pagination.", "page and per_page must be positive integers.")
+    page, per_page = params
+    query = (
         Conversation.query.filter_by(user_id=current_user.id)
         .order_by(Conversation.updated_at.desc())
-        .all()
     )
-    return jsonify([conversation.to_dict() for conversation in conversations])
+    total = query.count()
+    conversations = query.offset((page - 1) * per_page).limit(per_page).all()
+    items = [conversation.to_dict() for conversation in conversations]
+    return jsonify(_paginated(items, page, per_page, total))
 
 
 @bp.route("/conversations", methods=["POST"])
@@ -138,8 +163,19 @@ def get_conversation(conversation_id: int):
     conversation = _owned_conversation(conversation_id)
     if conversation is None:
         return _problem(404, "Conversation not found.", "No such conversation exists.")
+    params = _pagination_params()
+    if params is None:
+        return _problem(400, "Invalid pagination.", "page and per_page must be positive integers.")
+    page, per_page = params
+    message_query = (
+        Message.query.filter_by(conversation_id=conversation.id)
+        .order_by(Message.id.asc())
+    )
+    total = message_query.count()
+    messages = message_query.offset((page - 1) * per_page).limit(per_page).all()
     payload = conversation.to_dict()
-    payload["messages"] = [message.to_dict() for message in conversation.messages]
+    payload["messages"] = [message.to_dict() for message in messages]
+    payload["messages_pagination"] = _paginated(payload["messages"], page, per_page, total)
     return jsonify(payload)
 
 
