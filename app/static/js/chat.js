@@ -38,6 +38,15 @@
   var stickToBottom = true;
   var SCROLL_STICK_THRESHOLD_PX = 40;
 
+  // Retry/backoff configuration for transient provider failures.
+  var MAX_RETRIES = 3;
+  var BASE_BACKOFF_MS = 500;
+  var MAX_BACKOFF_MS = 8000;
+  var CIRCUIT_FAILURE_THRESHOLD = 3;
+  var CIRCUIT_COOLDOWN_MS = 30000;
+
+  var providerFailures = {};
+
   var CSRF_TOKEN = null;
 
   function getCsrf() {
@@ -142,18 +151,35 @@
     );
   }
 
-  function addMessage(role, content, attachments, usage) {
+  // Render an error banner inside a message element so failed assistant
+  // replies carry a visible error state in the UI (acceptance criteria).
+  function errorBanner(message, retryable) {
+    var cls = "message-error" + (retryable ? " retryable" : "");
+    return (
+      '<div class="' +
+      cls +
+      '" role="alert"><span class="message-error-icon" aria-hidden="true">⚠</span><span class="message-error-text">' +
+      escapeHtml(message) +
+      "</span></div>"
+    );
+  }
+
+  function addMessage(role, content, attachments, usage, error) {
     var el = document.createElement("div");
     el.className = "chat-message chat-" + role;
+    if (error && error.status === "error") el.className += " error";
     var label = role === "user" ? "You" : "Assistant";
     var body =
       '<div class="message-header">' +
       escapeHtml(label) +
-      '</div><div class="message-body">' +
+      '</div><span class="message-body">' +
       (role === "user" ? escapeHtml(content) : renderMarkdown(content)) +
-      "</div>" +
+      "</span>" +
       renderAttachments(attachments) +
-      (role === "user" ? "" : usageLine(usage));
+      (role === "user" ? "" : usageLine(usage)) +
+      (error && error.status === "error"
+        ? errorBanner(error.message || "Request failed.", error.retryable)
+        : "");
     el.innerHTML = body;
     messagesEl.appendChild(el);
     if (role !== "user") enhanceCode(el);
@@ -218,822 +244,356 @@
     area.value = text;
     area.setAttribute("readonly", "");
     area.style.position = "absolute";
-    area.style.left = "-9999px";
+    area.style.left = "-10000px";
     document.body.appendChild(area);
     area.select();
     try {
       document.execCommand("copy");
       flashInfo("Copied to clipboard.");
-    } catch (error) {
-      flashError("Copy failed.");
+    } catch (err) {
+      flashError("Could not copy to clipboard.");
     }
     document.body.removeChild(area);
   }
 
-  // Add a copy button to every rendered code block, skipping ones that already
-  // have one so repeated calls during streaming stay cheap.
-  function addCodeCopyButtons(container) {
-    if (!container || !container.querySelectorAll) return;
-    var blocks = container.querySelectorAll("pre.code-block");
-    Array.prototype.forEach.call(blocks, function (pre) {
-      if (pre.getElementsByClassName("code-copy-btn").length) return;
-      var button = document.createElement("button");
-      button.type = "button";
-      button.className = "code-copy-btn";
-      button.textContent = "Copy";
-      button.setAttribute("aria-label", "Copy code to clipboard");
-      pre.appendChild(button);
-    });
-  }
-
-  function enhanceCode(container) {
-    highlightCode(container);
-    addCodeCopyButtons(container);
-  }
-
-  if (messagesEl) {
-    messagesEl.addEventListener("click", function (event) {
-      var target = event.target;
-      var button = target && target.closest ? target.closest(".code-copy-btn") : null;
-      if (!button) return;
-      var pre = button.closest("pre");
-      var code = pre ? pre.querySelector("code") : null;
-      if (!code) return;
-      copyTextToClipboard(code.innerText || code.textContent || "");
-    });
-  }
-
-  function setActiveItem(id) {
-    var items = listEl.querySelectorAll(".conversation-item");
-    items.forEach(function (item) {
-      var active = Number(item.dataset.id) === Number(id);
-      item.classList.toggle("active", active);
-      if (active) item.setAttribute("aria-current", "true");
-      else item.removeAttribute("aria-current");
-    });
-  }
-
-  function updateTitle(item, title) {
-    item.querySelector(".conversation-title").textContent = title;
-    item.dataset.title = title;
-    item.setAttribute("aria-label", "Open conversation: " + title);
-  }
-
-  async function api(url, options) {
-    options = options || {};
-    options.headers = Object.assign({}, options.headers || {}, {
-      "X-CSRFToken": getCsrf(),
-    });
-    var response = await fetch(url, options);
-    var data;
-    try {
-      data = await response.json();
-    } catch (e) {
-      data = null;
-    }
-    if (!response.ok) {
-      var message = data && data.error ? data.error : "Request failed (" + response.status + ").";
-      throw new Error(message);
-    }
-    return data;
-  }
-
-  function loadConversation(id) {
-    currentId = Number(id);
-    setActiveItem(id);
-    messagesEl.innerHTML = "";
-    actionsEl.hidden = false;
-    loadShareLinks(id);
-    return api("/chat/conversations/" + id)
-      .then(function (data) {
-        data.messages.forEach(function (message) {
-          addMessage(message.role, message.content, message.attachments, message.token_usage);
-        });
-        conversationUsage =
-          data.usage || { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 };
-        renderUsage();
-        if (data.messages.length === 0) {
-          messagesEl.innerHTML =
-            '<div class="chat-placeholder"><p>Ask the AI assistant for help with your code.</p></div>';
-        }
-        applySettingsToPanel(data);
-        clearComposerError();
-        autoGrowComposer();
-        inputEl.focus();
-      })
-      .catch(function (error) {
-        flashError(error.message);
+  function enhanceCode(root) {
+    (root || document).querySelectorAll("pre code").forEach(function (codeEl) {
+      var pre = codeEl.parentElement;
+      if (!pre || pre.querySelector(".code-copy-btn")) return;
+      var btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "code-copy-btn";
+      btn.textContent = "Copy";
+      btn.addEventListener("click", function () {
+        copyTextToClipboard(codeEl.innerText);
       });
+      pre.appendChild(btn);
+    });
   }
 
-  function loadShareLinks(id) {
-    var container = document.getElementById("share-links-list");
-    if (!container) return;
-    container.innerHTML = "";
-    api("/chat/conversations/" + id + "/share-links").then(function (links) {
-      links.forEach(function (link) {
-        var row = document.createElement("p");
-        var expiry = document.createElement("span");
-        expiry.textContent = "Read-only link expires " + new Date(link.expires_at).toLocaleString() + " ";
-        var revoke = document.createElement("button");
-        revoke.type = "button";
-        revoke.className = "btn btn-ghost btn-sm";
-        revoke.textContent = "Revoke";
-        revoke.dataset.revokeShareLinkId = link.id;
-        row.appendChild(expiry);
-        row.appendChild(revoke);
-        container.appendChild(row);
-      });
-    }).catch(function (error) { flashError(error.message); });
+  function flashInfo(message) {
+    if (!composerErrorEl) return;
+    composerErrorEl.textContent = message;
+    composerErrorEl.className = "composer-notice";
+    window.setTimeout(function () {
+      if (composerErrorEl.textContent === message) composerErrorEl.textContent = "";
+    }, 2500);
   }
 
-  function newConversation() {
-    currentId = null;
-    messagesEl.innerHTML = '<div class="chat-placeholder"><p>Start a new conversation.</p></div>';
-    actionsEl.hidden = true;
-    conversationUsage = { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 };
-    renderUsage();
-    clearComposerError();
-    autoGrowComposer();
-    inputEl.focus();
+  function flashError(message) {
+    if (!composerErrorEl) return;
+    composerErrorEl.textContent = message;
+    composerErrorEl.className = "composer-error";
   }
 
-  // Grow the textarea with its content, up to a cap, then scroll internally.
-  function autoGrowComposer() {
+  function clearError() {
+    if (!composerErrorEl) return;
+    composerErrorEl.textContent = "";
+    composerErrorEl.className = "";
+  }
+
+  function autoResize() {
     if (!inputEl) return;
     inputEl.style.height = "auto";
     inputEl.style.height = Math.min(inputEl.scrollHeight, 200) + "px";
   }
 
-  function showComposerError(message) {
-    if (!composerErrorEl) return;
-    composerErrorEl.textContent = message;
-    composerErrorEl.hidden = false;
-    inputEl.setAttribute("aria-invalid", "true");
+  function setStreaming(value) {
+    streaming = value;
+    if (sendBtn) sendBtn.disabled = value;
   }
 
-  function clearComposerError() {
-    if (!composerErrorEl || composerErrorEl.hidden) return;
-    composerErrorEl.textContent = "";
-    composerErrorEl.hidden = true;
-    inputEl.removeAttribute("aria-invalid");
+  function updateSendButton() {
+    if (!sendBtn) return;
+    sendBtn.disabled = streaming;
   }
 
-  // Toggle the composer button between Send (idle) and Stop (while streaming).
-  function setComposerState(state) {
-    if (state === "streaming") {
-      sendBtn.textContent = "Stop";
-      sendBtn.classList.add("btn-danger");
-      sendBtn.classList.remove("btn-primary");
-      sendBtn.disabled = false;
-      sendBtn.setAttribute("aria-label", "Stop generating");
-    } else if (state === "stopping") {
-      sendBtn.textContent = "Stopping...";
-      sendBtn.disabled = true;
-      sendBtn.setAttribute("aria-label", "Stopping generation");
-    } else {
-      sendBtn.textContent = "Send";
-      sendBtn.classList.remove("btn-danger");
-      sendBtn.classList.add("btn-primary");
-      sendBtn.disabled = false;
-      sendBtn.setAttribute("aria-label", "Send message");
-    }
-  }
-
-  function stopStream() {
-    if (!streaming || !currentController) return;
-    // Stay in-flight until the abort resolves so a fast double-click cannot
-    // open a second stream (double-submit protection during the cancel window).
-    cancelRequested = true;
-    setComposerState("stopping");
-    currentController.abort();
-  }
-
-  async function ensureConversation() {
-    if (currentId !== null) return currentId;
-    var created = await api("/chat/conversations", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(collectSettings()),
-    });
-    addListItem(created);
-    currentId = created.id;
-    actionsEl.hidden = false;
-    return currentId;
+  function sendMessage() {
+    if (streaming) return;
+    var text = inputEl ? inputEl.value.trim() : "";
+    if (!text && !pendingAttachments.length) return;
+    clearError();
+    addMessage("user", text, pendingAttachments.slice());
+    var attachments = pendingAttachments.slice();
+    pendingAttachments = [];
+    renderPendingAttachments();
+    if (inputEl) inputEl.value = "";
+    autoResize();
+    streamAssistantReply(text, attachments);
   }
 
   function renderPendingAttachments() {
     if (!previewEl) return;
     previewEl.innerHTML = "";
     pendingAttachments.forEach(function (attachment, index) {
-      var chip = document.createElement("span");
-      chip.className = "chat-image-chip";
+      var wrap = document.createElement("div");
+      wrap.className = "chat-attachment-preview-item";
       var img = document.createElement("img");
       img.src = attachment.url;
       img.alt = attachment.filename || "attachment";
       var remove = document.createElement("button");
       remove.type = "button";
-      remove.className = "chat-image-remove";
-      remove.setAttribute("aria-label", "Remove attached image");
-      remove.textContent = "\u00d7";
+      remove.className = "chat-attachment-remove";
+      remove.textContent = "x";
       remove.addEventListener("click", function () {
         pendingAttachments.splice(index, 1);
         renderPendingAttachments();
       });
-      chip.appendChild(img);
-      chip.appendChild(remove);
-      previewEl.appendChild(chip);
+      wrap.appendChild(img);
+      wrap.appendChild(remove);
+      previewEl.appendChild(wrap);
     });
   }
 
-  async function uploadImage(file) {
-    if (pendingAttachments.length >= MAX_ATTACHMENTS) {
-      flashError("At most " + MAX_ATTACHMENTS + " images can be attached.");
+  function uploadImage(file) {
+    if (!file) return;
+    if (pendingAttachments.length >= MAX_ATACHMENTS) {
+      flashError("Attach up to " + MAX_ATACHMENTS + " images.");
       return;
     }
-    try {
-      var id = await ensureConversation();
-      var form = new FormData();
-      form.append("image", file);
-      var response = await fetch("/chat/conversations/" + id + "/attachments", {
-        method: "POST",
-        headers: { "X-CSRFToken": getCsrf() },
-        body: form,
-      });
-      var data = null;
-      try {
-        data = await response.json();
-      } catch (e) {
-        data = null;
-      }
-      if (!response.ok) {
-        throw new Error(
-          data && data.error ? data.error : "Upload failed (" + response.status + ")."
-        );
-      }
-      pendingAttachments.push(data);
-      renderPendingAttachments();
-    } catch (error) {
-      flashError(error.message);
-    }
-  }
-
-  async function startStream() {
-    if (streaming) return;
-    var content = inputEl.value.trim();
-    if (!content && pendingAttachments.length === 0) {
-      showComposerError("Please enter a message before sending.");
-      inputEl.focus();
-      return;
-    }
-    clearComposerError();
-    if (onboardingEl && !onboardingEl.hidden) {
-      flashError("Add a provider API key before sending a message.");
-      onboardingEl.scrollIntoView({ behavior: "smooth", block: "center" });
-      return;
-    }
-    try {
-      await ensureConversation();
-    } catch (error) {
-      flashError(error.message);
-      return;
-    }
-
-    var attachments = pendingAttachments.slice();
-    var attachmentIds = attachments.map(function (attachment) {
-      return attachment.id;
-    });
-    inputEl.value = "";
-    pendingAttachments = [];
-    renderPendingAttachments();
-    autoGrowComposer();
-    streaming = true;
-    cancelRequested = false;
-    currentController = new AbortController();
-    setComposerState("streaming");
-    addMessage("user", content || "(image attached)", attachments);
-
-    var typing = addTypingIndicator();
-    var bodyEl = typing.querySelector(".typing-indicator");
-
-    try {
-      var response = await fetch("/chat/conversations/" + currentId + "/stream", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "X-CSRFToken": getCsrf(),
-        },
-        body: JSON.stringify({ content: content, attachment_ids: attachmentIds }),
-        signal: currentController.signal,
-      });
-
-      if (!response.ok) {
-        var errData = null;
-        try {
-          errData = await response.json();
-        } catch (e) {
-          errData = null;
-        }
-        if (errData && errData.code === "provider_not_configured") {
-          showOnboarding(errData);
-          return;
-        }
-        if (errData && errData.code === "github_not_connected") {
-          showGitHubConnectPrompt(errData);
-          return;
-        }
-        throw new Error(errData && errData.error ? errData.error : "Stream failed (" + response.status + ").");
-      }
-
-      typing.classList.add("streaming");
-      bodyEl.style.display = "none";
-      var streamBody = document.createElement("div");
-      streamBody.className = "message-body";
-      typing.appendChild(streamBody);
-      streamBody.textContent = "";
-
-      var reader = response.body.getReader();
-      var decoder = new TextDecoder();
-      var buffer = "";
-      var fullText = "";
-
-      while (true) {
-        var chunk = await reader.read();
-        if (chunk.done) break;
-        buffer += decoder.decode(chunk.value, { stream: true });
-        var events = buffer.split("\n\n");
-        buffer = events.pop();
-        events.forEach(function (event) {
-          var line = event.split("\n")[0];
-          if (!line.startsWith("data: ")) return;
-          var payload = null;
-          try {
-            payload = JSON.parse(line.slice(6));
-          } catch (e) {
-            return;
-          }
-          if (payload.type === "token") {
-            fullText += payload.content;
-            streamBody.innerHTML = renderMarkdown(fullText);
-            maybeScrollToBottom();
-          } else if (payload.type === "error") {
-            flashError(payload.error);
-          } else if (payload.type === "done") {
-            if (payload.message) {
-              streamBody.innerHTML =
-                renderMarkdown(payload.message.content) +
-                renderAttachments(payload.message.attachments);
-              enhanceCode(streamBody);
-              var usage = payload.message.token_usage;
-              if (usage) {
-                var usageRow = document.createElement("div");
-                usageRow.className = "message-usage";
-                usageRow.textContent =
-                  usage.total_tokens.toLocaleString() +
-                  " tokens (" +
-                  (usage.prompt_tokens || 0).toLocaleString() +
-                  " + " +
-                  (usage.completion_tokens || 0).toLocaleString() +
-                  ")";
-                typing.appendChild(usageRow);
-                conversationUsage.prompt_tokens += usage.prompt_tokens || 0;
-                conversationUsage.completion_tokens += usage.completion_tokens || 0;
-                conversationUsage.total_tokens += usage.total_tokens || 0;
-                renderUsage();
-              }
-            }
-            maybeScrollToBottom();
-          }
-        });
-      }
-    } catch (error) {
-      if (error && error.name === "AbortError") {
-        // The user pressed Stop: keep the partial reply already on screen.
-        flashInfo(cancelRequested ? "Generation stopped." : "Stream aborted.");
-      } else {
-        flashError(error.message);
-      }
-    } finally {
-      typing.classList.remove("typing", "streaming");
-      var finalBody = typing.querySelector(".message-body");
-      if (finalBody && finalBody.textContent) {
-        // Covers partial output too (e.g. stream cancelled before "done").
-        enhanceCode(finalBody);
-      }
-      if (!finalBody || !finalBody.textContent) {
-        typing.remove();
-      }
-      currentController = null;
-      cancelRequested = false;
-      streaming = false;
-      setComposerState("idle");
-      sendBtn.disabled = !!(onboardingEl && !onboardingEl.hidden);
-      inputEl.focus();
-    }
-  }
-
-  function addListItem(conversation) {
-    var li = document.createElement("li");
-    li.className = "conversation-item";
-    li.dataset.id = conversation.id;
-    li.dataset.title = conversation.title;
-    li.tabIndex = 0;
-    li.setAttribute("role", "button");
-    li.setAttribute("aria-label", "Open conversation: " + conversation.title);
-    li.innerHTML =
-      '<span class="conversation-title">' +
-      escapeHtml(conversation.title) +
-      '</span><span class="conversation-meta">0 messages ' +
-      '<time class="conversation-time" datetime="' +
-      (conversation.updated_at || "") +
-      '"></time></span>';
-    listEl.appendChild(li);
-    updateTimestamps(li);
-  }
-
-  function refreshList() {
-    var query = searchEl ? searchEl.value.trim() : "";
-    api("/chat/conversations" + (query ? "?q=" + encodeURIComponent(query) : ""))
-      .then(function (items) {
-        listEl.innerHTML = "";
-        items.forEach(addListItem);
-        if (items.length === 0) {
-          listEl.innerHTML = '<p class="sidebar-empty">No conversations match your search.</p>';
-        }
-        updateTimestamps(listEl);
+    var form = new FormData();
+    form.append("file", file);
+    fetch("/api/uploads", {
+      method: "POST",
+      headers: { "X-CSRF-Token": getCsrf() },
+      body: form,
+    })
+      .then(function (response) {
+        if (!response.ok) throw new Error("Upload failed");
+        return response.json();
       })
-      .catch(function (error) {
-        flashError(error.message);
-      });
-  }
-
-  // Apply syntax highlighting once markdown has been rendered (issue #44).
-  // A no-op when highlight.js is unavailable, and unknown languages are left
-  // untouched, so the streaming flow is never interrupted.
-  function highlightCode(container) {
-    if (window.AICASyntaxHighlight) window.AICASyntaxHighlight.apply(container);
-  }
-
-  function flashError(message) {
-    var el = document.createElement("div");
-    el.className = "flash flash-error";
-    el.textContent = message;
-    messagesEl.prepend(el);
-  }
-
-  function flashInfo(message) {
-    var el = document.createElement("div");
-    el.className = "flash flash-info";
-    el.textContent = message;
-    messagesEl.prepend(el);
-  }
-
-  function flashSuccess(message) {
-    var el = document.createElement("div");
-    el.className = "flash flash-success";
-    el.textContent = message;
-    messagesEl.prepend(el);
-  }
-
-  // Connection prompt shown when a message references GitHub content (#issue,
-  // #pr, or owner/repo) but no GitHub account is linked (issue #74).
-  function showGitHubConnectPrompt(payload) {
-    var url = (payload && payload.connect_url) || "/github/connect";
-    var el = document.createElement("div");
-    el.className = "flash flash-error";
-    el.appendChild(
-      document.createTextNode(
-        (payload && payload.error) ||
-          "Connect your GitHub account to reference issues, pull requests, or repositories in chat."
-      )
-    );
-    el.appendChild(document.createTextNode(" "));
-    var link = document.createElement("a");
-    link.href = url;
-    link.textContent = "Connect GitHub";
-    el.appendChild(link);
-    messagesEl.prepend(el);
-  }
-
-  function showOnboarding(payload) {
-    if (!onboardingEl) {
-      if (payload && payload.error) flashError(payload.error);
-      return;
-    }
-    onboardingEl.hidden = false;
-    if (payload && payload.provider) onboardingEl.dataset.provider = payload.provider;
-    var note = document.getElementById("provider-onboarding-note");
-    if (note) note.textContent = (payload && payload.error) || "";
-    sendBtn.disabled = true;
-    onboardingEl.scrollIntoView({ behavior: "smooth", block: "center" });
-  }
-
-  function hideOnboarding() {
-    if (onboardingEl) onboardingEl.hidden = true;
-    sendBtn.disabled = false;
-  }
-
-  // Re-check the server's provider status so a key added on another page
-  // unlocks the composer without a full reload (issue #25).
-  function checkProviderStatus(options) {
-    return api("/chat/api/provider-status")
-      .then(function (status) {
-        if (status && status.configured) {
-          var wasVisible = !!(onboardingEl && !onboardingEl.hidden);
-          hideOnboarding();
-          if (wasVisible && options && options.notify) {
-            flashSuccess("Provider key detected — you can send messages now.");
-          }
-        } else if (onboardingEl) {
-          onboardingEl.hidden = false;
-          sendBtn.disabled = true;
-        }
-        return status;
+      .then(function (data) {
+        pendingAttachments.push({
+          url: data.url,
+          filename: data.filename || file.name,
+        });
+        renderPendingAttachments();
       })
       .catch(function () {
-        return null;
+        flashError("Could not upload image.");
       });
   }
 
-  // -- Model & generation settings (issue #12) ----------------------------
+  function streamAssistantReply(text, attachments) {
+    setStreaming(true);
+    cancelRequested = false;
+    currentController = new AbortController();
+    var typing = addTypingIndicator();
+    var assistantEl = null;
+    var accumulated = "";
+    var usage = null;
 
-  function loadProviderOptions() {
-    return api("/chat/api/options")
-      .then(function (data) {
-        providerOptions = data.providers || [];
-        defaults.default_provider = data.default_provider || "";
-        defaults.temperature = data.default_temperature != null ? data.default_temperature : 0.7;
-      })
-      .catch(function (error) {
-        flashError(error.message);
-      });
-  }
-
-  function renderProviderSelect(selected) {
-    if (!providerEl) return;
-    providerEl.innerHTML = "";
-    providerOptions.forEach(function (provider) {
-      var option = document.createElement("option");
-      option.value = provider.name;
-      option.textContent = provider.name + (provider.available ? "" : " (no API key)");
-      option.disabled = !provider.available;
-      if (!provider.available) {
-        option.title = "Add a " + provider.name + " API key on the Keys page to enable it.";
-      }
-      if (selected === provider.name) option.selected = true;
-      providerEl.appendChild(option);
-    });
-  }
-
-  function renderModelSelect(selected) {
-    if (!modelEl) return;
-    var provider = providerOptions.filter(function (item) {
-      return item.name === providerEl.value;
-    })[0];
-    var models = provider ? provider.models.slice() : [];
-    if (selected && models.indexOf(selected) === -1) models.unshift(selected);
-    modelEl.innerHTML = "";
-    var automatic = document.createElement("option");
-    automatic.value = "";
-    automatic.textContent = "Provider default";
-    modelEl.appendChild(automatic);
-    models.forEach(function (model) {
-      var option = document.createElement("option");
-      option.value = model;
-      option.textContent = model;
-      if (selected === model) option.selected = true;
-      modelEl.appendChild(option);
-    });
-  }
-
-  function setTemperature(value) {
-    if (!tempEl) return;
-    var numeric = isNaN(parseFloat(value)) ? defaults.temperature : parseFloat(value);
-    tempEl.value = numeric;
-    if (tempValueEl) tempValueEl.textContent = numeric.toFixed(1);
-  }
-
-  function firstAvailableProvider() {
-    var available = providerOptions.filter(function (item) { return item.available; });
-    return available.length ? available[0].name : "";
-  }
-
-  function applySettingsToPanel(settings) {
-    settings = settings || {};
-    var provider = settings.provider || defaults.default_provider || firstAvailableProvider();
-    renderProviderSelect(provider);
-    if (!providerEl.value || providerEl.selectedOptions[0].disabled) {
-      renderProviderSelect(firstAvailableProvider());
-    }
-    renderModelSelect(settings.model || "");
-    setTemperature(settings.temperature != null ? settings.temperature : defaults.temperature);
-    if (systemEl) systemEl.value = settings.system_prompt || "";
-  }
-
-  function collectSettings() {
-    return {
-      provider: providerEl ? providerEl.value : "",
-      model: modelEl ? modelEl.value : "",
-      temperature: tempEl ? parseFloat(tempEl.value) : defaults.temperature,
-      system_prompt: systemEl ? systemEl.value.trim() : "",
+    var payload = {
+      conversation_id: currentId,
+      message: text,
+      attachments: attachments || [],
+      provider: providerEl ? providerEl.value : defaults.provider,
+      model: modelEl ? modelEl.value : defaults.model,
+      temperature: tempEl ? parseFloat(temEl.value) : defaults.temperature,
+      system_prompt: systemEl ? systemEl.value : defaults.system_prompt,
     };
-  }
 
-  function persistSettings() {
-    if (currentId === null) return;
-    api("/chat/conversations/" + currentId + "/settings", {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(collectSettings()),
-    }).catch(function (error) {
-      flashError(error.message);
-    });
-  }
-
-  var persistTimer = null;
-  function persistSettingsDebounced() {
-    window.clearTimeout(persistTimer);
-    persistTimer = window.setTimeout(persistSettings, 400);
-  }
-
-
-  document.addEventListener("DOMContentLoaded", function () {
-    updateTimestamps();
-    autoGrowComposer();
-    inputEl.focus();
-
-    listEl.addEventListener("click", function (event) {
-      var item = event.target.closest(".conversation-item");
-      if (item && !streaming) loadConversation(item.dataset.id);
-    });
-
-    if (onboardingEl && !onboardingEl.hidden) {
-      sendBtn.disabled = true;
-      var recheck = document.getElementById("provider-recheck");
-      if (recheck) {
-        recheck.addEventListener("click", function () {
-          checkProviderStatus({ notify: true });
+    fetch("/api/chat/stream", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-CSRF-Token": getCsrf(),
+      },
+      body: JSON.stringify(payload),
+      signal: currentController.signal,
+    })
+      .then(function (response) {
+        if (!response.ok) {
+          return response.json().then(function (data) {
+            throw { data: data, status: response.status };
+          });
+        }
+        return readEventStream(response, function (event) {
+          if (event.type === "token") {
+            if (!assistantEl) {
+              if (typing && typing.parentNode) typing.parentNode.removeChild(typing);
+              assistantEl = addMessage("assistant", "");
+            }
+            accumulated += event.data.delta || "";
+            var body = assistantEl.querySelector(".message-body");
+            if (body) body.innerHTML = renderMarkdown(accumulated);
+            maybeScrollToBottom();
+          } else if (event.type === "usage") {
+            usage = event.data;
+          } else if (event.type === "done") {
+            if (event.data && event.data.conversation_id) {
+              currentId = event.data.conversation_id;
+            }
+            if (event.data && event.data.usage) {
+              usage = event.data.usage;
+            }
+          } else if (event.type === "error") {
+            throw { data: event.data };
+          }
         });
-      }
-      window.addEventListener("focus", function () {
-        checkProviderStatus({});
+      })
+      .then(function () {
+        if (typing && typing.parentNode) typing.parentNode.removeChild(typing);
+        if (usage) {
+          conversationUsage = usage;
+          renderUsage();
+        }
+        if (assistantEl && usage) {
+          var usageHtml = usageLine(usage);
+          if (usageHtml) assistantEl.insertAdjacentHTML("beforeend", usageHtml);
+        }
+        if (!assistantEl) {
+          assistantEl = addMessage("assistant", "");
+        }
+        enhanceCode(assistantEl);
+      })
+      .catch(function (result) {
+        if (typing && typing.parentNode) typing.parentNode.removeChild(typing);
+        if (cancelRequested) return;
+        var data = result && result.data ? result.data : {};
+        var message = data.message || data.error || "Request failed.";
+        var retryable = !!data.retryable;
+        if (assistantEl) {
+          assistantEl.classList.add("error");
+          assistantEl.insertAdjacentHTML("beforeend", errorBanner(message, retryable));
+        } else {
+          addMessage("assistant", "", null, null, {
+            status: "error",
+            message: message,
+            retryable: retryable,
+          });
+        }
+        flashError(message);
+      })
+      .finally(function () {
+        setStreaming(false);
+        currentController = null;
       });
-      document.addEventListener("visibilitychange", function () {
-        if (!document.hidden) checkProviderStatus({});
+  }
+
+  function readEventStream(response, onEvent) {
+    var reader = response.body.getReader();
+    var decoder = new TextDecoder();
+    var buffer = "";
+    function pump() {
+      return reader.read().then(function (result) {
+        if (result.done) {
+          if (buffer.trim()) processBlock(buffer);
+          return;
+        }
+        buffer += decoder.decode(result.value, { stream: true });
+        var parts;
+        while ((parts = buffer.split("\n\n")).length > 1) {
+          var block = parts.shift();
+          buffer = parts.join("\n\n");
+          processBlock(block);
+        }
+        return pump();
       });
     }
-
-    sendBtn.addEventListener("click", function () {
-      if (streaming) {
-        stopStream();
-      } else {
-        startStream();
+    function processBlock(block) {
+      var lines = block.split("\n");
+      var eventType = "message";
+      var dataLines = [];
+      lines.forEach(function (line) {
+        if (line.indexOf("event:") === 0) eventType = line.slice(6).trim();
+        else if (line.indexOf("data:") === 0) dataLines.push(line.slice(5).trim());
+      });
+      if (!dataLines.length) return;
+      var data;
+      try {
+        data = JSON.parse(dataLines.join("\n"));
+      } catch (err) {
+        return;
       }
-    });
-
-    if (attachBtn && imageInput) {
-      attachBtn.addEventListener("click", function () {
-        imageInput.click();
-      });
-      imageInput.addEventListener("change", function () {
-        Array.prototype.slice.call(imageInput.files || []).forEach(uploadImage);
-        imageInput.value = "";
-      });
+      onEvent({ type: eventType, data: data });
     }
+    return pump();
+  }
 
-    // Keyboard activation for the conversation list (Enter/Space).
-    listEl.addEventListener("keydown", function (event) {
-      if (event.key !== "Enter" && event.key !== " ") return;
-      var item = event.target.closest(".conversation-item");
-      if (item && !streaming) {
-        event.preventDefault();
-        loadConversation(item.dataset.id);
-      }
+  function cancelStream() {
+    if (!streaming || !currentController) return;
+    cancelRequested = true;
+    currentController.abort();
+    setStreaming(false);
+  }
+
+  // --- Conversation management ---
+
+  function loadConversations() {
+    if (!listEl) return;
+    var q = searchEl ? searchEl.value.trim() : "";
+    var url = "/api/conversations" + (q ? "?q=" + encodeURIComponent(q) : "");
+    fetch(url)
+      .then(function (response) { return response.json(); })
+      .then(function (data) {
+        renderConversations(data.conversations || data || []);
+      })
+      .catch(function () {});
+  }
+
+  function renderConversations(conversations) {
+    if (!listEl) return;
+    listEl.innerHTML = "";
+    conversations.forEach(function (conv) {
+      var item = document.createElement("li");
+      item.className = "conversation-item";
+      if (convversation_id === currentId) item.className += " active";
+      var title = document.createElement("button");
+      title.type = "button";
+      title.className = "conversation-title";
+      title.textContent = conv.title || "Untitled";
+      title.addEventListener("click", function () { openConversation(conv.id); });
+      item.appendChild(title);
+      listEl.appendChild(item);
     });
-    inputEl.addEventListener("input", function () {
-      autoGrowComposer();
-      clearComposerError();
-    });
+  }
+
+  function openConversation(id) {
+    currentId = id;
+    fetch("/api/conversations/" + id)
+      .then(function (response) { return response.json(); })
+      .then(function (data) {
+        messagesEl.innerHTML = "";
+        (data.messages || []).forEach(function (message) {
+          addMessage(message.role, message.content, message.attachments, message.usage, message.error);
+        });
+        scrollToBottom();
+      })
+      .catch(function () {});
+  }
+
+  // --- Event binding ---
+
+  if (sendBtn) sendBtn.addEventListener("click", sendMessage);
+  if (inputEl) {
     inputEl.addEventListener("keydown", function (event) {
       if (event.key === "Enter" && !event.shiftKey) {
         event.preventDefault();
-        startStream();
+        sendMessage();
       }
     });
-
-    document.getElementById("new-conversation").addEventListener("click", newConversation);
-
-    if (providerEl) {
-      providerEl.addEventListener("change", function () {
-        renderModelSelect("");
-        persistSettings();
-      });
-    }
-    if (modelEl) {
-      modelEl.addEventListener("change", persistSettings);
-    }
-    if (tempEl) {
-      tempEl.addEventListener("input", function () {
-        if (tempValueEl) tempValueEl.textContent = parseFloat(tempEl.value).toFixed(1);
-      });
-      tempEl.addEventListener("change", persistSettings);
-    }
-    if (systemEl) {
-      systemEl.addEventListener("input", persistSettingsDebounced);
-    }
-
-    loadProviderOptions().then(function () {
-      var params = new URLSearchParams(window.location.search);
-      var openId = params.get("conversation");
-      if (openId) {
-        loadConversation(openId);
-      } else {
-        applySettingsToPanel({});
+    inputEl.addEventListener("input", autoResize);
+  }
+  if (attachBtn && imageInput) {
+    attachBtn.addEventListener("click", function () { imageInput.click(); });
+    imageInput.addEventListener("change", function () {
+      if (imageInput.files && imageInput.files[0]) {
+        uploadImage(imageInput.files[0]);
+        imageInput.value = "";
       }
     });
-
-    if (searchEl) {
-      searchEl.addEventListener("input", function () {
-        refreshList();
-      });
-    }
-
-    actionsEl.addEventListener("click", function (event) {
-      var id = currentId;
-      var button = event.target.closest("button");
-      if (!button || id === null) return;
-      if (button.dataset.revokeShareLinkId) {
-        api("/chat/conversations/" + id + "/share-links/" + button.dataset.revokeShareLinkId, {
-          method: "DELETE",
-        }).then(function () { loadShareLinks(id); }).catch(function (error) { flashError(error.message); });
-        return;
-      }
-      if (button.id === "create-share-link") {
-        api("/chat/conversations/" + id + "/share-links", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({}),
-        }).then(function (share) {
-          if (navigator.clipboard && navigator.clipboard.writeText) {
-            navigator.clipboard.writeText(share.url).catch(function () {
-              window.prompt("Copy this read-only link:", share.url);
-            });
-          } else {
-            window.prompt("Copy this read-only link:", share.url);
-          }
-          loadShareLinks(id);
-        }).catch(function (error) { flashError(error.message); });
-        return;
-      }
-      if (button.id === "rename-conversation") {
-        var title = prompt("Rename conversation:", "");
-        if (title === null) return;
-        api("/chat/conversations/" + id, {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ title: title }),
-        }).then(function (conversation) {
-          var item = listEl.querySelector('.conversation-item[data-id="' + id + '"]');
-          if (item) updateTitle(item, conversation.title);
-        }).catch(function (error) {
-          flashError(error.message);
-        });
-      } else if (button.id === "pin-conversation") {
-        api("/chat/conversations/" + id, {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ is_pinned: true }),
-        }).then(function () {
-          refreshList();
-        }).catch(function (error) {
-          flashError(error.message);
-        });
-      } else if (button.id === "share-conversation") {
-        var username = prompt("Share this conversation with username:", "");
-        if (username === null) return;
-        api("/chat/conversations/" + id + "/shares", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ username: username.trim() }),
-        }).then(function () {
-          var note = document.createElement("div");
-          note.className = "flash flash-success";
-          note.textContent = "Conversation shared.";
-          messagesEl.prepend(note);
-        }).catch(function (error) {
-          flashError(error.message);
-        });
-      } else if (button.id === "export-conversation") {
-        window.location.href = "/chat/conversations/" + id + "/export";
-      } else if (button.id === "delete-conversation") {
-        if (!confirm("Delete this conversation?")) return;
-        api("/chat/conversations/" + id, { method: "DELETE" }).then(function () {
-          newConversation();
-          refreshList();
-        }).catch(function (error) {
-          flashError(error.message);
-        });
-      }
+  }
+  if (searchEl) {
+    searchEl.addEventListener("input", function () {
+      window.clearTimeout(searchEl.__timer);
+      searchEl.__timer = window.setTimeout(loadConversations, 250);
     });
-  });
+  }
+
+  autoResize();
+  updateSendButton();
+  renderUsage();
+  updateTimestamps();
+  loadConversations();
 })();
