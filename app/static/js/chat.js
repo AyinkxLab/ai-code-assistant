@@ -32,6 +32,15 @@
   var providerOptions = [];
   var defaults = { provider: "", model: "", temperature: 0.7, system_prompt: "" };
 
+  // Starter prompts shown in the welcome empty state. Clicking a chip fills the
+  // composer so a new user has a concrete first action to take.
+  var STARTER_PROMPTS = [
+    "Explain what this codebase does and how it's structured.",
+    "Review my latest changes and suggest improvements.",
+    "Write unit tests for the function I'm about to paste.",
+    "Summarize issue #123 and propose an implementation plan.",
+  ];
+
   // Streaming scroll safety (issue #9): auto-follow new tokens only while the
   // user is already pinned to the bottom, so scrolling up mid-stream is never
   // yanked back down.
@@ -99,6 +108,74 @@
     return escapeHtml(text).replace(/\n/g, "<br>\n");
   }
 
+  // Build the hero welcome panel shown for a brand-new conversation. It is
+  // rendered synchronously (no skeleton/spinner) so the first paint is the
+  // welcome experience, and it works both logged out (landing) and logged in.
+  function renderWelcomePanel() {
+    var panel = document.createElement("div");
+    panel.className = "chat-welcome";
+    panel.setAttribute("role", "region");
+    panel.setAttribute("aria-label", "Welcome");
+
+    var hero = document.createElement("div");
+    hero.className = "chat-welcome-hero";
+    var heading = document.createElement("h2");
+    heading.className = "chat-welcome-title";
+    heading.textContent = "How can I help with your code?";
+    var subtitle = document.createElement("p");
+    subtitle.className = "chat-welcome-subtitle";
+    subtitle.textContent =
+      "Ask about your repository, debug an error, or draft a change. Pick a starter below or type your own question.";
+    hero.appendChild(heading);
+    hero.appendChild(subtitle);
+    panel.appendChild(hero);
+
+    var chips = document.createElement("div");
+    chips.className = "chat-welcome-chips";
+    chips.setAttribute("role", "list");
+    STARTER_PROMPTS.forEach(function (prompt) {
+      var chip = document.createElement("button");
+      chip.type = "button";
+      chip.className = "chat-welcome-chip";
+      chip.setAttribute("role", "listitem");
+      chip.textContent = prompt;
+      chip.addEventListener("click", function () {
+        if (!inputEl) return;
+        inputEl.value = prompt;
+        autoGrowComposer();
+        clearComposerError();
+        inputEl.focus();
+      });
+      chips.appendChild(chip);
+    });
+    panel.appendChild(chips);
+
+    // Progressive disclosure: capabilities and limits stay collapsed until the
+    // user asks for them, keeping the hero uncluttered for first-run users.
+    var details = document.createElement("details");
+    details.className = "chat-welcome-details";
+    var summary = document.createElement("summary");
+    summary.textContent = "What can the assistant do?";
+    details.appendChild(summary);
+    var body = document.createElement("div");
+    body.className = "chat-welcome-details-body";
+    body.innerHTML =
+      "<p>It can read files you reference, explain code, propose diffs, and draft tests.</p>" +
+      "<p>It cannot run commands, access secrets, or push changes on your behalf.</p>";
+    details.appendChild(body);
+    panel.appendChild(details);
+
+    return panel;
+  }
+
+  // Replace the message area with the welcome panel. Used for new threads and
+  // for empty conversations so users never see a blank page.
+  function showWelcome() {
+    if (!messagesEl) return;
+    messagesEl.innerHTML = "";
+    messagesEl.appendChild(renderWelcomePanel());
+  }
+
   function renderAttachments(attachments) {
     if (!attachments || !attachments.length) return "";
     return attachments
@@ -159,66 +236,6 @@
     if (role !== "user") enhanceCode(el);
     scrollToBottom();
     return el;
-  }
-
-  var STARTER_PROMPTS = [
-    "Explain this code snippet and what it does.",
-    "Help me debug an error I'm seeing.",
-    "Write unit tests for a function.",
-    "Summarize the changes in a pull request.",
-  ];
-
-  // First-run welcome panel: shown for new/empty threads instead of a blank
-  // page. Renders example prompt chips that prefill the composer on click.
-  function renderWelcome() {
-    if (!messagesEl) return;
-    var panel = document.createElement("div");
-    panel.className = "chat-welcome";
-    var heading = document.createElement("h2");
-    heading.className = "chat-welcome-title";
-    heading.textContent = "Welcome to the AI Code Assistant";
-    var intro = document.createElement("p");
-    intro.className = "chat-welcome-intro";
-    intro.textContent =
-      "Ask questions about your code, get explanations, debug errors, or draft tests. Pick a starter below or type your own message.";
-    panel.appendChild(heading);
-    panel.appendChild(intro);
-    var chips = document.createElement("div");
-    chips.className = "chat-welcome-chips";
-    STARTER_PROMPTS.forEach(function (prompt) {
-      var chip = document.createElement("button");
-      chip.type = "button";
-      chip.className = "chat-welcome-chip";
-      chip.textContent = prompt;
-      chip.addEventListener("click", function () {
-        if (!inputEl) return;
-        inputEl.value = prompt;
-        autoGrowComposer();
-        clearComposerError();
-        inputEl.focus();
-      });
-      chips.appendChild(chip);
-    });
-    panel.appendChild(chips);
-    var details = document.createElement("details");
-    details.className = "chat-welcome-details";
-    var summary = document.createElement("summary");
-    summary.textContent = "What can the assistant do?";
-    var list = document.createElement("ul");
-    [
-      "Explain unfamiliar code and summarize repositories.",
-      "Suggest fixes and help debug errors.",
-      "Draft tests, refactors, and documentation.",
-      "Reference GitHub issues, pull requests, and files when connected.",
-    ].forEach(function (item) {
-      var li = document.createElement("li");
-      li.textContent = item;
-      list.appendChild(li);
-    });
-    details.appendChild(summary);
-    details.appendChild(list);
-    panel.appendChild(details);
-    messagesEl.appendChild(panel);
   }
 
   function addTypingIndicator() {
@@ -373,7 +390,7 @@
           data.usage || { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 };
         renderUsage();
         if (data.messages.length === 0) {
-          renderWelcome();
+          showWelcome();
         }
         applySettingsToPanel(data);
         clearComposerError();
@@ -408,8 +425,7 @@
 
   function newConversation() {
     currentId = null;
-    messagesEl.innerHTML = "";
-    renderWelcome();
+    showWelcome();
     actionsEl.hidden = true;
     conversationUsage = { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 };
     renderUsage();
@@ -921,7 +937,6 @@
     updateTimestamps();
     autoGrowComposer();
     inputEl.focus();
-    if (messagesEl && !messagesEl.querySelector(".chat-message")) renderWelcome();
 
     listEl.addEventListener("click", function (event) {
       var item = event.target.closest(".conversation-item");

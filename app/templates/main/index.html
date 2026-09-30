@@ -2,15 +2,24 @@
 
 {% block content %}
 <section class="hero">
-  <h1 class="hero-title">Your AI pair programmer, ready when you are.</h1>
-  <p class="hero-subtitle">
-    AI Code Assistant helps you write, review, and understand code faster.
-    Ask a question, paste a snippet, or start from one of the examples below.
-  </p>
+  {% if current_user.is_authenticated %}
+    <h1 class="hero-title">Welcome back. What are we building today?</h1>
+    <p class="hero-subtitle">
+      Start a new conversation by picking an example below or typing your own prompt.
+      AI Code Assistant can explain code, review diffs, write tests, and more.
+    </p>
+  {% else %}
+    <h1 class="hero-title">Your AI pair programmer, ready when you are.</h1>
+    <p class="hero-subtitle">
+      AI Code Assistant helps you write, review, and understand code faster.
+      Sign in to start a conversation, or try an example prompt below.
+    </p>
+  {% endif %}
   <div class="hero-actions">
     {% if current_user.is_authenticated %}
-      <a class="btn btn-primary" href="#composer">Ask your first question</a>
-      {% else %}
+      <a class="btn btn-primary" href="#composer">New conversation</a>
+      <a class="btn btn-ghost" href="{{ url_for('auth.me') }}">Open your account</a>
+    {% else %}
       <a class="btn btn-primary" href="{{ url_for('auth.register') }}">Get started</a>
       <a class="btn btn-ghost" href="{{ url_for('auth.login') }}">Log in</a>
     {% endif %}
@@ -18,21 +27,21 @@
 </section>
 
 <section class="welcome-panel" id="composer" aria-label=labelled="Start a conversation">
-  <h2 class="welcome-heading">Welcome — let's build something</h2>
-  <p class="welcome-lead">
-    This is the start of a new conversation. Pick a starter below or type your own prompt to begin.
-  </p>
+  <div class="welcome-header">
+    <h2 class="welcome-title">New conversation</h2>
+    <p class="welcome-hint">Pick a starter or write your own prompt.</p>
+  </div>
 
-  <ul class="example-chips" data-composer-target="#composer-input">
-    <li><button type="button" class="example-chip" data-prompt="Explain what this code does and suggest improvements.">Explain this code</button></li>
-    <li><button type="button" class="example-chip" data-prompt="Review this diff for bugs, edge cases, and style issues.">Review a diff</button></li>
-    <li><button type="button" class="example-chip" data-prompt="Write unit tests for this function.">Write unit tests</button></li>
-    <li><button type="button" class="example-chip" data-prompt="Refactor this snippet for readability and performance.">Refactor for readability</button></li>
-  </ul>
+  <div class="example-chips" role="list" aria-label="Example prompts">
+    <button type="button" class="example-chip" role="listitem" data-prompt="Explain this code snippet line by line.">Explain this code</button>
+    <button type="button" class="example-chip" role="listitem" data-prompt="Review this diff for bugs and style issues.">Review a diff</button>
+    <button type="button" class="example-chip" role="listitem" data-prompt="Write unit tests for this function.">Write tests</button>
+    <button type="button" class="example-chip" role="listitem" data-prompt="Refactor this code for readability without changing behavior.">Refactor for readability</button>
+  </div>
 
-  <form class="composer" action="#" method="post" role="search">
-    <label class="visually-hidden" for="composer-input">Message</label>
-    <textarea id="composer-input" name="message" class="composer-input" rows="3" placeholder="Ask anything about your code…"></textarea>
+  <form class="composer-form" method="post" action="#" on-submit="return false;">
+    <label class="composer-label" for="composer-input">Your prompt</label>
+    <textarea id="composer-input" name="prompt" class="composer-input" rows="3" placeholder="Ask anything about your code..."></textarea>
     <div class="composer-actions">
       <button type="submit" class="btn btn-primary">Send</button>
     </div>
@@ -40,12 +49,15 @@
 
   <details class="capabilities">
     <summary>What can this assistant do?</summary>
-    <ul>
-      <li>Explain code and walk through how it works.</li>
-      <li>Review diffs and surface bugs, edge cases, and style issues.</li>
-      <li>Generate tests, documentation, and refactoring suggestions.</li>
+    <ul class="capability-list">
+      <li>Explain code and error messages in plain language.</li>
+      <li>Review diffs and suggest improvements.</li>
+      <li>Generate tests and boilerplate for existing modules.</li>
+      <li>Refactor snippets while preserving behavior.</li>
     </ul>
-    <p>Limitations: responses are generated and may be incorrect. Always review code before shipping it.</p>
+    <p class="capability-limit">
+      Limits: the assistant may make mistakes. Always review output before applying it to your codebase.
+    </p>
   </details>
 </section>
 
@@ -67,103 +79,56 @@
   </article>
 </section>
 
+<script>
+  document.addEventListener('DOMContentLoaded', function () {
+    var input = document.getElementById('composer-input');
+    var chips = document.querySelectorAll('.example-chip');
+    chips.forEach(function (chip) {
+      chip.addEventListener('click', function () {
+        if (!input) return;
+        input.value = chip.getAttribute('data-prompt') || chip.textContent.trim();
+        input.focus();
+      });
+    });
+  });
+</script>
 <style>
   .welcome-panel {
-    max-width: 760px;
-    margin: 0 auto 3rem;
-    padding: 2rem;
-    border: 1px solid rgba(127, 127, 127, 0.2);
+    margin: 2rem auto;
+    max-width: 720px;
+    padding: 1.5rem;
+    border: 1px solid var(--border-color, #e2e8f0);
     border-radius: 12px;
-    background: rgba(127, 127, 127, 0.06);
+    background: var(--surface-color, #fff);
   }
-  .welcome-heading {
-    margin-top: 0;
-  }
-  .welcome-lead {
-    margin-bottom: 1.5rem;
-    opacity: 0.85;
-  }
-  .example-chips {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.5rem;
-    list-style: none;
-    margin: 0 0 1.5rem;
-    padding: 0;
-  }
+  .welcome-header { margin-bottom: 1rem; }
+  .welcome-title { margin: 0 0 0.25rem; }
+  .welcome-hint { margin: 0; color: var(--muted-color, #64748b); }
+  .example-chips { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-bottom: 1.25rem; }
   .example-chip {
     cursor: pointer;
+    border: 1px solid var(--border-color, #e2e8f0);
+    background: var(--chip-bg, #f8fafc);
+    color: inherit;
     padding: 0.5rem 0.85rem;
     border-radius: 999px;
-    border: 1px solid rgba(127, 127, 127, 0.35);
-    background: transparent;
-    color: inherit;
-    font: inherit;
     font-size: 0.9rem;
-    transition: background-color 0.15s ease, border-color 0.15s ease;
   }
-  .example-chip:hover,
-  .example-chip:focus {
-    background: rgba(127, 127, 127, 0.15);
-    border-color: rgba(127, 127, 127, 0.5);
-  }
-  .composer {
-    display: flex;
-    flex-direction: column;
-    gap: 0.75rem;
-  }
+  .example-chip:hover { background: var(--chip-hover, #e6f0fb); }
+  .composer-form { display: flex; flex-direction: column; gap: 0.5rem; }
+  .composer-label { font-weight: 600; font-size: 0.85rem; }
   .composer-input {
     width: 100%;
     resize: vertical;
     padding: 0.75rem;
     border-radius: 8px;
-    border: 1px solid rgba(127, 127, 127, 0.35);
-    background: transparent;
-    color: inherit;
+    border: 1px solid var(--border-color, #e2e8f0);
     font: inherit;
   }
-  .composer-actions {
-    display: flex;
-    justify-content: flex-end;
-  }
-  .capabilities {
-    margin-top: 1.5rem;
-    font-size: 0.925rem;
-  }
-  .capabilities summary {
-    cursor: pointer;
-    font-weight: 600;
-  }
-  .capabilities ul {
-    margin: 0.5rem 0 0.5rem 1.25rem;
-  }
-  .visually-hidden {
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    padding: 0;
-    margin: -1px;
-    overflow: hidden;
-    clip: rect(0, 0, 0, 0);
-    white-space: nowrap;
-    border: 0;
-  }
+  .composer-actions { display: flex; justify-content: flex-end; }
+  .capabilities { margin-top: 1.25rem; font-size: 0.9rem; }
+  .capabilities summary { cursor: pointer; font-weight: 600; }
+  .capability-list { margin: 0.5rem 0 0.5rem 1rem; padding: 0; }
+  .capability-limit { color: var(--muted-color, #64748b); margin: 0; }
 </style>
-
-<script>
-  document.addEventListener('DOMContentLoaded', function () {
-    var chips = document.querySelectorAll('.example-chip');
-    var input = document.getElementById('composer-input');
-    if (!input) {
-      return;
-    }
-    chips.forEach(function (chip) {
-      chip: addEventListener('click', function () {
-        input.value = chip.getAttribute('data-prompt') || chip.textContent;
-        input.focus();
-        input.setSelectionRange(input.value.length, input.value.length);
-      });
-    });
-  });
-</script>
 {% endblock %}

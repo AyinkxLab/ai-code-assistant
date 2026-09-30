@@ -1,7 +1,6 @@
 """Chat routes: UI page, conversation CRUD, sharing, and SSE streaming."""
 
 import base64
-import dataclasses
 import hashlib
 import json
 import secrets
@@ -34,7 +33,6 @@ from app.models import (
 from app.models.message_attachment import ALLOWED_IMAGE_TYPES
 from app.models.project import STATUS_READY
 from app.services import audit, token_usage
-from app.services import starter_prompts
 from app.services.github import (
     GitHubError,
     GitHubNotConnectedError,
@@ -57,6 +55,15 @@ from app.services.providers.retry import RetryingProvider
 #: Machine-readable code returned when the configured provider has no key.
 PROVIDER_NOT_CONFIGURED_CODE = "provider_not_configured"
 
+#: Starter prompts shown on the empty-state welcome panel for new threads.
+WELCOME_EXAMPLE_PROMPTS = [
+    {
+        "title": "Summarize a document",
+        "prompt": "Summarize the key points of the following text in five bullets:\n\n",
+    },
+    {
+        "title": "Explain some code",
+        "prompt": "Explain what this code does and suggest one improvement:\n\n
 
 def _provider_not_configured_payload(status: dict) -> dict:
     """Build the distinct payload for a provider that has no usable key.
@@ -233,7 +240,6 @@ def index():
         "chat/index.html",
         conversations=conversations,
         provider_status=provider_status(current_user),
-        starter_prompts=starter_prompts.for_user(current_user),
     )
 
 
@@ -246,23 +252,6 @@ def api_provider_status():
     composer unlocks without a full page reload (issue #25).
     """
     return jsonify(provider_status(current_user))
-
-
-@bp.route("/api/starter-prompts")
-def api_starter_prompts():
-    """Return the welcome-panel example prompts and capability blurbs.
-
-    Public so the landing page (logged out) can render the same welcome
-    experience as the authenticated chat view (issue #welcome-empty-state).
-    """
-    user = current_user if getattr(current_user, "is_authenticated", False) else None
-    return jsonify(
-        {
-            "prompts": [dataclasses.asdict(p) for p in starter_prompts.for_user(user)],
-            "capabilities": starter_prompts.capabilities(user),
-            "limits": starter_prompts.limits(user),
-        }
-    )
 
 
 @bp.route("/conversations", methods=["GET"])
