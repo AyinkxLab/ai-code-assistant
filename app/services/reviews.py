@@ -603,6 +603,23 @@ def review_export_payload(review) -> dict:
     }
 
 
+_REVIEW_ROLE_ACCESS = {
+    "owner": ("read", "write"),
+    "contributor": ("read", "write"),
+    "viewer": ("read",),
+}
+
+
+def review_access_for_role(role: str | None) -> tuple[str, ...]:
+    """Return the scoped review permissions granted to a workspace ``role``.
+
+    Owners retain full access; contributors may read and write reviews for
+    workspace projects; viewers are limited to read-only access. Unknown or
+    missing roles receive no permissions so routes can fail closed.
+    """
+    return _REVIEW_ROLE_ACCESS.get((role or "").strip().lower(), ())
+
+
 def render_review_markdown(review) -> str:
     """Render a review (summary + findings) as a portable Markdown document."""
     lines = [f"# Review #{review.id}", ""]
