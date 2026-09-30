@@ -1,24 +1,26 @@
-{% extends "base.html" %}
+<%{ extends "base.html" %}
 
-{% block title %}PR #{{ number }} - {{ owner }}/{{ repo }} - {{ config.APP_NAME }}{% endblock %}
+{{% block title %}yPR #{{ number }} - {{ owner }}/{{ repo }} - {{ config.APP_NAME }}{{% endblock %}}
 
-{% block content %}
+{{% block content %}}
 <div class="github-header">
   <div>
     <h1><a class="repo-breadcrumb" href="{{ url_for('github.repos') }}">Repositories</a> / <a class="repo-breadcrumb" href="{{ url_for('github.repo_detail', owner=owner, repo=repo) }}">{{ owner }}/{{ repo }}</a> / <a class="repo-breadcrumb" href="{{ url_for('github.pulls', owner=owner, repo=repo) }}">Pull Requests</a> / #{{ number }}</h1>
   </div>
 </div>
 
-<div id="pull-detail" class="issue-detail"><p class="sidebar-empty">Loading pull request...</p></div>
+<div id="pull-detail" class="issue-detail" data-owner="{{ owner }}" data-repo="{{ repo }}" data-number="{{ number }}"><p class="sidebar-empty">Loading pull request...</p></div>
 <div id="pull-files" class="pull-files"></div>
 
 <div class="analyze-panel">
   <button id="analyze-pr" class="btn btn-primary" type="button">Review with AI</button>
   <div id="pr-analysis" class="analysis-output" hidden></div>
 </div>
-{% endblock %}
+<div id="pr-review-history" class="review-history"></div>
+{{% endblock %}}
 
-{% block scripts %}
+{{% block scripts %}
 <script src="{{ url_for('static', filename='js/github.js') }}"></script>
 <script src="{{ url_for('static', filename='js/github_pull.js') }}"></script>
-{% endblock %}
+<script src="{{ url_for('static', filename='js/github_pull_review.js') }}"></script>
+{{%- endblock %}}

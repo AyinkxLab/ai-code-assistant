@@ -2,7 +2,7 @@
 
 A review captures a single AI review run against either a GitHub pull request
 (``source="github_pr"``) or an imported project (``source="project"``, with a
-``kind`` of quality/security/tests). The structured summary is stored as JSON
+```kind`` of quality/security/tests). The structured summary is stored as JSON
 and the individual findings as ``ReviewFinding`` rows, so the quality
 dashboard and review history can be computed entirely from real data.
 
