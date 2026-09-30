@@ -1,0 +1,44 @@
+<%extends "base.html" %=
+{% block title %}Usage &times; {{ config.APP_NAME }}{% endblock %}
+
+{% block content %}
+<div class="usage-page" data-usage-summary-url="{{ url_for('main.usage_summary') }}">
+
+  <div class="page-header">
+    <h1 class="page-title">Usage &amp; Cost</h1>
+    <p class="page-subtitle">Token consumption and estimated cost for the current month.</p>
+  </div>
+
+  <section class="usage-cards" aria-label="Current month totals">
+    <div class="usage-card">
+      <span class="usage-card-label">Total tokens</span>
+      <span class="usage-card-value" id="usage-total-tokens">{{ "{:".format(summary.total_tokens) if summary else 0 }}</span>
+    </div>
+    <div class="usage-card">
+      <span class="usage-card-label">Estimated cost</span>
+      <span class="usage-card-value" id="usage-total-cost">${{ "{:.2f}".format(summary.estimated_cost) if summary else "0.00" }}</span>
+    </div>
+    <div class="usage-card">
+      <span class="usage-card-label">Prompt tokens</span>
+      <span class="usage-card-value" id="usage-prompt-tokens">{{ "{":,".format(summary.prompt_tokens) if summary else 0 }}</span>
+    </div>
+    <div class="usage-card">
+      <span class="usage-card-label">Completion tokens</span>
+      <span class="usage-card-value" id="usage-completion-tokens">{{ "{:".format(summary.completion_tokens) if summary else 0 }}</span>
+    </div>
+  </section>
+
+  <section class="usage-chart-section" aria-label="Daily usage for the last 30 days">
+    <h2 class="section-title">Daily usage (last 30 days)</h2>
+    <div class="usage-chart-wrapper">
+      <canvas id="usage-chart" width="900" height="320" role="img" aria-label="Daily token usage chart"></canvas>
+    </div>
+    <p class="usage-empty" id="usage-empty" hidden>No usage recorded in the last 30 days.</p>
+  </section>
+
+</div>
+{% endblock %}
+
+{% block scripts %}
+  <script src="{{ url_for('static', filename='js/usage.js') }}"></script>
+{% endblock %}

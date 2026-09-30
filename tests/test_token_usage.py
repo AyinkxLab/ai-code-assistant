@@ -1,6 +1,7 @@
 """Tests for token usage tracking and daily aggregation (issue #13)."""
 
 import json
+from datetime import datetime, timedelta
 
 from app.models import Conversation, Message
 from app.services import token_usage
@@ -167,3 +168,61 @@ class TestDailyUsageEndpoint:
 
     def test_daily_requires_login(self, client):
         assert client.get("/chat/api/usage/daily").status_code == 302
+
+
+class TestUsageDashboard:
+    def test_usage_page_requires_login(self, client):
+        response = client.get("/usage")
+        assert response.status_code == 302
+
+    def test_usage_page_renders_for_logged_in_user(self, client, db):
+        _register(client)
+        conversation = _create_conversation(client)
+        _send(client, conversation["id"])
+
+        response = client.get("/usage")
+
+        assert response.status_code == 200
+        body = response.get_data(as_text=True)
+        assert "Usage" in body
+
+    def test_usage_summary_endpoint_requires_login(self, client):
+        assert client.get("/chat/api/usage/summary").status_code == 302
+
+    def test_usage_summary_reports_current_month_totals(self, client, db):
+        _register(client)
+        conversation = _create_conversation(client)
+        message = _send(client, conversation["id"]).get_json()["assistant_message"]
+
+        payload = client.get("/chat/api/usage/summary").get_json()
+
+        assert payload["total_tokens"] == message["token_usage"]["total_tokens"]
+        assert payload["estimated_cost"] >= 0
+        assert "prompt_tokens" in payload
+        assert "completion_tokens" in payload
+
+    def test_usage_summary_is_owner_scoped(self, client, db):
+        _register(client, username="owner2", email="owner2@example.com")
+        conversation = _create_conversation(client)
+        _send(client, conversation["id"])
+
+        client.post("/auth/logout")
+        _register(client, username="other2", email="other2@example.com")
+
+        payload = client.get("/chat/api/usage/summary").get_json()
+
+        assert payload["total_tokens"] == 0
+
+    def test_usage_summary_includes_daily_series(self, client, db):
+        _register(client)
+        conversation = _create_conversation(client)
+        _send(client, conversation["id"])
+
+        payload = client.get("/chat/api/usage/summary").get_json()
+
+        assert "daily" in payload
+        assert len(payload["daily"]) == 30
+        today = datetime.utcnow().date()
+        dates = [row["date"] for row in payload["daily"]]
+        assert today.isoformat() in dates
+        assert (today - timedelta(days=29)).isoformat() in dates
