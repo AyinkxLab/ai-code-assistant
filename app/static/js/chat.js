@@ -556,6 +556,7 @@
       var decoder = new TextDecoder();
       var buffer = "";
       var fullText = "";
+      var streamError = null;
 
       while (true) {
         var chunk = await reader.read();
@@ -564,21 +565,35 @@
         var events = buffer.split("\n\n");
         buffer = events.pop();
         events.forEach(function (event) {
-          var line = event.split("\n")[0];
-          if (!line.startsWith("data: ")) return;
+          var lines = event.split("\n");
+          var eventName = "message";
+          var dataLine = null;
+          lines.forEach(function (line) {
+            if (line.startsWith("event: ")) {
+              eventName = line.slice(7).trim();
+            } else if (line.startsWith("data: ")) {
+              dataLine = line.slice(6);
+            }
+          });
+          if (dataLine === null) return;
           var payload = null;
           try {
-            payload = JSON.parse(line.slice(6));
+            payload = JSON.parse(dataLine);
           } catch (e) {
             return;
           }
-          if (payload.type === "token") {
+          var type = payload.type || eventName;
+          if (type === "message_start") {
+            return;
+          }
+          if (type === "content" || type === "token") {
             fullText += payload.content;
             streamBody.innerHTML = renderMarkdown(fullText);
             maybeScrollToBottom();
-          } else if (payload.type === "error") {
-            flashError(payload.error);
-          } else if (payload.type === "done") {
+          } else if (type === "error") {
+            streamError = payload.error || "Stream error.";
+            flashError(streamError);
+          } else if (type === "message_end" || type === "done") {
             if (payload.message) {
               streamBody.innerHTML =
                 renderMarkdown(payload.message.content) +
@@ -605,6 +620,9 @@
             maybeScrollToBottom();
           }
         });
+      }
+      if (streamError) {
+        throw new Error(streamError);
       }
     } catch (error) {
       if (error && error.name === "AbortError") {

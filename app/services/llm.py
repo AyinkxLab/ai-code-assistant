@@ -29,6 +29,14 @@ from app.services.providers import (
     provider_status,
     register_provider,
 )
+from app.services.providers.streaming import (
+    StreamCancelledError,
+    StreamEvent,
+    StreamEventType,
+    StreamingProvider,
+    iter_stream_events,
+    stream_provider_response,
+)
 
 # Historical name used throughout the codebase.
 LLMProviderError = ProviderError
@@ -47,11 +55,17 @@ __all__ = [
     "ProviderResponseError",
     "ProviderUnavailableError",
     "RetryingProvider",
+    "StreamCancelledError",
+    "StreamEvent",
+    "StreamEventType",
+    "StreamingProvider",
     "UnknownProviderError",
     "available_providers",
     "get_provider",
     "get_retrying_provider",
+    "iter_stream_events",
     "is_transient_error",
     "provider_status",
     "register_provider",
+    "stream_provider_response",
 ]

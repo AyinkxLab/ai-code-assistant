@@ -11,6 +11,7 @@ from __future__ import annotations
 import json
 import os
 import time
+from dataclasses import dataclass
 from collections.abc import Iterable, Iterator
 from typing import Any
 
@@ -29,6 +30,21 @@ from app.services.providers.base import (
 
 TIMEOUT_SECONDS = 60
 DEFAULT_MODELS = ("gpt-4o-mini", "gpt-4o", "gpt-4.1-mini", "gpt-4.1")
+
+
+@dataclass
+class StreamDelta:
+    """A single streamed chunk from the provider.
+
+    ``content`` is the incremental text (may be empty for usage-only chunks).
+    ``prompt_tokens``/``completion_tokens`` are populated on the final chunk
+    when the provider reports usage (``stream_options.include_usage``).
+    """
+
+    content: str = ""
+    prompt_tokens: int | None = None
+    completion_tokens: int | None = None
+    model: str | None = None
 
 
 class OpenAIProvider(LLMProvider):
@@ -100,6 +116,8 @@ class OpenAIProvider(LLMProvider):
             "temperature": self.temperature,
             "stream": stream,
         }
+        if stream:
+            payload["stream_options"] = {"include_usage": True}
         if params:
             payload.update(params)
         return payload
@@ -194,3 +212,55 @@ class OpenAIProvider(LLMProvider):
             raise ProviderUnavailableError(
                 f"OpenAI stream failed: {exc}", provider=self.name
             ) from exc
+
+    def stream_events(
+        self,
+        messages: Iterable[Any],
+        *,
+        model: str | None = None,
+        params: dict | None = None,
+    ) -> Iterator[StreamDelta]:
+        """Yield :class:`StreamDelta` chunks, including a final usage delta.
+
+        Unlike :meth:`stream`, this surfaces token usage and the resolved model
+        so the SSE endpoint can emit a ``message_end`` event. A client that
+        stops iterating (e.g. on disconnect) causes the underlying HTTP
+        response to be closed, which aborts the provider request.
+        """
+        self._require_key()
+        payload = self._payload(messages, model=model, params=params, stream=True)
+        response = self._post(payload, stream=True)
+        self._raise_for_status(response)
+        resolved_model = payload["model"]
+        try:
+            for line in response.iter_lines(decode_unicode=True):
+                if not line or not line.startswith("data: "):
+                    continue
+                chunk_payload = line[len("data: ") :].strip()
+                if chunk_payload == "[DONE]":
+                    break
+                try:
+                    chunk = json.loads(chunk_payload)
+                except ValueError:
+                    continue
+                if chunk.get("model"):
+                    resolved_model = chunk["model"]
+                usage = chunk.get("usage") or {}
+                delta = ""
+                try:
+                    delta = chunk["choices"][0]["delta"].get("content", "") or ""
+                except (KeyError, IndexError, TypeError):
+                    delta = ""
+                if delta or usage:
+                    yield StreamDelta(
+                        content=delta,
+                        prompt_tokens=usage.get("prompt_tokens"),
+                        completion_tokens=usage.get("completion_tokens"),
+                        model=resolved_model,
+                    )
+        except requests.RequestException as exc:
+            raise ProviderUnavailableError(
+                f"OpenAI stream failed: {exc}", provider=self.name
+            ) from exc
+        finally:
+            response.close()

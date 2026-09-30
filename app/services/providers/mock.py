@@ -72,3 +72,35 @@ class MockProvider(LLMProvider):
             if self.delay:
                 time.sleep(self.delay)
             yield word + " "
+
+    def stream_events(
+        self,
+        messages: Iterable[Any],
+        *,
+        model: str | None = None,
+        params: dict | None = None,
+    ) -> Iterator[dict]:
+        """Yield SSE-style events for the mock provider.
+
+        Emits ``message_start``, one ``content`` delta per word, and a final
+        ``message_end`` event carrying token usage. This mirrors the event
+        protocol used by the real providers so the streaming endpoint and its
+        integration tests can run offline.
+        """
+        prepared = prepare_messages(messages, supports_vision=self.supports_vision)
+        text = self._respond(prepared)
+        yield {"type": "message_start", "model": model or self.models[0]}
+        for word in text.split(" "):
+            if self.delay:
+                time.sleep(self.delay)
+            yield {"type": "content", "delta": word + " "}
+        prompt_tokens = sum(len(message_content(m).split()) for m in prepared)
+        completion_tokens = len(text.split())
+        yield {
+            "type": "message_end",
+            "usage": {
+                "prompt_tokens": prompt_tokens,
+                "completion_tokens": completion_tokens,
+                "total_tokens": prompt_tokens + completion_tokens,
+            },
+        }

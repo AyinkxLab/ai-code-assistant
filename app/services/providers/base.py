@@ -109,6 +109,21 @@ class ProviderResponse:
         }
 
 
+@dataclass(frozen=True)
+class StreamChunk:
+    """A single incremental chunk yielded by :meth:`LLMProvider.stream_events`.
+
+    ``content`` is the delta text (empty for usage-only terminal chunks) and
+    ``usage`` carries token accounting when the provider reports it, so the
+    SSE layer can emit a final ``message_end`` event with token usage.
+    """
+
+    content: str = ""
+    prompt_tokens: int | None = None
+    completion_tokens: int | None = None
+    model: str | None = None
+
+
 class ProviderError(RuntimeError):
     """Base class for every LLM provider failure."""
 
@@ -181,6 +196,23 @@ class LLMProvider(ABC):
         params: dict[str, Any] | None = None,
     ) -> Iterator[str]:
         """Yield incremental content chunks for ``messages``."""
+
+    def stream_events(
+        self,
+        messages: Iterable[Any],
+        *,
+        model: str | None = None,
+        params: dict[str, Any] | None = None,
+    ) -> Iterator[StreamChunk]:
+        """Yield :class:`StreamChunk` deltas, including terminal usage.
+
+        The default implementation adapts the plain-text :meth:`stream` so
+        providers that do not report usage still work with the SSE endpoint.
+        Providers that surface usage should override this method.
+        """
+        for chunk in self.stream(messages, model=model, params=params):
+            if chunk:
+                yield StreamChunk(content=chunk)
 
     def complete(self, messages: Iterable[Any], *, stream: bool = False) -> str:
         """Backward-compatible convenience returning just the content string."""
