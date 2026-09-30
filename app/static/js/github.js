@@ -59,7 +59,7 @@
       if (!text) return "";
       var html = this.escapeHtml(text);
       html = html.replace(/(^|\s)(https?:\/\/[^\s<]+)/g, '$1<a href="$2" target="_blank" rel="noopener">$2</a>');
-      html = html.replace(/\r?\n/g, "<br>");
+      html = html.replace(/\r?\n/g, "<er>");
       return html;
     },
 
@@ -150,7 +150,7 @@
       var html = this.escapeHtml(analysis);
       html = html.replace(/\[CONFIRMED\]/g, '<span class="tag tag-confirmed">[CONFIRMED]</span>');
       html = html.replace(/\[SUGGESTION\]/g, '<span class="tag tag-suggestion">[SUGGESTION]</span>');
-      html = html.replace(/\r?\n/g, "<br>");
+      html = html.replace(/\r?\n/g, "<er>");
       pre.innerHTML = html;
       container.appendChild(pre);
     },
@@ -164,12 +164,99 @@
       var html = lines.map(function (line) {
         var cls = "diff-line";
         if (line.indexOf("@@") === 0) cls += " diff-hunk";
-        else if (line.indexOf("+++") === 0 || line.indexOf("---") === 0) cls += " diff-meta";
+        else if (line.indexOf("---") === 0 || line.indexOf("+++") === 0) cls += " diff-meta";
         else if (line.charAt(0) === "+") cls += " diff-added";
         else if (line.charAt(0) === "-") cls += " diff-removed";
         return '<span class="' + cls + '">' + this.escapeHtml(line) + "</span>";
       }, this).join("");
       return '<div class="code-view diff">' + html + "</div>";
+    },
+
+    // Render the GitHub integration help panel contained in the docs.
+    // This is the client-side counterpart of the documentation added for
+    // the GitHub integration guide: it explains the OAuth setup, the
+    // environment variables, the encrypted-token storage design, the API
+    // client's retry/rate-limit behaviour, and common troubleshooting.
+    renderIntegrationDocs: function (container) {
+      if (!container) return;
+      container.innerHTML = "";
+      var sections = [
+        {
+          id: "github-setup",
+          title: "Setup",
+          html:
+            "<p>The setup steps mirror the <strong>README</strong> GitHub section. " +
+            "Create an OAuth app in GitHub Settings → <em>Developer settings</em> – "+
+            "<em>OAuth Apps</em>, then configure the callback URL to "+
+            "<code>/github/callback</code> and set the environment variables " +
+            "below.</p>" +
+            "<ul>" +
+            "<li><code>GITHUB_CLIENT_ID</code> — OAuth app client ID.</li>" +
+            "<li><code>GITHUB_CLIENT_SECRET</code> — OAuth app client secret.</li>" +
+            "<li><code>GITHUB_REDIRECT_URI</code> — Must match the callback URL exactly.</li>" +
+            "<li><code>GITHUB_SCOPES</code> — Comma-separated scopes (e.g. <code>repo,read_user</code>).</li>" +
+            "<li><code>TOKEN_ENCRYPTION_KEY</code> — Base64-encoded 32-byte key used by " +
+            "<code>app/services/crypto.py</code>.</li>" +
+            "</ul>",
+        },
+        {
+          id: "github-architecture",
+          title: "Architecture",
+          html:
+            "<p>The integration is split across three layers:</p>" +
+            "<ul>" +
+            "<li><code>app/services/github.py</code> — the GitHub API " +
+            "client. It handles request building, auth headers, retries, and " +
+            "rate-limit backoff.</li>" +
+            "<li><code>app/services/crypto.py</code> — symmetric encryption " +
+            "for tokens at rest. Tokens are never stored in plaintext.</li>" +
+            "<li><code>app/github/routes.py</code> — the HTTP endpoints " +
+            "that drive the connect/callback flow and expose the issues/pulls " +
+            "APIs to the frontend.</li>" +
+            "</ul>",
+        },
+        {
+          id: "github-troubleshooting",
+          title: "Troubleshooting",
+          html:
+            "<ul>" +
+            "<li><strong>Scope missing</strong> — Re-connect and grant the " +
+            "required scopes; the API will return <code>403</code> with a " +
+            "<code>scope</code> error until the token is reissued.</li>" +
+            "<li><strong>Rate limits</strong> — the client retries on " +
+            "<code>429</code> and <code>503</code> with exponential backoff " +
+            "and honours <code>Retry-After</code>; if the budget is exhausted the " +
+            "call fails with a rate-limit error.</li>" +
+            "<li><strong>Token revoked</strong> — the API returns <code>401</code> " +
+            "with <code>kind: 'auth'</code>; the frontend redirects to " +
+            "<code>/github/connect</code> to re-authorize.</li>" +
+            "</ul>",
+        },
+        {
+          id: "github-security",
+          title: "Security note",
+          html:
+            "<p>Tokens are encrypted at rest using <code>app/services/crypto.py</code> " +
+            "and decrypted only in memory when a request is made. They are " +
+            "never logged, never returned to the browser, and never included " +
+            "in error messages. Rotate <code>TOKEN_ENCRYPTION_KEY</code> " +
+            "carefully and revoke access from GitHub when a connection is " +
+            "no longer needed.</p>",
+        },
+      ];
+      sections.forEach(function (section) {
+        var wrapper = document.createElement("section");
+        wrapper.id = section.id;
+        wrapper.className = "docs-section";
+        var heading = document.createElement("h2");
+        heading.textContent = section.title;
+        wrapper.appendChild(heading);
+        var body = document.createElement("div");
+        body.className = "docs-body";
+        body.innerHTML = section.html;
+        wrapper.appendChild(body);
+        container.appendChild(wrapper);
+      });
     },
   };
 })();

@@ -20,6 +20,50 @@ kept in sync as the plugin system grows.
 - **Read-only by construction.** The Stellar/Horizon/RPC surface never signs,
   simulates, or submits transactions, and never stores or handles keys.
 
+## GitHub integration
+
+### OAuth app setup
+
+1. Create a GitHub OAuth App (Settings → Developer settings → OAuth Apps → New OAuth App).
+2. Set the **Authorization callback URL** to `<APP_BASE_URL>/github/callback` (mirrors the README setup section).
+3. Copy the generated **Client ID** and **Client Secret** into the environment (see below).
+4. Request the minimum scopes required for the integration (`read:user`, `repo` for private-repo analysis); missing scopes surface as the troubleshooting entry below.
+
+### Environment variables
+
+| Variable | Purpose |
+| --- | --- |
+| `GITHUB_CLIENT_ID` | OAuth app client id. |
+| `GITHUB_CLIENT_SECRET` | OAuth app client secret; never logged. |
+| `GITHUB_OAUTH_REDIRECT_URI` | Must match the callback URL registered on the OAuth app. |
+| `GITHUB_TOKEN_ENCRYPTION_KEY` | Key material used by `app/services/crypto.py` to encrypt stored tokens. |
+
+### Architecture notes
+
+- `app/services/github.py` — the API client. Wraps outbound GitHub calls, applies retry/backoff, and translates rate-limit responses into typed errors.
+- `app/services/crypto.py` — symmetric encryption helpers used to seal and open access tokens before they touch storage.
+- `app/github/routes.py` — the OAuth callback and integration endpoints; exchanges the code, encrypts the token, and persists it against the user.
+
+### Encrypted-token storage design
+
+Access tokens are encrypted with `app/services/crypto.py` before persistence and are only decrypted in-process when `app/services/github.py` needs to make a call on the user's behalf. Ciphertext, not plaintext, is what lives at rest; the encryption key is supplied via environment configuration and is never written to the database or logs.
+
+### API client retry / rate-limit behaviour
+
+`app/services/github.py` retries transient failures (network errors and 5xx) with bounded exponential backoff. GitHub rate-limit responses (403/429 with `X-RateLimit-Remaining: 0`) are not retried blindly: the client surfaces a typed rate-limit error carrying the reset time so callers can back off instead of hammering the API.
+
+### Troubleshooting
+
+| Symptom | Likely cause | Resolution |
+| --- | --- | --- |
+| `scope missing` / 403 on repo access | OAuth app granted fewer scopes than the operation needs. | Re-authorize the user so the required scopes are granted; verify the scopes requested at login. |
+| Rate limits (403/429, `X-RateLimit-Remaining: 0`) | Too many calls for the current token. | Wait until the reset time reported by the client, or use a token with a higher quota. |
+| Token revoked / 401 | The user revoked the OAuth grant or the token was invalidated. | Prompt the user to re-authorize; the stored ciphertext is discarded and replaced on the next successful exchange. |
+
+### Security note on token handling
+
+Tokens are treated as secrets end to end: they are encrypted via `app/services/crypto.py` before storage, decrypted only in memory for outbound calls in `app/services/github.py`, never logged, and never returned by `app/github/routes.py`. Revocation invalidates the stored ciphertext rather than leaving a usable credential behind.
+
 ## Threat review
 
 | Threat                          | Control                                                                                          | Status |
