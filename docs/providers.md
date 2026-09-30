@@ -50,7 +50,7 @@ Per-conversation generation settings (issue #12) resolve through
 with its `supported_models` and whether the user has a usable key, and
 `build_provider(user, name)` applies the user's stored (decrypted) key when the
 environment does not provide one. A conversation's `model`, `temperature`, and
-`system_prompt` are passed through to `chat()`/`stream()` on every message.
+`system_prompt` are passed through to `chat()/`stream()` on every message.
 
 `ProviderResponse` carries `content`, `model`, `prompt_tokens`,
 `completion_tokens`, `total_tokens`, and `latency_seconds`. Failures use the
@@ -63,7 +63,7 @@ LLMProviderError` blocks keep working.
 ## Adding a provider
 
 1. Create `app/services/providers/<name>.py` with a class that subclasses
-   `LLMProvider`, sets `name` and `models`, and implements `chat()`/`stream()`.
+   `LLMProvider`, sets `name` and `models`, and implements `chat()/`stream()`.
    Do all network work here and normalize every failure to a `ProviderError`.
 2. Register it in `app/services/providers/__init__.py`:
    `register_provider(YourProvider.name, YourProvider)`.
