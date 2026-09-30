@@ -2,7 +2,7 @@
 
 Provider responses carry real prompt/completion token counts when the vendor
 reports them; when they do not — the offline mock provider, or a streamed reply
-— a small, dependency-free estimate is used so every message still records a
+ — a small, dependency-free estimate is used so every message still records a
 usage figure.
 """
 

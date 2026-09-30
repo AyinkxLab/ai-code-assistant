@@ -31,6 +31,8 @@ from flask import current_app
 from app.models import ProjectFile
 from app.services.importing import sanitize_member_path
 
+from app.services.token_usage import sum_usage
+
 PLACEHOLDER_SUFFIX = ".PLACEHOLDER.txt"
 
 
@@ -98,7 +100,7 @@ def iter_export_zip(project):
 
     The generator writes one entry per stored file (plus the manifest) and
     never materializes the whole archive, so exports stay memory-bounded for
-    any project size. Content is read per-row via ``.yield_per`` so SQLAlchemy
+    any project size. Content is read per-row via  `.yield_per`` so SQLAlchemy
     streams rows from the database instead of loading them all at once.
     """
     buffer = io.BytesIO()
