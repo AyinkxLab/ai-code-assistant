@@ -23,12 +23,14 @@ from app.services.providers.base import (
     ProviderRateLimitError,
     ProviderResponse,
     ProviderResponseError,
+    ProviderStreamError,
     ProviderUnavailableError,
     prepare_messages,
 )
 
 TIMEOUT_SECONDS = 60
 DEFAULT_MODELS = ("gpt-4o-mini", "gpt-4o", "gpt-4.1-mini", "gpt-4.1")
+STREAM_DONE = "[DONE]"
 
 
 class OpenAIProvider(LLMProvider):
@@ -194,3 +196,62 @@ class OpenAIProvider(LLMProvider):
             raise ProviderUnavailableError(
                 f"OpenAI stream failed: {exc}", provider=self.name
             ) from exc
+
+    def stream_events(
+        self,
+        messages: Iterable[Any],
+        *,
+        model: str | None = None,
+        params: dict | None = None,
+    ) -> Iterator[dict]:
+        """Yield structured streaming events for SSE consumption.
+
+        Emits ``message_start``, ``content`` deltas, and a terminal
+        ``message_end`` carrying token usage. Provider/transport failures are
+        surfaced as ``error`` events so callers can forward them to clients
+        instead of hanging. Closing the returned generator (e.g. on client
+        disconnect) closes the underlying HTTP response, cancelling the
+        provider stream.
+        """
+        self._require_key()
+        payload = self._payload(messages, model=model, params=params, stream=True)
+        response = self._post(payload, stream=True)
+        self._raise_for_status(response)
+        yield {
+            "type": "message_start",
+            "model": payload["model"],
+        }
+        usage: dict = {}
+        try:
+            for line in response.iter_lines(decode_unicode=True):
+                if not line or not line.startswith("data: "):
+                    continue
+                chunk_payload = line[len("data: ") :].strip()
+                if chunk_payload == STREAM_DONE:
+                    break
+                try:
+                    chunk = json.loads(chunk_payload)
+                except ValueError:
+                    continue
+                if chunk.get("usage"):
+                    usage = chunk["usage"]
+                try:
+                    delta = chunk["choices"][0]["delta"].get("content", "")
+                except (KeyError, IndexError, TypeError):
+                    delta = ""
+                if delta:
+                    yield {"type": "content", "delta": delta}
+        except requests.RequestException as exc:
+            yield {
+                "type": "error",
+                "message": f"OpenAI stream failed: {exc}",
+            }
+            return
+        finally:
+            response.close()
+        yield {
+            "type": "message_end",
+            "model": payload["model"],
+            "prompt_tokens": usage.get("prompt_tokens"),
+            "completion_tokens": usage.get("completion_tokens"),
+        }

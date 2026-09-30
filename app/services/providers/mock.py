@@ -2,7 +2,7 @@
 
 Used by the test suite and local development so the full pipeline (models,
 routes, SSE streaming, UI) can run without network access or API keys. It
-implements the same :class:`LLMProvider` contract as the real providers, which
+implements the same :Class:`LLMProvider` contract as the real providers, which
 is what the shared contract tests exercise.
 """
 

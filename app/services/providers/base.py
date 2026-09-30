@@ -109,6 +109,27 @@ class ProviderResponse:
         }
 
 
+@dataclass(frozen=True)
+class StreamEvent:
+    """A single Server-Sent Event emitted while streaming a completion.
+
+    ``event`` is one of ``message_start``, ``content``, ``message_end`` or
+    ``error``. ``data`` carries the JSON-serializable payload for that event;
+    ``content`` deltas use ``{"delta": str}`` and ``message_end`` includes
+    token usage so the route can persist the completed message.
+    """
+
+    event: str
+    data: dict[str, Any]
+
+    def to_sse(self) -> str:
+        """Render this event in the ``text/event-stream`` wire format."""
+        import json
+
+        payload = json.dumps(self.data, ensure_ascii=False)
+        return f"event: {self.event}\ndata: {payload}\n\n"
+
+
 class ProviderError(RuntimeError):
     """Base class for every LLM provider failure."""
 
@@ -181,6 +202,40 @@ class LLMProvider(ABC):
         params: dict[str, Any] | None = None,
     ) -> Iterator[str]:
         """Yield incremental content chunks for ``messages``."""
+
+    def stream_events(
+        self,
+        messages: Iterable[Any],
+        *,
+        model: str | None = None,
+        params: dict[str, Any] | None = None,
+    ) -> Iterator[StreamEvent]:
+        """Yield :class:`StreamEvent` objects for a streaming completion.
+
+        Emits ``message_start``, one ``content`` event per chunk, then
+        ``message_end`` with accumulated content and token usage. Provider
+        failures are surfaced as an ``error`` event so the SSE route never
+        hangs mid-stream.
+        """
+        yield StreamEvent("message_start", {"model": model})
+        chunks: list[str] = []
+        try:
+            for chunk in self.stream(messages, model=model, params=params):
+                if not chunk:
+                    continue
+                chunks.append(chunk)
+                yield StreamEvent("content", {"delta": chunk})
+        except ProviderError as exc:
+            yield StreamEvent(
+                "error",
+                {"message": str(exc), "provider": exc.provider or self.name},
+            )
+            return
+        content = "".join(chunks)
+        yield StreamEvent(
+            "message_end",
+            {"content": content, "model": model, "partial": False},
+        )
 
     def complete(self, messages: Iterable[Any], *, stream: bool = False) -> str:
         """Backward-compatible convenience returning just the content string."""
