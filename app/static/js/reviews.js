@@ -237,6 +237,62 @@
     );
   }
 
+  // ----- Action items ----------------------------------------------------
+
+  function actionItemText(item) {
+    var parts = [];
+    var location = "";
+    if (item.file) {
+      location = item.file;
+      if (item.line != null) location += ":" + item.line;
+    }
+    var prefix = item.confirmed ? "[CONFIRMED]" : "[SUGGESTION]";
+    var head = prefix + " " + (item.severity ? item.severity.toUpperCase() + " " : "") +
+      (item.category ? item.category + ": " : "");
+    var body = item.text || item.explanation || "";
+    parts.push(head + body);
+    if (item.recommendation) parts.push("Recommendation: " + item.recommendation);
+    if (location) parts.push("Location: " + location);
+    return parts.join("\n");
+  }
+
+  function deriveActionItems(summary, findings) {
+    var items = [];
+    (findings || []).forEach(function (finding) {
+      items.push({
+        confirmed: finding.confidence === "confirmed",
+        severity: finding.severity,
+        category: finding.category,
+        text: finding.explanation,
+        recommendation: finding.recommendation,
+        file: finding.file,
+        line: finding.line,
+      });
+    });
+    var s = summary || {};
+    (s.important_findings || []).forEach(function (text) {
+      items.push({ confirmed: true, text: text });
+    });
+    (s.suggested_improvements || []).forEach(function (text) {
+      items.push({ confirmed: false, text: text });
+    });
+    return items;
+  }
+
+  function actionItemsSection(items) {
+    if (!items || !items.length) return "";
+    var html = "<h4>Action items</h4><ul class='action-items'>";
+    items.forEach(function (item) {
+      var text = actionItemText(item);
+      html += "<li class='action-item'>" +
+        "<span class='action-item-text'>" + GH.renderMarkdownish(item.text || "") + "</span>" +
+        '<button class="btn btn-ghost btn-sm action-item-copy" type="button" ' +
+        "data-copy=\"" + GH.escapeHtml(text) + "\">Copy</button>" +
+        "</li>";
+    });
+    return html + "</ul>";
+  }
+
   function findingCard(finding) {
     var location = finding.file ? GH.escapeHtml(finding.file) : "(whole repo)";
     if (finding.line != null) location += ":" + finding.line;
@@ -311,6 +367,7 @@
         "</div>" +
         '<div class="analysis-output">' +
         summarySection("Overall assessment", summary.overall_assessment ? [summary.overall_assessment] : []) +
+        actionItemsSection(deriveActionItems(summary, review.findings)) +
         summarySection("Important findings", summary.important_findings) +
         summarySection("Suggested improvements", summary.suggested_improvements) +
         summarySection("Testing recommendations", summary.testing_recommendations) +
@@ -337,6 +394,25 @@
     document.getElementById("finding-confidence").addEventListener("change", function () { loadFindings(id); });
     document.getElementById("finding-addressed").addEventListener("change", function () { loadFindings(id); });
     document.addEventListener("click", function (event) {
+      var copy = event.target.closest(".action-item-copy");
+      if (copy) {
+        var text = copy.getAttribute("data-copy") || "";
+        var done = function () {
+          copy.textContent = "Copied";
+          setTimeout(function () { copy.textContent = "Copy"; }, 1500);
+        };
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          navigator.clipboard.writeText(text).then(done).catch(function () { GH.flashError("Copy failed"); });
+        } else {
+          var ta = document.createElement("textarea");
+          ta.value = text;
+          document.body.appendChild(ta);
+          ta.select();
+          try { document.execCommand("copy"); done(); } catch (e) { GH.flashError("Copy failed"); }
+          document.body.removeChild(ta);
+        }
+        return;
+      }
       var toggle = event.target.closest(".finding-toggle");
       if (toggle) {
         GH.api("/reviews/api/reviews/findings/" + toggle.getAttribute("data-id"), {

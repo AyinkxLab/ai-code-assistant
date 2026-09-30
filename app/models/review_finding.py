@@ -62,6 +62,9 @@ TEST_CATEGORIES = (
 
 CONFIDENCES = ("confirmed", "potential", "suggestion")
 
+# Confidence values that represent a confirmed defect (as opposed to a suggestion).
+CONFIRMED_CONFIDENCES = ("confirmed",)
+
 # Human-facing label for each confidence level (#111): a finding the code proves
 # is [CONFIRMED]; anything inferred or uncertain is [SUGGESTION].
 CONFIDENCE_LABELS = {
@@ -69,6 +72,11 @@ CONFIDENCE_LABELS = {
     "potential": "[SUGGESTION]",
     "suggestion": "[SUGGESTION]",
 }
+
+
+def is_confirmed(confidence: str | None) -> bool:
+    """Return ``True`` when a confidence value denotes a confirmed defect."""
+    return (confidence or "").strip().lower() in CONFIRMED_CONFIDENCES
 
 
 def confidence_label(confidence: str | None) -> str:
@@ -112,6 +120,29 @@ class ReviewFinding(db.Model):
         """The ``[CONFIRMED]``/``[SUGGESTION]`` label for this finding."""
         return confidence_label(self.confidence)
 
+    @property
+    def is_confirmed(self) -> bool:
+        """Whether this finding is a confirmed defect rather than a suggestion."""
+        return is_confirmed(self.confidence)
+
+    @property
+    def action_item(self) -> str:
+        """A copyable, GitHub-ready action item for this finding.
+
+        The text is intentionally self-contained so it can be pasted directly
+        into a GitHub review comment. It never includes raw repository content,
+        only the file path, line, and the model's explanation/recommendation.
+        """
+        location = self.file or "repository"
+        if self.line is not None:
+            location = f"{location}:{self.line}"
+        parts = [f"{self.confidence_label} [{self.severity}/{self.category}] {location}"]
+        if self.explanation:
+            parts.append(self.explanation.strip())
+        if self.recommendation:
+            parts.append(f"Recommendation: {self.recommendation.strip()}")
+        return "\n".join(parts)
+
     def to_dict(self) -> dict:
         """Serialize the finding for JSON API responses."""
         return {
@@ -125,6 +156,8 @@ class ReviewFinding(db.Model):
             "recommendation": self.recommendation,
             "confidence": self.confidence,
             "confidence_label": self.confidence_label,
+            "is_confirmed": self.is_confirmed,
+            "action_item": self.action_item,
             "addressed": bool(self.addressed),
             "created_at": self.created_at.isoformat() if self.created_at else None,
         }
