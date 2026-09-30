@@ -73,17 +73,6 @@ def consume(key: str, *, max_hits: int, window: int) -> tuple[bool, int]:
         return True, 0
 
 
-def _ai_limit_config() -> tuple[int, int]:
-    """Return ``(max_hits, window)`` for the AI endpoints from app config.
-
-    Both values are environment-configurable; a non-positive ``max_hits``
-    disables the limiter (used by the ``testing`` config).
-    """
-    max_hits = current_app.config.get("RATE_LIMIT_AI_PER_MINUTE") or 0
-    window = current_app.config.get("RATE_LIMIT_AI_WINDOW_SECONDS") or 60
-    return max_hits, window
-
-
 def count(key: str, *, window: int) -> int:
     """Return the current number of recorded hits for ``key`` in ``window``.
 
@@ -136,40 +125,7 @@ def per_user_limit(bucket: str, *, max_config: str, window_config: str):
         def wrapper(*args, **kwargs):
             max_hits = current_app.config.get(max_config) or 0
             window = current_app.config.get(window_config) or 0
-            key = f"{bucket}:user:{current_user.get_id()}"
-            allowed, retry_after = consume(key, max_hits=max_hits, window=window)
-            if not allowed:
-                response = jsonify(
-                    {
-                        "error": "Rate limit exceeded. Please retry later.",
-                        "kind": "rate_limited",
-                    }
-                )
-                response.status_code = 429
-                response.headers["Retry-After"] = str(retry_after)
-                return response
-            return view(*args, **kwargs)
-
-        return wrapper
-
-    return decorator
-
-
-def ai_per_user_limit(bucket: str):
-    """Decorator enforcing the per-user AI rate limit on a view.
-
-    The limit (requests per minute) is read from ``RATE_LIMIT_AI_PER_MINUTE``
-    at request time so it stays environment-configurable. When the limit is
-    exceeded the wrapped view is not called and a ``429`` JSON response with a
-    ``Retry-After`` header is returned. A non-positive limit disables the
-    limiter entirely (e.g. the ``testing`` config).
-    """
-
-    def decorator(view):
-        @functools.wraps(view)
-        def wrapper(*args, **kwargs):
-            max_hits, window = _ai_limit_config()
-            if max_hits <= 0:
+            if not max_hits or not window:
                 return view(*args, **kwargs)
             key = f"{bucket}:user:{current_user.get_id()}"
             allowed, retry_after = consume(key, max_hits=max_hits, window=window)
@@ -202,3 +158,17 @@ def reset() -> None:
     """Clear all limiter state (used by tests)."""
     with _LOCK:
         _ENTRIES.clear()
+
+
+def ai_limit(view):
+    """Per-user rate limit for the AI-powered endpoints.
+
+    Reads ``RATE_LIMIT_AI_PER_MINUTE`` (requests per minute) from the app
+    config at request time. Returns ``None`` when the limit is disabled (e.g.
+    the ``testing`` config), so callers can apply it conditionally.
+    """
+    return per_user_limit(
+        "ai",
+        max_config="RATE_LIMIT_AI_PER_MINUTE",
+        window_config="RATE_LIMIT_AI_WINDOW_SECONDS",
+    )(view)

@@ -1,1 +1,269 @@
-IiIiQXBwbGljYXRpb24gY29uZmlndXJhdGlvbi4KCkNvbmZpZ3VyYXRpb24gaXMgbG9hZGVkIGZyb20gZW52aXJvbm1lbnQgdmFyaWFibGVzIHNvIHRoZSBzYW1lIGNvZGViYXNlIGNhbgpydW4gbG9jYWxseSwgaW4gQ0ksIGFuZCBpbiBwcm9kdWN0aW9uIHdpdGhvdXQgbW9kaWZpY2F0aW9uLiBTZW5zaXRpdmUgdmFsdWVzCnN1Y2ggYXMgdGhlIGRhdGFiYXNlIHBhc3N3b3JkIGFuZCBzZWNyZXQga2V5IG11c3QgbmV2ZXIgYmUgY29tbWl0dGVkIHRvIHRoZQpyZXBvc2l0b3J5OyBzdXBwbHkgdGhlbSB0aHJvdWdoIGVudmlyb25tZW50IHZhcmlhYmxlcyBvciBhIGxvY2FsIGAuZW52YAoKZmlsZSAoc2VlIGAuZW52LmV4YW1wbGVgKS4KIiIiCgppbXBvcnQganNvbgppbXBvcnQgb3MKZnJvbSBwYXRobGliIGltcG9ydCBQYXRoCmZyb20gdHlwaW5nIGltcG9ydCBDbGFzc1ZhcgoKZnJvbSBkb3RlbnYgaW1wb3J0IGxvYWRfZG90ZW52CmZyb20gc3FsYWxjaGVteS5wb29sIGltcG9ydCBTdGF0aWNQb29sCgpCQVNFX0RJUiA9IFBhdGgoX19maWxlX18pLnJlc29sdmUoKS5wYXJlbnQucGFyZW50CgojIExvYWQgZW52aXJvbm1lbnQgdmFyaWFibGVzIGZyb20gYSAuZW52IGZpbGUgaWYgb25lIGV4aXN0cy4gVGhpcyBpcyBhCiMgY29udmVuaWVuY2UgZm9yIGxvY2FsIGRldmVsb3BtZW50IG9ubHk7IHByb2R1Y3Rpb24gZGVwbG95bWVudHMgc2hvdWxkCiMgcHJvdmlkZSB2YXJpYWJsZXMgdmlhIHRoZSBjb250YWluZXIvcGxhdGZvcm0gZW52aXJvbm1lbnQuCmxvYWRfZG90ZW52KEJBU0VfRElSIC8gIi5lbnYiKQoKCmRlZiBfZGJfdXJpKCkgLT4gc3RyOgogICAgIiIiUmV0dXJuIHRoZSBTUUxBbGNoZW15IGRhdGFiYXNlIFVSSSBmb3IgdGhlIGN1cnJlbnQgZW52aXJvbm1lbnQuCgogICAgRGVmYXVsdHMgdG8gYSBsb2NhbCBTUUxpdGUgZmlsZSBzbyB0aGUgYXBwbGljYXRpb24gaXMgcnVubmFibGUgd2l0aCB6ZXJvCiAgICBjb25maWd1cmF0aW9uIGZvciBkZXZlbG9wbWVudCwgd2hpbGUgc3RpbGwgYmVpbmcgUG9zdGdyZVNRTC1maXJzdCBpbgogICAgcHJvZHVjdGlvbiAoc2VlIGBgZG9ja2VyLWNvbXBvc2UueW1sYGApLgoKICAgIEZvciBmaWxlLWJhY2tlZCBTUUxpdGUgZGF0YWJhc2VzIHRoZSBwYXJlbnQgZGlyZWN0b3J5IGlzIGNyZWF0ZWQKICAgIGF1dG9tYXRpY2FsbHkgKFNRTEFsY2hlbXkgZG9lcyBub3QgY3JlYXRlIHBhcmVudCBmb2xkZXJzIGl0c2VsZikuCiAgICAiIiIKICAgIHVyaSA9IG9zLmdldGVudigKICAgICAgICAiREFUQUJBU0VfVVJMIiwKICAgICAgICBmInNxbGl0ZTovL3tCQVNFX0RJUiAvICdpbnN0YW5jZScgLyAnYXBwLmRiJ30iLAogICAgKQogICAgaWYgdXJpLnN0YXJ0c3dpdGgoInNxbGl0ZTovLy8iKSBhbmQgInNxbGl0ZTovLzptZW1vcnk6IiBub3QgaW4gdXJpOgogICAgICAgIGRiX2ZpbGUgPSBQYXRoKHVyaS5yZXBsYWNlKCJzcWxpdGU6Ly8vIiwgIiIsIDEpKQogICAgICAgIGRiX2ZpbGUucGFyZW50Lm1rZGlyKHBhcmVudHM9VHJ1ZSwgZXhpc3Rfb2s9VHJ1ZSkKICAgIHJldHVybiB1cmkKCgpkZWYgX3RydXN0ZWRfcGx1Z2luX2tleXMoKSAtPiBkaWN0W3N0ciwgc3RyXToKICAgIHZhbHVlID0gb3MuZ2V0ZW52KCJQTFVHSU5fVFJVU1RFRF9LRVlTIiwgIiIpCiAgICBpZiBub3QgdmFsdWU6CiAgICAgICAgcmV0dXJuIHt9CiAgICB0cnk6CiAgICAgICAga2V5cyA9IGpzb24ubG9hZHModmFsdWUpCiAgICBleGNlcHQganNvbi5KU09ORGVjb2RlRXJyb3IgYXMgZXhjOgogICAgICAgIHJhaXNlIFJ1bnRpbWVFcnJvcigiUExVR0lOX1RSVVNURURfS0VZUyBtdXN0IGJlIGEgSlNPTiBvYmplY3QiKSBmcm9tIGV4YwogICAgaWYgbm90IGlzaW5zdGFuY2Uoa2V5cywgZGljdCkgb3Igbm90IGFsbChpc2luc3RhbmNlKGtleSwgc3RyKSBmb3Iga2V5IGluIGtleXMpOgogICAgICAgIHJhaXNlIFJ1bnRpbWVFcnJvcigiUExVR0lOX1RSVVNURURfS0VZUyBtdXN0IGJlIGEgSlNPTiBvYmplY3Qgb2YgcHVibGlzaGVyIGtleXMiKQogICAgcmV0dXJuIGtleXMKCgpjbGFzcyBDb25maWc6CiAgICAiIiJCYXNlIGNvbmZpZ3VyYXRpb24gc2hhcmVkIGJ5IGFsbCBlbnZpcm9ubWVudHMuIiIiCgogICAgU0VDUkVUX0tFWSA9IG9zLmdldGVudigiU0VDUkVUX0tFWSIsICJkZXYtc2VjcmV0LWtleS1jaGFuZ2UtbWUiKQogICAgU1FMQUxDSEVNWV9EQVRBQkFTRV9VUkkgPSBfZGJfdXJpKCkKICAgIFNRTEFMQ0hFTVlfVFJBQ0tfTU9ESUZJQ0FUSU9OUyA9IEZhbHNlCgogICAgIyBTZXNzaW9uIGxpZmV0aW1lIGluIHNlY29uZHMgKDEyIGhvdXJzKS4KICAgIFBFUk1BTkVOVF9TRVNTSU9OX0xJRkVUSU1FID0gaW50KG9zLmdldGVudigiU0VTU0lPTl9MSUZF VElNRSIsIDYwICogNjAgKiAxMikpCgogICAgIyBBcHAgYnJhbmRpbmcgLyBmZWF0dXJlIHRvZ2dsZXMuCiAgICBBUFBfTkFNRSA9IG9zLmdldGVudigiQVBQX05BTUUiLCAiQUkgQ29kZSBBc3Npc3RhbnQiKQogICAgU0VTU0lPTl9DT09LSUVfU0VDVVJFID0gRmFsc2UKCiAgICAjIE1heGltdW0gc2l6ZSBvZiBhbiB1cGxvYWRlZCBmaWxlIGluIGJ5dGVzIChjb25maWd1cmVkIGZvciBmdXR1cmUgcGhhc2VzKS4KICAgIE1BWF9DT05URU5UX0xFTkdUSCA9IGludChvcy5nZXRlbnYoIk1BWF9DT05URU5UX0xFTkdUSCIsIDE2ICogMTAyNCAqIDEwMjQpKQoKICAgICMgTExNIHByb3ZpZGVyIGJhY2tlbmQ6ICJtb2NrIiAoZGVmYXVsdCwgb2ZmbGluZSkgb3IgIm9wZW5haSIuCiAgICBMTE1fUFJPVklERVIgPSBvcy5nZXRlbnYoIkxMTV9QUk9WSURFUiIsICJtb2NrIikKCiAgICAjIExMTSByZXNpbGllbmNlIChpc3N1ZSAjMjkpOiB0cmFuc2llbnQgcHJvdmlkZXIgZmFpbHVyZXMgKG5ldHdvcmsgZXJyb3JzLAogICAgIyBIVFRQIDQyOS81eHgpIGFyZSByZXRyaWVkIHdpdGggZXhwb25lbnRpYWwgYmFja29mZiBwbHVzIGppdHRlciwgd2hpbGUKICAgICMgbm9uLXRyYW5zaWVudCBlcnJvcnMgKGUuZy4gNDAxLzQwMCkgZmFpbCBmYXN0LiBgYExMTV9NQVhfUkVUUklFU2BgIGlzIHRoZQogICAgIyBudW1iZXIgb2YgcmV0cmllcyBhZnRlciB0aGUgaW5pdGlhbCBhdHRlbXB0OyBkZWxheXMgYXJlIGluIHNlY29uZHMgYW5kCiAgICAjIGNhcHBlZCBhdCBgYExMTV9SRVRSWV9NQVhfREVMQVlgYC4KICAgIExMTV9NQVhfUkVUUklFUyA9IGludChvcy5nZXRlbnYoIkxMTV9NQVhfUkVUUklFUyIsICIzIikpCiAgICBMTE1fUkVUUllfQkFTRV9ERUxBWSA9IGZsb2F0KG9zLmdldGVudigiTExNX1JFVFJZX0JBU0VfREVMQVkiLCAiMC41IikpCiAgICBMTE1fUkVUUllfTUFYX0RFTEFZID0gZmxvYXQob3MuZ2V0ZW52KCJMTE1fUkVUUllfTUFYX0RFTEFZIiwgIjguMCIpKQoKICAgICMgQ2hhdCBpbWFnZSBhdHRhY2htZW50cyAoaXNzdWUgIzQ5KTogb25seSBwbmcvanBlZy93ZWJwIGFyZSBhY2NlcHRlZCBhbmQKICAgICMgZWFjaCBpbWFnZSBhbmQgdGhlIG51bWJlciBwZXIgbWVzc2FnZSBhcmUgYm91bmRlZC4KICAgIENIQVRfSU1BR0VfTUFYX0JZVEVTID0gaW50KG9zLmdldGVudigiQ0hBVF9JTUFHRV9NQVhfQllURVMiLCBzdHIoNSAqIDEwMjQgKiAxMDI0KSkpCiAgICBDSEFUX0lNQUdFX01BWF9QRVJfTUVTU0FHRSA9IGludChvcy5nZXRlbnYoIkNIQVRfSU1BR0VfTUFYX1BFUl9NRVNTQUdFIiwgIjQiKSkKCiAgICAjIExMTSByZXNwb25zZSBjYWNoZSAoaXNzdWUgIzE4KS4gSWRlbnRpY2FsIG5vbi1zdHJlYW1pbmcgY29tcGxldGlvbnMgZm9yIHRoZQogICAgIyBzYW1lIHVzZXIvcHJvdmlkZXIvbW9kZWwvcHJvbXB0L3BhcmFtcyBhcmUgc2VydmVkIGZyb20gbWVtb3J5LiBEaXNhYmxlZAogICAgIyB3aGVuIExMTV9DQUNIRV9FTkFCTEVEIGlzICIwIjsgZW50cmllcyBleHBpcmUgYWZ0ZXIgTExNX0NBQ0hFX1RUTCBzZWNvbmRzCiAgICAjIGFuZCB0aGUgc3RvcmUga2VlcHMgYXQgbW9zdCBMTE1fQ0FDSEVfTUFYX0VOVFJJRVMgKExSVSkuCiAgICBMTE1fQ0FDSEVfRU5BQkxFRCA9IG9zLmdldGVudigiTExNX0NBQ0hFX0VOQUJMRUQiLCAiMSIpID09ICIxIgogICAgTExNX0NBQ0hFX1RUTCA9IGludChvcy5nZXRlbnYoIkxMTV9DQUNIRV9UVEwiLCAiMzAwIikpCiAgICBMTE1fQ0FDSEVfTUFYX0VOVFJJRVMgPSBpbnQob3MuZ2V0ZW52KCJMTE1fQ0FDSEVfTUFYX0VOVFJJRVMiLCAiMjU2IikpCiAgICAjIFByZS1mbGlnaHQgdG9rZW4vY29zdCBlc3RpbWF0ZSAoaXNzdWUgIzEwNCkuIFRoZSByYXRlIGlzIG9ubHkgdXNlZCB0byB0dXJuCiAgICAjIGFuIGVzdGltYXRlZCB0b2tlbiBjb3VudCBpbnRvIGEgcm91Z2ggVVNEIGZpZ3VyZSBzaG93biBiZWZvcmUgc2VuZGluZy4KICAgIExMTV9FU1RJTUFURV9VU0RfUEVSXzFLX1RPS0VOUyA9IGZsb2F0KG9zLmdldGVudigiTExNX0VTVElNQVRFX1VTRF9QRVJfMUtfVE9LRU5TIiwgIjAuMDAyIikpCiAgICAjIFN0cnVjdHVyZWQgY2hhdCBhdWRpdCBsb2dnaW5nIChpc3N1ZSAjMTcpLiBgYENIQVRfQVVESVRfTE9HX0xFVkVMYGAgbWF5IGJlCiAgICAjIGFueSBsb2dnaW5nIGxldmVsIG9yIE9GRiB0byBkaXNhYmxlLgogICAgQ0hBVF9BVURJVF9MT0dfRU5BQkxFRCA9IG9zLmdldGVudigiQ0hBVF9BVURJVF9MT0dfRU5BQkxFRCIsICIxIikgPT0gIjEiCiAgICBDSEFUX0FVRElUX0xPR19MRVZFTCA9IG9zLmdldGVudigiQ0hBVF9BVURJVF9MT0dfTEVWRUwiLCAiSU5GTyIpCgogICAgIyBQcm9tcHQgbGlicmFyeSAoUGhhc2UgMyk6IHZlcnNpb24gaGlzdG9yeS4gRXZlcnkgcHJvbXB0IHNhdmUgaXMgcmVjb3JkZWQKICAgICMgYXMgYSB2ZXJzaW9uOyB3aGVuIGEgcHJvbXB0IGlzIGRlbGV0ZWQgaXRzIGhpc3RvcnkgaXMgcmV0YWluZWQgZm9yIHRoaXMKICAgICMgbWFueSBkYXlzIGJlZm9yZSBiZWluZyBwdXJnZWQuCiAgICBQUk9NUFRfVkVSU0lPTl9SRVRFTlRJT05fREFZUyA9IGludChvcy5nZXRlbnYoIlBST01QVF9WRVJTSU9OX1JFVEVOVElPTl9EQVlTIiwgIjMwIikpCgogICAgIyBQbHVnaW4gbWFuaWZlc3QgYXV0aGVudGljaXR5LiBgYGlmLXByZXNlbnRgYCBwcmVzZXJ2ZXMgdGhlIGRlZmF1bHQgbG9jYWwKICAgICMgcGx1Z2luIGJlaGF2aW9yOyBgYHJlcXVpcmVkYGAgcmVqZWN0cyB1bnNpZ25lZCBhbmQgaW52YWxpZCBtYW5pZmVzdHMuCiAgICBQTFVHSU5fVFJVU1RfUE9MSUNZID0gb3MuZ2V0ZW52KCJQTFVHSU5fVFJVU1RfUE9MSUNZIiwgImlmLXByZXNlbnQiKQogICAgUExVR0lOX1RSVVNURURfS0VZUyA9IF90cnVzdGVkX3BsdWdpbl9rZXlzKCkKCiAgICAjIERpcmVjdG9yeSBzY2FubmVkIGJ5IHRoZSByZWFkLW9ubHkgcGx1Z2luIGRpc2NvdmVyeSBlbmRwb2ludCAoIzE3MikuCiAgICAjIERpc2NvdmVyeSBvbmx5IHJlYWRzIGBgbWFuaWZlc3QuanNvbmBgIGZpbGVzIGZyb20gcGx1Z2luIHN1YmRpcmVjdG9yaWVzCiAgICAjIGFuZCBuZXZlciBpbnN0YWxscywgbG9hZHMsIG9yIG11dGF0ZXMgYW55dGhpbmcuIERlZmF1bHRzIHRvIHRoZSByZXBvJ3MKICAgICMgYGBwbHVnaW5zL2BgIGRpcmVjdG9yeTsgcG9pbnQgaXQgYXQgYSBsb2NhbCBkaXJlY3RvcnkgdG8gYWR2ZXJ0aXNlCiAgICAjIGRpc2NvdmVyYWJsZSBwbHVnaW5zLgogICAgUExVR0lOX0RJU0NPVkVSWV9ESVIgPSBvcy5nZXRlbnYoIlBMVUdJTl9ESVNDT1ZFUllfRElSIiwgc3RyKEJBU0VfRElSIC8gInBsdWdpbnMiKSkKCiAgICAjIFBsdWdpbiBvdXRib3VuZCBuZXR3b3JrIHBvbGljeSAoIzE5MykuIEV2ZXJ5IHBsdWdpbi10cmlnZ2VyZWQgcmVxdWVzdCBtdXN0CiAgICAjIHBhc3MgYGBhcHAuc2VydmljZXMucGx1Z2luX25ldHdvcmtgYDogaXQgaXMgaHR0cHMtb25seSwgZGVuaWVzCiAgICAjIHByaXZhdGUvbG9vcGJhY2svbGluay1sb2NhbC9yZXNlcnZlZCB0YXJnZXRzIGJ5IGRlZmF1bHQsIGFuZCBvbmx5IHJlYWNoZXMKICAgICMgaG9zdHMgb24gYGBQTFVHSU5fTkVUV09SS19BTExPV0xJU1RgYCAoY29tbWEtc2VwYXJhdGVkOyBgYCpgYCBhbGxvd3MgYW55CiAgICAjIHB1YmxpYyBob3N0LCBgYCouZXhhbXBsZS5jb21gYCBhbGxvd3Mgc3ViZG9tYWlucykuIEFuIGVtcHR5IGFsbG93bGlzdAogICAgIyBkZW5pZXMgYWxsIHBsdWdpbiBvdXRib3VuZCByZXF1ZXN0cyAoZmFpbCBjbG9zZWQpLgogICAgUExVR0lOX05FVFdPUktfQUxMT1dMSVNUID0gb3MuZ2V0ZW52KCJQTFVHSU5fTkVUV09SS19BTExPV0xJU1QiLCAiIikKICAgIFBMVUdJTl9ORVRXT1JLX0hUVFBTX09OTFkgPSBvcy5nZXRlbnYoIlBMVUdJTl9ORVRXT1JLX0hUVFBTX09OTFkiLCAiMSIpID09ICIxIgogICAgUExVR0lOX05FVFdPUktfQUxMT1dfUFJJVkFURSA9IG9zLmdldGVudigiUExVR0lOX05FVFdPUktfQUxMT1dfUFJJVkFURSIsICIwIikgPT0gIjEiCiAgICBQTFVHSU5fTkVUV09SS19USU1FT1VUID0gaW50KG9zLmdldGVudigiUExVR0lOX05FVFdPUktfVElNRU9VVCIsICIxNSIpKQogICAgUExVR0lOX05FVFdPUktfTUFYX0JZVEVTID0gaW50KG9zLmdldGVudigiUExVR0lOX05FVFdPUktfTUFYX0JZVEVTIiwgc3RyKDIgKiAxMDI0ICogMTAyNCkpKQogICAgIyBXaGVuIGVuYWJsZWQsIGEgaG9zdG5hbWUgdGhhdCBjYW5ub3QgYmUgcmVzb2x2ZWQgaXMgcmVqZWN0ZWQgaW5zdGVhZCBvZgogICAgIyB0b2xlcmF0ZWQgKGRlZmVuc2UtaW4tZGVwdGggZm9yIGhvc3RpbGUgRE5TOyBvZmYgYnkgZGVmYXVsdCBzbyB0aGUgZ3VhcmQKICAgICMga2VlcHMgd29ya2luZyBmdWxseSBvZmZsaW5lKS4KICAgIFBMVUdJTl9ORVRXT1JLX1NUUklDVF9ETlMgPSBvcy5nZXRlbnYoIlBMVUdJTl9ORVRXT1JLX1NUUklDVF9ETlMiLCAiMCIpID09ICIxIgoKICAgICMgR2l0SHViIE9BdXRoIGludGVncmF0aW9uLgogICAgR0lUSFVCX0NMSUVOVF9JRCA9IG9zLmdldGVudigiR0lUSFVCX0NMSUVOVF9JRCIsICIiKQogICAgR0lUSFVCX0NMSUVOVF9TRUNSRVQgPSBvcy5nZXRlbnYoIkdJVEhVQl9DTElFTlRfU0VDUkVUIiwgIiIpCiAgICBHSVRIVUJfUkVESVJFQ1RfVVJJID0gb3MuZ2V0ZW52KCJHSVRIVUJfUkVESVJFQ1RfVVJJIiwgIiIpCiAgICBHSVRIVUJfQVBJX1VSTCA9IG9zLmdldGVudigiR0lUSFVCX0FQSV9VUkwiLCAiaHR0cHM6Ly9hcGkuZ2l0aHViLmNvbSIpCiAgICBHSVRIVUJfU0NPUEVTID0gb3MuZ2V0ZW52KCJHSVRIVUJfU0NPUEVTIiwgInJlYWQ6dXNlciByZXBvIikKICAgIEdJVEhVQl9SRVFVRVNUX1RJTUVPVVQgPSBpbnQob3MuZ2V0ZW52KCJHSVRIVUJfUkVRVUVTVF9USU1FT1VUIiwgIjMwIikpCiAgICBHSVRIVUJfTUFYX0NPTlRFWFRfQ0hBUlMgPSBpbnQob3MuZ2V0ZW52KCJHSVRIVUJfTUFYX0NPTlRFWFRfQ0hBUlMiLCAiNDAwMDAiKSkKICAgICMgUmVtYWluaW5nIGNvcmUgQVBJIHF1b3RhIGF0IG9yIGJlbG93IHRoaXMgdmFsdWUgdHJpZ2dlcnMgdGhlIGxvdy1xdW90YQogICAgIyB3YXJuaW5nIG9uIHRoZSBHaXRIdWIgZGFzaGJvYXJkIChpc3N1ZSAjNzcpLgogICAgR0lUSFVCX0xPV19RVU9UQV9USFJFU0hPTEQgPSBpbnQob3MuZ2V0ZW52KCJHSVRIVUJfTE9XX1FVT1RBX1RIUkVTSE9MRCIsICIxMDAiKSkKCiAgICAjIFByb2plY3Qgd29ya3NwYWNlcyAoUGhhc2UgNSk6IGxpbWl0cyB0aGF0IHByb3RlY3QgdGhlIHNlcnZlciBmcm9tIGJlaW5nCiAgICAjIG92ZXJ3aGVsbWVkIGJ5IGxhcmdlIG9yIG1hbGljaW91cyBwcm9qZWN0IGltcG9ydHMuIEFyY2hpdmVzIGFyZSB2YWxpZGF0ZWQKICAgICMgZHVyaW5nIGV4dHJhY3Rpb24gKHBhdGggdHJhdmVyc2FsLCBzeW1saW5rcywgc2l6ZSBhbmQgZmlsZS1jb3VudCBjYXBzKSBhbmQKICAgICMgb25seSBib3VuZGVkLCBzYW5pdGl6ZWQgbWV0YWRhdGEgKyB0ZXh0IGNvbnRlbnQgaXMgc3RvcmVkLgogICAgUFJPSkVDVF9NQVhfQVJDSElWRV9CWVRFUyA9IGludChvcy5nZXRlbnYoIlBST0pFQ1RfTUFYX0FSQ0hJVkVfQllURVMiLCBzdHIoNTAgKiAxMDI0ICogMTAyNCkpKQogICAgUFJPSkVDVF9NQVhfU0laRV9CWVRFUyA9IGludChvcy5nZXRlbnYoIlBST0pFQ1RfTUFYX1NJWkVfQllURVMiLCBzdHIoNTAwICogMTAyNCAqIDEwMjQpKSkKICAgIFBST0pFQ1RfTUFYX0ZJTEVfQ09VTlQgPSBpbnQob3MuZ2V0ZW52KCJQUk9KRUNUX01BWF9GSUxFX0NPVU5UIiwgIjIwMDAwIikpCiAgICBQUk9KRUNUX01BWF9GSUxFX0NIQVJTID0gaW50KG9zLmdldGVudigiUFJPSkVDVF9NQVhfRklMRV9DSEFSUyIsICIyMDAwMDAiKSkKICAgIFBST0pFQ1RfTUFYX0NPTlRFWFRfQ0hBUlMgPSBpbnQob3MuZ2V0ZW52KCJQUk9KRUNUX01BWF9DT05URVhUX0NIQVJTIiwgIjQwMDAwIikpCiAgICBQUk9KRUNUX1NFQVJDSF9NQVhfUkVTVUxUUyA9IGludChvcy5nZXRlbnYoIlBST0pFQ1RfU0VBUkNIX01BWF9SRVNVTVRTIiwgIjEwMCIpKQogICAgUFJPSkVDVF9HSVRIVUJfTUFYX0ZJTEVTID0gaW50KG9zLmdldGVudigiUFJPSkVDVF9HSVRIVUJfTUFYX0ZJTEVTIiwgIjEwMDAiKSkKICAgIFBST0pFQ1RfU0tJUF9ESVJTID0gb3MuZ2V0ZW52KAogICAgICAgICJQUk9KRUNUX1NLSVBfRElSUyIsCiAgICAgICAgIi5naXQsLmhnLC5zdm4sbm9kZV9tb2R1bGVzLC52ZW52LHZlbnYsX19weWNhY2hlX18sLm5leHQsLmNhY2hlLGRpc3QsYnVpbGQsIgogICAgICAgICJ2ZW5kb3IsLnRveCwubXlweV9jYWNoZSwucHl0ZXN0X2NhY2hlIiwKICAgICkKICAgICMgU25hcHNob3QgZXhwb3J0ICgjMTA3KTogZXhwb3J0cyBzdHJlYW0gYSB6aXAgYnVpbHQgaW4gbWVtb3J5IGZyb20gc3RvcmVkCiAgICAjIHJvd3Mgb25seSAobmV2ZXIgdGhlIGZpbGVzeXN0ZW0pLiBCaW5hcnkvb3ZlcnNpemVkIGZpbGVzIGJlY29tZSBjbGVhcmx5CiAgICAjIG1hcmtlZCAuUExBQ0VIT0xERVIudHh0IHN0dWJzOyB0aGlzIGNhcHMgdGhlIHNpemUgb2Ygb25lIHN0dWIncyB0ZXh0LgogICAgUFJPSkVDVF9FWFBPUlRfUExBQ0VIT0xERVJfTUFYX0NIQVJTID0gaW50KAogICAgICAgIG9zLmdldGVudigiUFJPSkVDVF9FWFBPUlRfUExBQ0VIT0xERVJfTUFYX0NIQVJTIiwgIjIwMDAwIikKICAgICkKICAgIFBST0pFQ1RfU0tJUF9TRUNSRVRfRklMRVMgPSBvcy5nZXRlbnYoCiAgICAgICAgIlBST0pFQ1RfU0tJUF9TRUNSRVRfRklMRVMiLAogICAgICAgICIuZW52LC5wZW0sLmtleSwucDEyLC5wZngsaWRfcnNhLGlkX2VkMjU1MTksaWRfZHNhLGNyZWRlbnRpYWxzLC5odHBhc3N3ZCwiCiAgICAgICAgIi5ucG1yYywubnB5cmMsc2VjcmV0cy55YW1sLHNlY3JldC55YW1sLHNlY3JldC55bWwiLAogICAgKQogICAgIyBQcm9qZWN0IGltcG9ydCBpbmRleGluZyAoIzg5KTogcnVuIGltcG9ydHMgaW4gYW4gaW4tcHJvY2VzcyBiYWNrZ3JvdW5kCiAgICAjIHdvcmtlciBzbyB0aGUgSFRUUCByZXF1ZXN0IHJldHVybnMgaW1tZWRpYXRlbHkgd2l0aCB0aGUgcHJvamVjdCBpbgogICAgIyBgaW5kZXhpbmdgIHN0YXR1cyBhbmQgdGhlIGNsaWVudCBwb2xscyBgcHJvZ3Jlc3NgLiBEaXNhYmxlZCBpbiB0aGUKICAgICMgdGVzdCBjb25maWcgZm9yIGRldGVybWluaXN0aWMgYXNzZXJ0aW9ucy4KICAgIElNUE9SVF9KT0JTX0FTWU5DID0gb3MuZ2V0ZW52KCJJTVBPUlRfSk9CU19BU1lOQyIsICIxIikgPT0gIjEiCgogICAgIyBBSSByZXZpZXdzIChQaGFzZSA2KTogY2FwcyB0aGF0IGtlZXAgcmV2aWV3cyBib3VuZGVkIGFuZCBwcmVkaWN0YWJsZS4KICAgICMgQSByZXZpZXcgbmV2ZXIgc2VuZHMgbW9yZSB0aGFuIFJFVklFV19NQVhfQ09OVEVYVF9DSEFSUyBvZiByZXBvc2l0b3J5IHRleHQKICAgICMgdG8gdGhlIG1vZGVsLCBhbmQgbmV2ZXIgYW5hbHl6ZXMgbW9yZSB0aGFuIFJFVklFV19NQVhfRklMRVMgY2hhbmdlZCBmaWxlcy4KICAgIFJFVklFV19NQVhfRklMRVMgPSBpbnQob3MuZ2V0ZW52KCJSRVZJRVdfTUFYX0ZJTEVTIiwgIjQwIikpCiAgICBSRVZJRVdfTUFYX0NPTlRFWFRfQ0hBUlMgPSBpbnQob3MuZ2V0ZW52KCJSRVZJRVdfTUFYX0NPTlRFWFRfQ0hBUlMiLCAiNDAwMDAiKSkKICAgIFJFVklFV19NQVhfRklORElOR1MgPSBpbnQob3MuZ2V0ZW52KCJSRVZJRVdfTUFYX0ZJTkRJTkdTIiwgIjEwMCIpKQogICAgIyBEZWZhdWx0IGVuYWJsZWQgcHJvamVjdCByZXZpZXcga2luZHMgKGNvbW1hLXNlcGFyYXRlZCkuCiAgICBSRVZJRVdfS0lORFMgPSBvcy5nZXRlbnYoIlJFVklFV19LSU5EUyIsICJxdWFsaXR5LHNlY3VyaXR5LHRlc3RzIikKICAgICMgT25seSBmaW5kaW5ncyBhdCBvciBhYm92ZSB0aGlzIHNldmVyaXR5IGFyZSBzdG9yZWQ6IGNyaXRpY2FsfGhpZ2h8bWVkaXVtfGxvd3xpbmZvcm1hdGlvbmFsLgogICAgUkVWSUVXX1NFVkVSSVRZX1RIUkVTSE9MRCA9IG9zLmdldGVudigiUkVWSUVXX1NFVkVSSVRZX1RIUkVTSE9MRCIsICJsb3ciKQoKICAgICMgVGVhbSBjb2xsYWJvcmF0aW9uIChQaGFzZSA3KS4KICAgICMgSW52aXRhdGlvbiBkZWZhdWx0IHRpbWUtdG8tbGl2ZSBpbiBob3VycyAoMTY4ID0gNyBkYXlzKS4KICAgIElOVklURV9UVExfSE9VUlMgPSBpbnQob3MuZ2V0ZW52KCJJTlZJVEVfVFRMX0hPVVJTIiwgIjE2OCIpKQogICAgIyBNYXhpbXVtIHdvcmtzcGFjZSBtZW1iZXJzIGluY2x1ZGVkIGluIEFJIHRlYW0gY29udGV4dCAocGVyLXByb2plY3QgY2hhdCkuCiAgICBQUk9KRUNUX01BWF9NRU1CRVJfQ09OVEVYVCA9IGludChvcy5nZXRlbnYoIlBST0pFQ1RfTUFYX01FTUJFUl9DT05URVhUIiwgIjIwIikpCiAgICAjIEluLW1lbW9yeSByYXRlIGxpbWl0aW5nIGZvciBwdWJsaWMgY29sbGFib3JhdGlvbiBlbmRwb2ludHMgKGFjY2VwdC8KICAgICMgZGVjbGluZS9sYW5kaW5nKSBhbmQgdGhlIHByZXNlbmNlIGhlYXJ0YmVhdC4gU2ltcGxlIHNsaWRpbmctd2luZG93IGxpbWl0ZXIKICAgICMgaW4gYXBwL3NlcnZpY2VzL3JhdGVsaW1pdC5weTsgYnJvYWRlciBwZXItdXNlciBBSS9pbXBvcnQgbGltaXRzIGFyZSB0aGUKICAgICMgc2NvcGUgb2YgdGhlIHVtYnJlbGxhIGlzc3VlcyAoIzI4LyM4MS8jMTA2KS4KICAgIFJBVEVfTElNSVRfTUFYID0gaW50KG9zLmdldGVudigiUkFURV9MSU1JVF9NQVgiLCAiMzAiKSkKICAgIFJBVEVfTElNSVRfV0lORE9XX1NFQ09ORFMgPSBpbnQob3MuZ2V0ZW52KCJSQVRFX0xJTUlUX1dJTkRPV19TRUNPTkRTIiwgIjMwMCIpKQogICAgIyBQZXItdXNlciBzbGlkaW5nLXdpbmRvdyBsaW1pdHMgZm9yIHRoZSBjb3N0bHkgUGhhc2UgNSBlbmRwb2ludHMgKCMxMDYpOgogICAgIyBwcm9qZWN0IGltcG9ydCwgcHJvamVjdCBzZWFyY2gsIHByb2plY3QgY2hhdCwgY2hhdCBzdHJlYW1pbmcsIGFuZCBwcm9qZWN0CiAgICAjIGFuYWx5c2lzLiBFYWNoIHBhaXIgaXMgPG1heCByZXF1ZXN0cz4gcGVyIDx3aW5kb3cgc2Vjb25kcz4sIGtleWVkIGJ5IHVzZXIKICAgICMgaWQsIGFuZCBldmVyeSB2YWx1ZSBpcyBlbnZpcm9ubWVudC1jb25maWd1cmFibGUuIEltcG9ydCBhbmQgYW5hbHl6ZSBoaXQKICAgICMgdGhlIG5ldHdvcmsvTExNIGFuZCBhcmUgdGhlcmVmb3JlIHRpZ2h0ZXIgdGhhbiBsb2NhbCBzZWFyY2guCiAgICBSQVRFX0xJTUlUX0lNUE9SVF9NQVggPSBpbnQob3MuZ2V0ZW52KCJSQVRFX0xJTUlUX0lNUE9SVF9NQVgiLCAiMTAiKSkKICAgIFJBVEVfTElNSVRfSU1QT1JUX1dJTkRPVyA9IGludChvcy5nZXRlbnYoIlJBVEVfTElNSVRfSU1QT1JUX1dJTkRPVyIsICIzNjAwIikpCiAgICBSQVRFX0xJTUlUX1NFQVJDSF9NQVggPSBpbnQob3MuZ2V0ZW52KCJSQVRFX0xJTUlUX1NFQVJDSF9NQVgiLCAiMTIwIikpCiAgICBSQVRFX0xJTUlUX1NFQVJDSF9XSU5ET1cgPSBpbnQob3MuZ2V0ZW52KCJSQVRFX0xJTUlUX1NFQVJDSF9XSU5ET1ciLCAiNjAiKSkKICAgIFJBVEVfTElNSVRfQ0hBVF9NQVggPSBpbnQob3MuZ2V0ZW52KCJSQVRFX0xJTUlUX0NIQVRfTUFYIiwgIjMwIikpCiAgICBSQVRFX0xJTUlUX0NIQVRfV0lORE9XID0gaW50KG9zLmdldGVudigiUkFURV9MSU1JVF9DSEFUX1dJTkRPVyIsICI2MCIpKQogICAgUkFURV9MSU1JVF9TVFJFQU1fTUFYID0gaW50KG9zLmdldGVudigiUkFURV9MSU1JVF9TVFJFQU1fTUFYIiwgIjMwIikpCiAgICBSQVRFX0xJTUlUX1NUUkVBTV9XSU5ET1cgPSBpbnQob3MuZ2V0ZW52KCJSQVRFX0xJTUlUX1NUUkVBTV9XSU5ET1ciLCAiNjAiKSkKICAgIFJBVEVfTElNSVRfQU5BTFlaRV9NQVggPSBpbnQob3MuZ2V0ZW52KCJSQVRFX0xJTUlUX0FOQUxZWkVfTUFYIiwgIjUiKSkKICAgIFJBVEVfTElNSVRfQU5BTFlaRV9XSU5ET1cgPSBpbnQob3MuZ2V0ZW52KCJSQVRFX0xJTUlUX0FOQUxZWkVfV0lORE9XIiwgIjM2MDAiKSkKCiAgICAjIFBlci11c2VyIHJhdGUgbGltaXRpbmcgb24gQUktcG93ZXJlZCBlbmRwb2ludHMgKCMxMDYpOiAvY2hhdC8qL3N0cmVhbQogICAgIyBhbmQgL3Rvb2xzLyouIFJlcXVlc3RzIHBlciB1c2VyIHBlciBtaW51dGUgYXJlIGNvbmZpZ3VyYWJsZSB2aWEKICAgICMgUkFURV9MSU1JVF9BSV9QRVJfTUlOVVRFLiBSYXRlLWxpbWl0ZWQgcmVxdWVzdHMgcmV0dXJuIEhUVFAgNDI5IHdpdGggYQogICAgIyBKU09OIGVycm9yIGJvZHkgYW5kIGEgUmV0cnktQWZ0ZXIgaGVhZGVyLiBObyByYXRlIGxpbWl0aW5nIGlzIGFwcGxpZWQgaW4KICAgICMgdGhlIHRlc3RpbmcgY29uZmlnLgogICAgUkFURV9MSU1JVF9BSV9QRVJfTUlOVVRFID0gaW50KG9zLmdldGVudigiUkFURV9MSU1JVF9BSV9QRVJfTUlOVVRFIiwgIjYwIikpCgogICAgIyBXaGV0aGVyIHRvIGFwcGx5IHRoZSBwZXItdXNlciBBSSByYXRlIGxpbWl0LiBUdXJuZWQgb2ZmIGluIHRoZSB0ZXN0aW5nCiAgICAjIGNvbmZpZyBzbyB0ZXN0cyBhcmUgZGV0ZXJtaW5pc3RpYyBhbmQgbm90IGFmZmVjdGVkIGJ5IGxpbWl0ZXIgc3RhdGUuCiAgICBSQVRFX0xJTUlUX0FJX0VOQUJMRUQgPSBvcy5nZXRlbnYoIlJBVEVfTElNSVRfQUlfRU5BQkxFRCIsICIxIikgPT0gIjEiCgoKY2xhc3MgRGV2ZWxvcG1lbnRDb25maWcoQ29uZmlnKToKICAgICIiIkRldmVsb3BtZW50IGNvbmZpZ3VyYXRpb24uIiIiCgogICAgREVCVUcgPSBUcnVlCgoKY2xhc3MgVGVzdGluZ0NvbmZpZyhDb25maWcpOgogICAgIiIiVGVzdGluZyBjb25maWd1cmF0aW9uLiIiIgoKICAgIFRFU1RJTkcgPSBUcnVlCiAgICBTRUNSRVRfS0VZID0gInRlc3Qtc2VjcmV0LWtleSIKICAgIFNRTEFMQ0hFTVlfREFUQUJBU0VfVVJJID0gInNxbGl0ZTovLzptZW1vcnk6IgogICAgU1FMQUxDSEVNWV9FTkdJTkVfT1BUSU9OUyA9IHsKICAgICAgICAiY29ubmVjdF9hcmdzIjogeyJjaGVja19zYW1lX3RocmVhZCI6IEZhbHNlfSwKICAgICAgICAicG9vbGNsYXNzIjogU3RhdGljUG9vbCwKICAgIH0KICAgIFdURl9DU1JGX0VOQUJMRUQgPSBGYWxzZQogICAgSU1QT1JUX0pPQlNfQVNZTkMgPSBGYWxzZQogICAgIyBObyByYXRlIGxpbWl0aW5nIGluIHRoZSB0ZXN0aW5nIGNvbmZpZy4KICAgIFJBVEVfTElNSVRfQUlfRU5BQkxFRCA9IEZhbHNlCgoKY2xhc3MgUHJvZHVjdGlvbkNvbmZpZyhDb25maWcpOgogICAgIiIiUHJvZHVjdGlvbiBjb25maWd1cmF0aW9uLiIiIgoKICAgIERFQlVHID0gRmFsc2UKICAgIFNFU1NJT05fQ09PS0lFX1NFQ1VSRSA9IFRydWUKCgpjb25maWcgPSB7CiAgICAiZGV2ZWxvcG1lbnQiOiBEZXZlbG9wbWVudENvbmZpZywKICAgICJ0ZXN0aW5nIjogVGVzdGluZ0NvbmZpZywKICAgICJwcm9kdWN0aW9uIjogUHJvZHVjdGlvbkNvbmZpZywKICAgICJkZWZhdWx0IjogRGV2ZWxvcG1lbnRDb25maWcsCn0K
+"""Application configuration.
+
+Configuration is loaded from environment variables so the same codebase can
+run locally, in CI, and in production without modification. Sensitive values
+such as the database password and secret key must never be committed to the
+repository; supply them through environment variables or a local `.env`
+
+file (see `.env.example`).
+"""
+
+import json
+import os
+from pathlib import Path
+from typing import ClassVar
+
+from dotenv import load_dotenv
+from sqlalchemy.pool import StaticPool
+
+BASE_DIR = Path(__file__).resolve().parent.parent
+
+# Load environment variables from a .env file if one exists. This is a
+# convenience for local development only; production deployments should
+# provide variables via the container/platform environment.
+load_dotenv(BASE_DIR / ".env")
+
+
+def _db_uri() -> str:
+    """Return the SQLAlchemy database URI for the current environment.
+
+    Defaults to a local SQLite file so the application is runnable with zero
+    configuration for development, while still being PostgreSQL-first in
+    production (see `docker-compose.yml`).
+
+    For file-backed SQLite databases the parent directory is created
+    automatically (SQLAlchemy does not create parent folders itself).
+    """
+    uri = os.getenv(
+        "DATABASE_URL",
+        f"sqlite://{BASE_DIR / 'instance' / 'app.db'}",
+    )
+    if uri.startswith("sqlite:///") and "sqlite://:memory:" not in uri:
+        db_file = Path(uri.replace("sqlite:///", "", 1))
+        db_file.parent.mkdir(parents=True, exist_ok=True)
+    return uri
+
+
+def _trusted_plugin_keys() -> dict[str, str]:
+    value = os.getenv("PLUGIN_TRUSTED_KEYS", "")
+    if not value:
+        return {}
+    try:
+        keys = json.loads(value)
+    except json.JSONDecodeError as exc:
+        raise RuntimeError("PLUGIN_TRUSTED_KEYS must be a JSON object") from exc
+    if not isinstance(keys, dict) or not all(isinstance(key, str) for key in keys):
+        raise RuntimeError("PLUGIN_TRUSTED_KEYS must be a JSON object of publisher keys")
+    return keys
+
+
+class Config:
+    """Base configuration shared by all environments."""
+
+    SECRET_KEY = os.getenv("SECRET_KEY", "dev-secret-key-change-me")
+    SQLALCHEMY_DATABASE_URI = _db_uri()
+    SQLALCHEMY_TRACK_MODIFICATIONS = False
+
+    # Session lifetime in seconds (12 hours).
+    PERMANENT_SESSION_LIFETIME = int(os.getenv("SESSION_LIFETIME", 60 * 60 * 12))
+
+    # App branding / feature toggles.
+    APP_NAME = os.getenv("APP_NAME", "I Code Assistant")
+    SESSION_COOKIE_SECURE = False
+
+    # Maximum size of an uploaded file in bytes (configured for future phases).
+    MAX_CONTENT_LENGTH = int(os.getenv("MAX_CONTENT_LENGTH", 16 * 1024 * 1024))
+
+    # LLM provider backend: "mock" (default, offline) or "openai".
+    LLM_PROVIDER = os.getenv("LLM_PROVIDER", "mock")
+
+    # LLM resilience (issue #29): transient provider failures (network errors,
+    # HTTP 429/5xx) are retried with exponential backoff plus jitter, while
+    # non-transient errors (e.g. 401/400) fail fast. ``LLM_MAX_RETRIES`` is the
+    # number of retries after the initial attempt; delays are in seconds and
+    # capped at ``LLM_RETRY_MAX_DELAY``.
+    LLM_MAX_RETRIES = int(os.getenv("LLM_MAX_RETRIES", "3"))
+    LLM_RETRY_BASE_DELAY = float(os.getenv("LLM_RETRY_BASE_DELAY", "0.5"))
+    LLM_RETRY_MAX_DELAY = float(os.getenv("LLM_RETRY_MAX_DELAY", "8.0"))
+
+    # Chat image attachments (issue #49): only png/jpeg/webp are accepted and
+    # each image and the number per message are bounded.
+    CHAT_IMAGE_MAX_BYTES = int(os.getenv("CHAT_IMAGE_MAX_BYTES", str(5 * 1024 * 1024)))
+    CHAT_IMAGE_MAX_PER_MESSAGE = int(os.getenv("CHAT_IMAGE_MAX_PER_MESSAGE", "4"))
+
+    # LLM response cache (issue #18). Identical non-streaming completions for the
+    # same user/provider/model/prompt/params are served from memory. Disabled
+    # when LLM_CACHE_ENABLED is "0"; entries expire after LLM_CACHE_TTL seconds
+    # and the store keeps at most LLM_CACHE_MAX_ENTRIES (LRU).
+    LLM_CACHE_ENABLED = os.getenv("LLM_CACHE_ENABLED", "1") == "1"
+    LLM_CACHE_TTL = int(os.getenv("LLM_CACHE_TTL", "300"))
+    LLM_CACHE_MAX_ENTRIES = int(os.getenv("LLM_CACHE_MAX_ENTRIES", "256"))
+    # Pre-flight token/cost estimate (issue #104). The rate is only used to turn
+    # an estimated token count into a rough USD figure shown before sending.
+    LLM_ESTIMATE_USD_PER_1K_TOKENS = float(os.getenv("LLM_ESTIMATE_USD_PER_1K_TOKENS", "0.002"))
+    # Structured chat audit logging (issue #17). ``CHAT_AUDIT_LOG_LEVEL`` may be
+    # any logging level or OFF to disable.
+    CHAT_AUDIT_LOG_ENABLED = os.getenv("CHAT_AUDIT_LOG_ENABLED", "1") == "1"
+    CHAT_AUDIT_LOG_LEVEL = os.getenv("CHAT_AUDIT_LOG_LEVEL", "INFO")
+
+    # Prompt library (Phase 3): version history. Every prompt save is recorded
+    # as a version; when a prompt is deleted its history is retained for this
+    # many days before being purged.
+    PROMPT_VERSION_RETENTION_DAYS = int(os.getenv("PROMPT_VERSION_RETENTION_DAYS", "30"))
+
+    # Plugin manifest authenticity. ``if-present`` preserves the default local
+    # plugin behavior; ``required`` rejects unsigned and invalid manifests.
+    PLUGIN_TRUST_POLICY = os.getenv("PLUGIN_TRUST_POLICY", "if-present")
+    PLUGIN_TRUSTED_KEYS = _trusted_plugin_keys()
+
+    # Directory scanned by the read-only plugin discovery endpoint (#172).
+    # Discovery only reads ``manifest.json`` files from plugin subdirectories
+    # and never installs, loads, or mutates anything. Defaults to the repo's
+    # ``plugins/`` directory; point it at a local directory to advertise
+    # discoverable plugins.
+    PLUGIN_DISCOVERY_DIR = os.getenv("PLUGIN_DISCOVERY_DIR", str(BASE_DIR / "plugins"))
+
+    # Plugin outbound network policy (#193). Every plugin-triggered request must
+    # pass ``app.services.plugin_network``: it is https-only, denies
+    # private/loopback/link-local/reserved targets by default, and only reaches
+    # hosts on ``PLUGIN_NETWORK_ALLOWLIST`` (comma-separated; ``*`` allows any
+    # public host, ``*.example.com`` allows subdomains). An empty allowlist
+    # denies all plugin outbound requests (fail closed).
+    PLUGIN_NETWORK_ALLOWLIST = os.getenv("PLUGIN_NETWORK_ALLOWLIST", "")
+    PLUGIN_NETWORK_HTTPSO_ONLY = os.getenv("PLUGIN_NETWORK_HTTPS_ONLY", "1") == "1"
+    PLUGIN_NETWORK_ALLOW_PRIVATE = os.getenv("PLUGIN_NETWORK_ALLOW_PRIVATE", "0") == "1"
+    PLUGIN_NETWORK_TIMEOUT = int(os.getenv("PLUGIN_NETWORK_TIMEOUT", "15"))
+    PLUGIN_NETWORK_MAX_BYTES = int(os.getenv("PLUGIN_NETWORK_MAX_BYTES", str(2 * 1024 * 1024)))
+    # When enabled, a hostname that cannot be resolved is rejected instead of
+    # tolerated (defense-in-depth for hostile DNS; off by default so the guard
+    # keeps working fully offline).
+    PLUGIN_NETWORK_STRICT_DNS = os.getenv("PLUGIN_NETWORK_STRICT_DNS", "0") == "1"
+
+    # GitHub OAuth integration.
+    GITHUB_CLIENT_ID = os.getenv("GITHUB_CLIENT_ID", "")
+    GITHUB_CLIENT_SECRET = os.getenv("GITHUB_CLIENT_SECRET", "")
+    GITHUB_REDIRECT_URI = os.getenv("GITHUB_REDIRECT_URI", "")
+    GITHUB_API_URL = os.getenv("GITHUB_API_URL", "https://api.github.com")
+    GITHUB_SCOPES = os.getenv("GITHUB_SCOPES", "read:user repo")
+    GITHUB_REQUEST_TIMEOUT = int(os.getenv("GITHUB_REQUEST_TIMEOUT", "30"))
+    GITHUB_MAX_CONTEXT_CHARS = int(os.getenv("GITHUB_MAX_CONTEXT_CHARS", "40000"))
+    # Remaining core API quota at or below this value triggers the low-quota
+    # warning on the GitHub dashboard (issue #77).
+    GITHUB_LOW_QUOTA_THRESHOLD = int(os.getenv("GITHUB_LOW_QUOTA_THRESHOLD", "100"))
+
+    # Project workspaces (Phice 5): limits that protect the server from being
+    # overwhelmed by large or malicious project imports. Archives are validated
+    # during extraction (path traversal, symlinks, size and file-count caps) and
+    # only bounded, sanitized metadata + text content is stored.
+    PROJECT_MAX_ARCHIVE_BYTES = int(os.getenv("PROJECT_MAX_ARCHIVE_BYTES", str(50 * 1024 * 1024)))
+    PROJECT_MAX_SIZE_BYTES = int(os.getenv("PROJECT_MAX_SIZE_BYTES", str(500 * 1024 * 1024)))
+    PROJECT_MAX_FILE_COUNT = int(os.getenv("PROJECT_MAX_FILE_COUNT", "20000"))
+    PROJECT_MAX_FILE_CHARS = int(os.getenv("PROJECT_MAX_FILE_CHARS", "200000"))
+    PROJECT_MAX_CONTEXT_CHARS = int(os.getenv("PROJECT_MAX_CONTEXT_CHARS", "40000"))
+    PROJECT_SEARCH_MAX_RESULTS = int(os.getenv("PROJECT_SEARCH_MAX_RESULTS", "100"))
+    PROJECT_GITHUB_MAX_FILES = int(os.getenv("PROJECT_GITHUB_MAX_FILES", "1000"))
+    PROJECT_SKIP_DIRS = os.getenv(
+        "PROJECT_SKIP_DIGS",
+        ".git,.hg,.svn,node_modules,.venv,venv,__pycache__,.next,.cache,dist,build,"
+        "vendor,.tox,.mypy_cache,.pytest_cache",
+    )
+    # Snapshot export (#107): exports stream a zip built in memory from stored
+    # rows only (never the filesystem). Binary/oversized files become clearly
+    # marked .PLACEHOLDER.txt stubs; this caps the size of one stub's text.
+    PROJECT_EXPORT_PLACEHOLDER_MAX_CHARS = int(
+        os.getenv("PROJECT_EXPORT_PLACEHOLDER_MAX_CHARS", "20000")
+    )
+    PROJECT_SKIP_SECRET_FILES = os.getenv(
+        "PROJECT_SKIP_SECRET_FILES",
+        ".env,.pem,.key,.p12,.pfx,id_rsa,id_ed25519,id_dsa,credentials,.htpasswd,"
+        ".npmjrc,.pypirc,secrets.yaml,secret.yaml,secret.yml",
+    )
+    # Project import indexing (#89): run imports in an in-process background
+    # worker so the HTTP request returns immediately with the project in
+    # `indexing` status and the client polls `progress`. Disabled in the
+    # test config for deterministic assertions.
+    IMPORT_JOBS_ASYNC = os.getenv("IMPORT_JOBS_ASYNC", "1") == "1"
+
+    # AI reviews (Phase 6): caps that keep reviews bounded and predictable.
+    # A review never sends more than REVIEW_MAX_CONTEXT_CHARS of repository text
+    # to the model, and never analyzes more than REVIEW_MAX_FILES changed files.
+    REVIEW_MAX_FILES = int(os.getenv("REVIEW_MAX_FILES", "40"))
+    REVIEW_MAX_CONTEXT_CHARS = int(os.getenv("REVIEW_MAX_CONTEXT_CHARS", "40000"))
+    REVIEW_MAX_FINDINGS = int(os.getenv("REVIEW_MAX_FINDINGS", "100"))
+    # Default enabled project review kinds (comma-separated).
+    REVIEW_KINDS = os.getenv("REVIEW_KINDS", "quality,security,tests")
+    # Only findings at or above this severity are stored: critical|high|medium|low|informational.
+    REVIEW_SEVERITY_THRESHOLD = os.getenv("REVIEW_SEVERITY_THRESHOLD", "low")
+
+    # Team collaboration (Phase 7).
+    # Invitation default time-to-live in hours (168 = 7 days).
+    INVITE_TTL_HOURS = int(os.getenv("INVITE_TTL_HOURS", "168"))
+    # Maximum workspace members included in AI team context (per-project chat).
+    PROJECT_MAX_MEMBER_CONTEXT = int(os.getenv("PROJECT_MAX_MEMBER_CONTEXT", "20"))
+    # In-memory rate limiting for public collaboration endpoints (accept/
+    # decline/landing) and the presence heartbeat. Simple sliding-window limiter
+    # in app/services/ratelimit.py; broader per-user AI/import limits are the
+    # scope of the umbrella issues (#28/#81/#106).
+    RATE_LIMIT_MAX = int(os.getenv("RATE_LIMIT_MAX", "30"))
+    RATE_LIMIT_WINDOW_SECONDS = int(os.getenv("RATE_LIMIT_WINDOW_SECONDS", "300"))
+    # Per-user sliding-window limits for the costly Phase 5 endpoints (#106):
+    # project import, project search, project chat, chat streaming, and project
+    # analysis. Each pair is <max requests> per <window seconds>, keyed by user
+    # id, and every value is environment-configurable. Import and analyze hit
+    # the network/LLM and are therefore tighter than local search.
+    RATE_LIMIT_IMPORT_MAX = int(os.getenv("RATE_LIMIT_IMPORT_MAX", "10"))
+    RATE_LIMIT_IMPORT_WINDOW = int(os.getenv("RATE_LIMIT_IMPORT_WINDOW", "3600"))
+    RATE_LIMIT_SEARCH_MAX = int(os.getenv("RATE_LIMIT_SEARCH_MAX", "120"))
+    RATE_LIMIT_SEARCH_WINDOW = int(os.getenv("RATE_LIMIT_SEARCH_WINDOW", "60"))
+    RATE_LIMIT_CHAT_MAX = int(os.getenv("RATE_LIMIT_CHAT_MAX", "30"))
+    RATE_LIMIT_CHAT_WINDOW = int(os.getenv("RATE_LIMIT_CHAT_WINDOW", "60"))
+    RATE_LIMIT_STREAM_MAX = int(os.getenv("RATE_LIMIT_STREAM_MAX", "30"))
+    RATE_LIMIT_STREAM_WINDOW = int(os.getenv("RATE_LIMIT_STREAM_WINDOW", "60"))
+    RATE_LIMIT_ANALYZE_MAX = int(os.getenv("RATE_LIMIT_ANALYZE_MAX", "5"))
+    RATE_LIMIT_ANALYZE_WINDOW = int(os.getenv("RATE_LIMIT_ANALYZE_WINDOW", "3600"))
+
+    # Per-user rate limiting on AI-powered endpoints (#106): ``/chat/*/stream``,
+    # ``/tools/*``. Requests per user per minute are configurable via the
+    # ``RATE_LIMIT_AI_PER_MINUTE`` environment variable. Rate limiting is applied
+    # per authenticated user (not per IP) and is disabled in the ``testing``
+    # config. Rate-limited requests return HTTP 429 with a JSON error body and a
+    # ``Retry-After`` header.
+    RATE_LIMIT_AI_PER_MINUTE = int(os.getenv("RATE_LIMIT_AI_PER_MINUTE", "60"))
+    RATE_LIMIT_AI_ENABLED = True
+
+
+class DevelopmentConfig(Config):
+    """Development configuration."""
+
+    DEBUG = True
+
+
+class TestingConfig(Config):
+    """Testing configuration."""
+
+    TESTING = True
+    DEBUG = False
+    SQLALCHEMY_DATABASE_URI = "sqlite:///:memory:"
+    SQLALCHEMY_ENGINE_OPTIONS = {
+        "connect_args": {"check_same_thread": False},
+        "poolclass": StaticPool,
+    }
+    # Disable async import jobs in tests for deterministic assertions.
+    IMPORT_JOBS_ASYNC = False
+    # No rate limiting in the testing config.
+    RATE_LIMIT_AI_ENABLED = False
+
+
+class ProductionConfig(Config):
+    """Production configuration."""
+
+    DEBUG = False
+    SESSION_COOKIE_SECURE = True
+
+
+config = {
+    "development": DevelopmentConfig,
+    "testing": TestingConfig,
+    "production": ProductionConfig,
+    "default": DevelopmentConfig,
+}
