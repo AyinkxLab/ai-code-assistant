@@ -45,15 +45,35 @@
     }
   }
 
-  function load(analyze) {
+  function renderReview(review) {
+    if (!review) {
+      analysisEl.hidden = true;
+      analysisEl.innerHTML = "";
+      return;
+    }
+    analysisEl.hidden = false;
+    if (review.status === "failed") {
+      analysisEl.innerHTML = '<p class="sidebar-empty">Analysis failed.' +
+        (review.error_message ? " " + GH.escapeHtml(review.error_message) : "") + "</p>";
+      return;
+    }
+    if (review.summary) {
+      GH.renderAnalysis(analysisEl, review.summary);
+    } else {
+      analysisEl.innerHTML = '<p class="sidebar-empty">No review output available.</p>';
+    }
+  }
+
+  function load() {
     detailEl.innerHTML = '<p class="sidebar-empty">Loading pull request...</p>';
     var url = "/github/api/repos/" + encodeURIComponent(OWNER) + "/" + encodeURIComponent(REPO) +
-      "/pulls/" + NUMBER + (analyze ? "?analyze=1" : "");
+      "/pulls/" + NUMBER;
     GH.api(url).then(function (pr) {
       render(pr);
-      if (pr.analysis) {
-        GH.renderAnalysis(analysisEl, pr.analysis.analysis);
-      }
+      return GH.api("/github/api/repos/" + encodeURIComponent(OWNER) + "/" + encodeURIComponent(REPO) +
+        "/pulls/" + NUMBER + "/reviews/latest");
+    }).then(function (review) {
+      renderReview(review);
     }).catch(function (error) {
       detailEl.innerHTML = '<p class="sidebar-empty">Could not load pull request.</p>';
       GH.flashError(error.message);
@@ -62,14 +82,17 @@
 
   document.addEventListener("DOMContentLoaded", function () {
     if (!detailEl) return;
-    load(false);
+    load();
     document.getElementById("analyze-pr").addEventListener("click", function () {
       analysisEl.hidden = false;
       analysisEl.innerHTML = '<p class="sidebar-empty">Analyzing pull request...</p>';
       GH.api("/github/api/repos/" + encodeURIComponent(OWNER) + "/" + encodeURIComponent(REPO) +
-        "/pulls/" + NUMBER + "?analyze=1")
-        .then(function (pr) {
-          GH.renderAnalysis(analysisEl, pr.analysis.analysis);
+        "/pulls/" + NUMBER + "/reviews", {
+          method: "POST",
+          body: JSON.stringify({ })
+        })
+        .then(function (review) {
+          renderReview(review);
         })
         .catch(function (error) {
           analysisEl.innerHTML = "";

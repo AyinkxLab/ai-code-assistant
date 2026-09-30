@@ -415,6 +415,79 @@ def review_pull_request(pr: dict, files: list[dict], config: dict) -> dict:
     return _run_json(prompt, kind="pr", threshold=config.get("severity_threshold"))
 
 
+def run_pull_request_review(
+    owner: str,
+    repo: str,
+    pr_number: int,
+    config: dict,
+    *,
+    user_id: int | None = None,
+    github_service=None,
+) -> "Review":
+    """Run an AI review for an open PR and persist it to review history.
+
+    This is the entry point used by the pull request page. It is strictly
+    read-only with respect to the pull request: it fetches the PR metadata and
+    changed files, runs the bounded review prompt, and stores the resulting
+    summary plus findings as a :class:`Review` (with :class:`ReviewFinding`
+    rows). It never merges, closes, approves, comments on, or otherwise
+    modifies the PR.
+    """
+    from app.models.review import Review
+    from app.models.review_finding import ReviewFinding
+    from app.services.github import get_github_service
+
+    service = github_service or get_github_service()
+
+    pr = service.get_pull_request(owner, repo, pr_number)
+    files = service.get_pull_request_files(owner, repo, pr_number)
+
+    review = Review(
+        source="pull_request",
+        kind="pr",
+        status="running",
+        owner=owner,
+        repo=repo,
+        pr_number=pr_number,
+        pr_title=(pr or {}).get("title"),
+        user_id=user_id,
+    )
+    review.save()
+
+    try:
+        result = review_pull_request(pr or {}, files or [], config)
+    except Exception as exc:  # pragma: no cover - defensive persistence
+        review.status = "failed"
+        review.error_message = str(exc)
+        review.save()
+        return review
+
+    review.summary = json.dumps(result.get("summary") or {})
+    review.error_message = result.get("error")
+    review.status = "failed" if result.get("error") else "completed"
+    review.save()
+
+    max_findings = max(0, int(config.get("max_findings") or 0))
+    findings = result.get("findings") or []
+    if max_findings:
+        findings = findings[:max_findings]
+    for finding in findings:
+        ReviewFinding(
+            review_id=review.id,
+            file=finding.get("file"),
+            line=finding.get("line"),
+            severity=finding.get("severity"),
+            category=finding.get("category"),
+            explanation=finding.get("explanation"),
+            recommendation=finding.get("recommendation"),
+            confidence=finding.get("confidence"),
+        ).save()
+
+    review.findings_count = len(findings)
+    review.save()
+    return review
+
+
 # --------------------------------------------------------------------------
 # Project reviews
 # --------------------------------------------------------------------------

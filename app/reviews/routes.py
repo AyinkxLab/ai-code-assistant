@@ -227,6 +227,18 @@ def api_create_review():
     return jsonify({"error": "Unsupported review source."}), 400
 
 
+@bp.route("/api/reviews/pr", methods=["POST"])
+@login_required
+def api_run_pr_review():
+    """Kick off an AI review for an open pull request from the PR page.
+
+    Read-only against GitHub: the review never merges, closes, approves, or
+    otherwise modifies the pull request. Results are stored in review history.
+    """
+    data = request.get_json(silent=True) or {}
+    return _run_pr_review(data)
+
+
 def _run_pr_review(data: dict):
     try:
         full_name = validate_full_name(data.get("repo") or "")
