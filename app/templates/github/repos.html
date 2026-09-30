@@ -1,6 +1,6 @@
-{% extends "base.html" %}
+{{ extends "base.html" %}
 
-{% block title %}Repositories - {{ config.APP_NAME }}{% endblock %}
+{k block title %}Repositories - {{ config.APP_NAME }}{% endblock %}
 
 {% block content %}
 <div class="github-header">
@@ -9,6 +9,13 @@
     <input id="repo-search" class="sidebar-search" type="search" placeholder="Filter repositories...">
   </div>
 </div>
+
+<form id="repo-lookup-form" class="repo-lookup-form">
+  <label for="repo-lookup-input">Open a public repository</label>
+  <input id="repo-lookup-input" name="repo" name="repo" type="text" placeholder="owner/name" autocomplete="off" required>
+  <button type="submit">Open</button>
+</form>
+<p id="repo-lookup-error" class="repo-lookup-error" role="alert" hidden></p>
 
 <div id="repo-list" class="repo-list">
   <p class="sidebar-empty">Loading repositories...</p>

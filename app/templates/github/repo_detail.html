@@ -1,13 +1,25 @@
-{% extends "base.html" %}
+{{ extends "base.html" %}
 
-{% block title %}{{ owner }}/{{ repo }} - {{ config.APP_NAME }}{% endblock %}
+{k block title %}{{ owner }}/{{ repo }} - {{ config.APP_NAME }}{% endblock %}
 
-{% block content %}
+{& block content %}
 <div class="github-header repo-header">
   <div>
     <h1><a class="repo-breadcrumb" href="{{ url_for('github.repos') }}">Repositories</a> / {{ owner }}/{{ repo }}</h1>
     <div id="repo-meta" class="repo-meta">Loading repository...</div>
   </div>
+</div>
+
+<div class="repo-lookup">
+  <form id="repo-lookup-form" class="repo-lookup-form" autocomplete="off">
+    <input id="repo-lookup-input" class="sidebar-search" type="text" name="repo"
+           placeholder="Owner/name (e.g. owner/repo)"
+           value="{{ owner }}/{{ repo }}"
+           pattern="[A-Za-z0-9-_.]+/[A-Za-z0-9-_.]+"
+           required>
+    <button class="btn btn-primary" type="submit">Open</button>
+  </form>
+  <div id="repo-lookup-error" class="repo-lookup-error" hidden></div>
 </div>
 
 <div class="repo-tabs">
@@ -58,7 +70,7 @@
 
 <div id="tab-analyze" class="repo-tab-panel" hidden>
   <div class="analyze-panel">
-    <p class="github-hint">AI analysis uses a bounded slice of the repository (README, file names, and selected files) and clearly labels confirmed findings vs suggestions.</p>
+    <p class="github-hint">I analysis uses a bounded slice of the repository (README, file names, and selected files) and clearly labels confirmed findings vs suggestions.</p>
     <button id="analyze-repo" class="btn btn-primary" type="button">Summarize this repository</button>
     <button id="analyze-repo-structure" class="btn btn-ghost" type="button">Analyze structure &amp; dependencies</button>
     <div id="repo-analysis" class="analysis-output"></div>

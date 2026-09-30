@@ -12,6 +12,7 @@ Pages (HTML)
     /github/repos/<owner>/<repo>/issues/<n> issue detail
     /github/repos/<owner>/<repo>/pulls      pull request list
     /github/repos/<owner>/<repo>/pulls/<n>  pull request detail
+    /github/repos/lookup                    repository lookup form
 
 API (JSON)
     /github/api/status                      connection status
@@ -24,12 +25,14 @@ API (JSON)
     /github/api/repos/.../pulls             pull request list
     /github/api/repos/.../pulls/<n>         single PR + AI analysis
     /github/api/repos/.../analyze-file      AI analysis of one file
+    /github/api/repos/lookup                resolve owner/name to a repository
 """
 
 from datetime import UTC, datetime, timedelta
 from urllib.parse import urlencode
 
 import requests
+import re
 from flask import current_app, flash, jsonify, redirect, render_template, request, url_for
 from flask_login import current_user, login_required
 
@@ -59,6 +62,9 @@ from app.services.github import (
 #: The lookups are batched into one GraphQL request, but keeping the count
 #: bounded avoids pathological query sizes on very large repositories.
 MAX_TREE_LAST_COMMITS = 100
+
+#: Pattern accepted by the repository lookup form: ``owner/name``.
+_FULL_NAME_RE = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
 
 
 # --------------------------------------------------------------------------
@@ -311,6 +317,13 @@ def repos():
     return render_template("github/repos.html")
 
 
+@bp.route("/repos/lookup")
+@login_required
+def repo_lookup():
+    """Repository lookup form: browse an arbitrary public repository by owner/name."""
+    return render_template("github/repo_lookup.html")
+
+
 @bp.route("/repos/<owner>/<repo>")
 @login_required
 def repo_detail(owner: str, repo: str):
@@ -415,6 +428,82 @@ def _repo_matches_query(repo: dict, query: str) -> bool:
         if value and query in str(value).lower():
             return True
     return False
+
+
+def _normalize_full_name(raw: str) -> str | None:
+    """Normalize a user-supplied ``owner/name`` string.
+
+    Accepts an optional ``https://github.com/`` prefix and trailing ``.git``,
+    returning the canonical ``owner/name`` or ``None`` when the input does not
+    look like a repository identifier. The result is still validated by
+    :func:`validate_full_name` before any GitHub call is made.
+    """
+    value = (raw or "").strip()
+    if not value:
+        return None
+    for prefix in ("https://github.com/", "http://github.com/", "github.com/"):
+        if value.lower().startswith(prefix):
+            value = value[len(prefix):]
+            break
+    value = value.strip("/")
+    if value.endswith(".git"):
+        value = value[:-4]
+    if not _FULL_NAME_RE.match(value):
+        return None
+    return value
+
+
+@bp.route("/api/repos/lookup")
+@login_required
+def api_repo_lookup():
+    """Resolve an arbitrary ``owner/name`` to a repository the user can access.
+
+    The lookup is performed with the user's own token, so GitHub's access model
+    is authoritative: private repositories the user cannot see return a clear
+    permission error and no metadata is leaked. Public repositories are always
+    resolvable, matching GitHub's own visibility rules.
+    """
+    raw = request.args.get("full_name") or request.args.get("q") or ""
+    full_name = _normalize_full_name(raw)
+    if not full_name:
+        return (
+            jsonify(
+                {
+                    "error": "Enter a repository as owner/name (for example, octocat/Hello-World).",
+                    "code": "invalid_full_name",
+                }
+            ),
+            400,
+        )
+
+    try:
+        client = _client()
+    except GitHubError as exc:
+        return jsonify(github_error_payload(exc)), 403
+
+    try:
+        data = client.get_repository(validate_full_name(full_name))
+    except GitHubError as exc:
+        status = getattr(exc, "status_code", None)
+        if status in (403, 404):
+            return (
+                jsonify(
+                    {
+                        "error": (
+                            f"Repository '{full_name}' was not found or you do not have "
+                            "permission to view it."
+                        ),
+                        "code": "not_found_or_forbidden",
+                        "full_name": full_name,
+                    }
+                ),
+                404,
+            )
+        return jsonify(github_error_payload(exc)), 502
+
+    payload = repo_payload(data)
+    payload["readme"] = client.get_readme(data.get("full_name", full_name))
+    return jsonify(payload)
 
 
 @bp.route("/api/repos")

@@ -1,5 +1,5 @@
 // AI Code Assistant — GitHub repository browser
-// Loads and filters the connected user's repositories.
+// Loads and filters the connected user's repositories and allows opening any public repo by owner/name.
 
 (function () {
   "use strict";
@@ -7,10 +7,18 @@
   var GH = window.GitHub;
   var listEl = document.getElementById("repo-list");
   var searchEl = document.getElementById("repo-search");
+  var lookupForm = document.getElementById("repo-lookup-form");
+  var lookupInput = document.getElementById("repo-lookup-input");
+  var lookupError = document.getElementById("repo-lookup-error");
 
   // Debounce search requests so typing does not fire one API call per keystroke.
   var SEARCH_DEBOUNCE_MS = 300;
   var searchTimer = null;
+
+  // GitHub allows owner names with alphanumeric characters and hyphens, and
+  // repo names with alphanumeric, hyphens, underscores, and periods.
+  var OWNER_PATTERN = /^[A-Za-z0-9-]+$/;
+  var REPO_PATTERN = /^[A-Za-z0-9_.-]+$/;
 
   function render(repos) {
     listEl.innerHTML = "";
@@ -26,9 +34,10 @@
       var description = repo.description
         ? '<p class="repo-description">' + GH.escapeHtml(repo.description) + "</p>"
         : "";
+      var parts = repo.full_name.split("/");
       card.innerHTML =
         '<div class="repo-card-header">' +
-        '<a class="repo-name" href="/github/repos/' + encodeURIComponent(repo.full_name.split("/")[0]) + "/" + encodeURIComponent(repo.full_name.split("/")[1]) + '">' +
+        '<a class="repo-name" href="/github/repos/' + encodeURIComponent(parts[0]) + "/" + encodeURIComponent(parts[1]) + '">' +
         GH.escapeHtml(repo.full_name) + "</a> " + visibility +
         "</div>" +
         description +
@@ -57,9 +66,62 @@
     searchTimer = setTimeout(refresh, SEARCH_DEBOUNCE_MS);
   }
 
+  function showLookupError(message) {
+    if (!lookupError) return;
+    lookupError.textContent = message;
+    lookupError.hidden = false;
+  }
+
+  function clearLookupError() {
+    if (!lookupError) return;
+    lookupError.textContent = "";
+    lookupError.hidden = true;
+  }
+
+  function parseRepoReference(value) {
+    var trimmed = (value || "").trim();
+    if (!trimmed) return null;
+    // Accept full URLs and normalize to owner/name.
+    trimmed = trimmed.replace(/^https?:\/\/github.com\//i, "");
+    trimmed = trimmed.replace(/^git@github.com:/i, "");
+    trimmed = trimmed.replace(/\/+$/, "").replace(/\.git$/i, "");
+    var parts = trimmed.split("/");
+    if (parts.length !== 2) return null;
+    var owner = parts[0];
+    var name = parts[1];
+    if (!OWNER_PATTERN.test(owner) || !REPO_PATTERN.test(name)) return null;
+    return { owner: owner, name: name };
+  }
+
+  function onLookupSubmit(event) {
+    event.preventDefault();
+    clearLookupError();
+    var ref = parseRepoReference(lookupInput ? lookupInput.value : "");
+    if (!ref) {
+      showLookupError("Enter a repository as owner/name.");
+      return;
+    }
+    var url = "/github/api/repos/" + encodeURIComponent(ref.owner) + "/" + encodeURIComponent(ref.name);
+    GH.api(url).then(function () {
+      window.location.href = "/github/repos/" + encodeURIComponent(ref.owner) + "/" + encodeURIComponent(ref.name);
+    }).catch(function (error) {
+      if (error.kind === "not_connected") {
+        showLookupError("Connect your GitHub account first.");
+      } else if (error.status === 403 || error.status === 404) {
+        showLookupError("Repository not found or you do not have permission to access it.");
+      } else {
+        showLookupError(error.message || "Could not open repository.");
+      }
+    });
+  }
+
   document.addEventListener("DOMContentLoaded", function () {
-    if (!listEl || !searchEl) return;
-    refresh();
-    searchEl.addEventListener("input", onSearchInput);
+    if (listEl && searchEl) {
+      refresh();
+      searchEl.addEventListener("input", onSearchInput);
+    }
+    if (lookupForm) {
+      lookupForm.addEventListener("submit", onLookupSubmit);
+    }
   });
 })();
