@@ -7,6 +7,7 @@ Machine-facing REST surface for the chat feature:
     GET    /api/conversations/<id>                 conversation with its messages
     POST   /api/conversations/<id>/messages        send a message (LLM reply)
     DELETE /api/conversations/<id>                 delete (cascade)
+    GET    /api/usage                              per-user token usage summary
 
 All routes require authentication and are owner-scoped. Errors use RFC 7807
 (``application/problem+json``) documents so API clients never receive HTML error
@@ -23,7 +24,7 @@ from flask_login import current_user
 
 from app.chat import routes as chat_routes
 from app.extensions import db
-from app.models import Conversation, Message
+from app.models import Conversation, Message, TokenUsage
 from app.services import ratelimit
 from app.services.llm import LLMProviderError, provider_status
 from app.services.provider_config import ProviderSettingsError, apply_settings, build_provider
@@ -85,6 +86,23 @@ def _owned_conversation(conversation_id: int) -> Conversation | None:
     return Conversation.query.filter_by(id=conversation_id, user_id=current_user.id).first()
 
 
+def _usage_totals(conversation: Conversation) -> dict:
+    """Sum token usage across the conversation's assistant messages."""
+    prompt = completion = total = 0
+    for message in conversation.messages:
+        usage = getattr(message, "token_usage", None)
+        if usage is None:
+            continue
+        prompt += usage.prompt_tokens or 0
+        completion += usage.completion_tokens or 0
+        total += usage.total_tokens or 0
+    return {
+        "prompt_tokens": prompt,
+        "completion_tokens": completion,
+        "total_tokens": total,
+    }
+
+
 def _json_object() -> dict | None:
     """Return the request body as a dict, or ``None`` when it is not one."""
     data = request.get_json(silent=True)
@@ -140,6 +158,7 @@ def get_conversation(conversation_id: int):
         return _problem(404, "Conversation not found.", "No such conversation exists.")
     payload = conversation.to_dict()
     payload["messages"] = [message.to_dict() for message in conversation.messages]
+    payload["usage"] = _usage_totals(conversation)
     return jsonify(payload)
 
 
@@ -206,13 +225,44 @@ def send_message(conversation_id: int):
     messages = chat_routes._conversation_messages(conversation, context_messages)
     try:
         provider = RetryingProvider(build_provider(current_user, conversation.provider))
-        reply = provider.chat(messages, **chat_routes._generation_kwargs(conversation)).content
+        completion = provider.chat(messages, **chat_routes._generation_kwargs(conversation))
     except LLMProviderError as exc:
         db.session.rollback()
         return _problem(502, "Provider error.", str(exc))
 
-    conversation.messages.append(Message(role="assistant", content=reply))
+    assistant_message = Message(role="assistant", content=completion.content)
+    usage = getattr(completion, "usage", None)
+    if usage is not None:
+        assistant_message.token_usage = TokenUsage(
+            prompt_tokens=getattr(usage, "prompt_tokens", 0) or 0,
+            completion_tokens=getattr(usage, "completion_tokens", 0) or 0,
+            total_tokens=getattr(usage, "total_tokens", 0) or 0,
+        )
+    conversation.messages.append(assistant_message)
     if conversation.title == "New conversation":
         conversation.title = content.strip()[:60] or "New conversation"
     db.session.commit()
-    return jsonify({"assistant_message": conversation.messages[-1].to_dict()}), 201
+    payload = {"assistant_message": conversation.messages[-1].to_dict()}
+    payload["usage"] = _usage_totals(conversation)
+    return jsonify(payload), 201
+
+
+@bp.route("/usage", methods=["GET"])
+@_login_required
+@_rate_limit("usage")
+def usage_summary():
+    """Return the current user's total token consumption."""
+    conversations = Conversation.query.filter_by(user_id=current_user.id).all()
+    prompt = completion = total = 0
+    for conversation in conversations:
+        totals = _usage_totals(conversation)
+        prompt += totals["prompt_tokens"]
+        completion += totals["completion_tokens"]
+        total += totals["total_tokens"]
+    return jsonify(
+        {
+            "prompt_tokens": prompt,
+            "completion_tokens": completion,
+            "total_tokens": total,
+        }
+    )

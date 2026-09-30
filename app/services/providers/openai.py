@@ -100,6 +100,8 @@ class OpenAIProvider(LLMProvider):
             "temperature": self.temperature,
             "stream": stream,
         }
+        if stream:
+            payload["stream_options"] = {"include_usage": True}
         if params:
             payload.update(params)
         return payload
@@ -160,6 +162,7 @@ class OpenAIProvider(LLMProvider):
             model=data.get("model") or payload["model"],
             prompt_tokens=usage.get("prompt_tokens"),
             completion_tokens=usage.get("completion_tokens"),
+            total_tokens=usage.get("total_tokens"),
             latency_seconds=time.perf_counter() - started,
         )
 
@@ -174,6 +177,7 @@ class OpenAIProvider(LLMProvider):
         payload = self._payload(messages, model=model, params=params, stream=True)
         response = self._post(payload, stream=True)
         self._raise_for_status(response)
+        usage: dict[str, Any] = {}
         try:
             for line in response.iter_lines(decode_unicode=True):
                 if not line or not line.startswith("data: "):
@@ -183,6 +187,9 @@ class OpenAIProvider(LLMProvider):
                     break
                 try:
                     chunk = json.loads(chunk_payload)
+                    chunk_usage = chunk.get("usage")
+                    if chunk_usage:
+                        usage = chunk_usage
                     delta = chunk["choices"][0]["delta"].get("content", "")
                 except (KeyError, IndexError, TypeError, ValueError):
                     delta = ""
@@ -194,3 +201,8 @@ class OpenAIProvider(LLMProvider):
             raise ProviderUnavailableError(
                 f"OpenAI stream failed: {exc}", provider=self.name
             ) from exc
+        self.last_usage = {
+            "prompt_tokens": usage.get("prompt_tokens"),
+            "completion_tokens": usage.get("completion_tokens"),
+            "total_tokens": usage.get("total_tokens"),
+        }
