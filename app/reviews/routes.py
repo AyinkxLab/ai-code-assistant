@@ -56,11 +56,32 @@ from app.services.github import (
 
 
 def _get_review(review_id: int) -> Review:
+    review = Review.query.filter_by(id=review_id).first_or_404()
+    if review.user_id == current_user.id:
+        return review
+    if review.project_id and _has_project_access(review.project_id):
+        return review
     return Review.query.filter_by(id=review_id, user_id=current_user.id).first_or_404()
 
 
 def _get_project(project_id: int) -> Project:
+    project = Project.query.filter_by(id=project_id).first_or_404()
+    if project.user_id == current_user.id:
+        return project
+    if _has_project_access(project_id):
+        return project
     return Project.query.filter_by(id=project_id, user_id=current_user.id).first_or_404()
+
+
+def _has_project_access(project_id: int) -> bool:
+    """Return True if the current user is a contributor/viewer of the project's workspace."""
+    project = db.session.get(Project, project_id)
+    if project is None or project.workspace_id is None:
+        return False
+    workspace = db.session.get(Workspace, project.workspace_id)
+    if workspace is None:
+        return False
+    return workspace.has_member(current_user.id)
 
 
 # --------------------------------------------------------------------------

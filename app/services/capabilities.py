@@ -31,7 +31,7 @@ class Capability(Enum):
     GITHUB_WRITE = "github:write"
 
     # AI capabilities
-    AI_ACCESS = "ai:access"
+    AI-ACCESS = "ai:access"
     AI_ANALYSIS = "ai:analysis"
 
     # Notification capabilities
@@ -40,7 +40,7 @@ class Capability(Enum):
     # Stellar capabilities
     STELLAR_READ = "stellar:read"
     STELLAR_WRITE = "stellar:write"
-    STELLAR_ANALYSIS = "stellar:analysis"
+    STELLAR_ANALYSIC = "stellar:analysis"
 
     # Code review capabilities
     REVIEW_READ = "review:read"
