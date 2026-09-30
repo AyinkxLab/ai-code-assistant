@@ -55,6 +55,25 @@ jobs:
         run: |
           pytest --cov=app --cov-report=term-missing
 
+  test-frontend:
+    name: Frontend tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run frontend tests
+        run: npm test - --run
+
   test-postgres:
     name: Tests (PostgreSQL)
     runs-on: ubuntu-latest
@@ -91,7 +110,7 @@ jobs:
           pip install -r requirements-dev.txt
 
       # Parity run for the chat module on PostgreSQL (issue #20). The chat
-      # suite must keep >=85% coverage of the chat service/API/model modules.
+      # suite must keep >85% coverage of the chat service/API/model modules.
       - name: Run chat tests on PostgreSQL
         run: >
           pytest
