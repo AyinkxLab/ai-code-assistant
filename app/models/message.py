@@ -1,8 +1,21 @@
 """Chat message model."""
 
+from enum import Enum
 from datetime import UTC, datetime
 
 from app.extensions import db
+
+ERROR_STATUSES = ("retrying", "failed")
+
+
+class ErrorStatus(str, Enum):
+    """Provider failure states persisted on a message."""
+
+    RETRYING = "retrying"
+    FAILED = "failed"
+
+    def __str__(self) -> str:  # pragma: no cover - convenience
+        return self.value
 
 
 class Message(db.Model):
@@ -29,6 +42,11 @@ class Message(db.Model):
     prompt_tokens = db.Column(db.Integer, nullable=True)
     completion_tokens = db.Column(db.Integer, nullable=True)
     total_tokens = db.Column(db.Integer, nullable=True)
+    # Provider failure state (issue: retry/backoff). ``None`` for healthy
+    # messages; ``"retrying"`` while a bounded retry is in flight and
+    # ``"failed"`` once retries are exhausted or a permanent error occurred.
+    error_status = db.Column(db.String(20), nullable=True)
+    error_message = db.Column(db.Text, nullable=True)
     created_at = db.Column(
         db.DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC)
     )
@@ -40,6 +58,16 @@ class Message(db.Model):
         cascade="all, delete-orphan",
         order_by="MessageAttachment.created_at",
     )
+
+    @property
+    def is_failed(self) -> bool:
+        """Return ``True`` when this message carries a terminal error state."""
+        return self.error_status == ErrorStatus.FAILED.value
+
+    @property
+    def is_retrying(self) -> bool:
+        """Return ``True`` while a bounded retry is in flight for this message."""
+        return self.error_status == ErrorStatus.RETRYING.value
 
     def to_dict(self) -> dict:
         """Serialize the message for JSON API responses."""
@@ -57,6 +85,14 @@ class Message(db.Model):
             "attachments": [attachment.to_dict() for attachment in self.attachments],
             "token_usage": usage,
             "created_at": self.created_at.isoformat() if self.created_at else None,
+            "error": (
+                {
+                    "status": self.error_status,
+                    "message": self.error_message,
+                }
+                if self.error_status
+                else None
+            ),
         }
 
     def __repr__(self) -> str:  # pragma: no cover - debugging aid

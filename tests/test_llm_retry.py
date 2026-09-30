@@ -175,3 +175,4 @@ class TestRetryingProviderContract:
         assert is_transient_error(ProviderUnavailableError("x"))
         assert is_transient_error(ProviderRateLimitError("x"))
         assert not is_transient_error(ProviderAuthenticationError("x"))
+        assert not is_transient_error(ProviderResponseError("x"))
