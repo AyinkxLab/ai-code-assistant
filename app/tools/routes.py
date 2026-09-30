@@ -6,6 +6,7 @@ refactor, review, or comment on them.
 """
 
 import hashlib
+import time
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -91,6 +92,52 @@ ACTION_PROMPTS = {
 }
 
 
+#: In-memory per-user rate limit buckets: ``{user_id: [timestamps]}``.
+_rate_limit_buckets: dict[int, list[float]] = {}
+
+
+def _rate_limit_ai():
+    """Enforce a per-user, per-minute rate limit on AI endpoints.
+
+    Returns a ``(response, status)`` tuple when the caller is over the limit,
+    or ``None`` when the request may proceed. The limit is read from
+    ``RATE_LIMIT_AI_PER_MINUTE`` and disabled entirely in the ``testing``
+    config. Rate limits are keyed by authenticated user id, not by IP.
+    """
+    if current_app.config.get("TESTING") or current_app.config.get("ENV") == "testing":
+        return None
+
+    limit = current_app.config.get("RATE_LIMIT_AI_PER_MINUTE")
+    try:
+        limit = int(limit)
+    except (TypeError, ValueError):
+        limit = 0
+    if limit <= 0:
+        return None
+
+    user_id = current_user.id
+    now = time.monotonic()
+    window_start = now - 60.0
+    timestamps = _rate_limit_buckets.setdefault(user_id, [])
+    timestamps[:] = [ts for ts in timestamps if ts > window_start]
+
+    if len(timestamps) >= limit:
+        retry_after = max(1, int(60 - (now - timestamps[0])) + 1)
+        response = jsonify(
+            {
+                "error": "Rate limit exceeded. Please try again later.",
+                "limit": limit,
+                "window_seconds": 60,
+            }
+        )
+        response.status_code = 429
+        response.headers["Retry-After"] = str(retry_after)
+        return response
+
+    timestamps.append(now)
+    return None
+
+
 def _is_allowed(filename: str) -> bool:
     return Path(filename).suffix.lstrip(".").lower() in ALLOWED_EXTENSIONS
 
@@ -136,6 +183,9 @@ def _run_action(action: str, prompt: str) -> str:
 @login_required
 def generate():
     """Generate code from a natural-language request."""
+    limited = _rate_limit_ai()
+    if limited is not None:
+        return limited
     data = request.get_json(silent=True) or {}
     description = (data.get("description") or "").strip()
     language = (data.get("language") or "python").strip() or "python"
@@ -151,6 +201,9 @@ def generate():
 @login_required
 def code_action():
     """Run a code action (explain/refactor/bugs/optimize/comments/docs/commit)."""
+    limited = _rate_limit_ai()
+    if limited is not None:
+        return limited
     data = request.get_json(silent=True) or {}
     action = (data.get("action") or "").strip().lower()
     code = (data.get("code") or "").strip()
@@ -172,6 +225,9 @@ def analyze_file():
     Accepts ``multipart/form-data`` with a ``file`` field and an optional
     ``action`` field (default ``explain``).
     """
+    limited = _rate_limit_ai()
+    if limited is not None:
+        return limited
     filename, text = _read_upload()
     if filename is None:
         return jsonify({"error": text}), 400
@@ -270,6 +326,9 @@ def soroban_skeleton():
     ``#[contractimpl]`` structure and the ``soroban-sdk`` dependency. It is
     explicitly AI-generated and has not been compiled or verified.
     """
+    limited = _rate_limit_ai()
+    if limited is not None:
+        return limited
     data = request.get_json(silent=True) or {}
     description = (data.get("description") or "").strip()
     if not description:
@@ -381,6 +440,9 @@ def repo_analyze():
     uncertain claim is labelled ``[CONFIRMED]`` vs ``[SUGGESTION]``. Accepts
     ``{"owner", "repo"}`` or a single ``{"full_name"}`` plus an optional ``ref``.
     """
+    limited = _rate_limit_ai()
+    if limited is not None:
+        return limited
     data = request.get_json(silent=True) or {}
     candidate = (data.get("full_name") or "").strip()
     if not candidate:

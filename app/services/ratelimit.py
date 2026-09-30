@@ -125,6 +125,8 @@ def per_user_limit(bucket: str, *, max_config: str, window_config: str):
         def wrapper(*args, **kwargs):
             max_hits = current_app.config.get(max_config) or 0
             window = current_app.config.get(window_config) or 0
+            if not max_hits or not window:
+                return view(*args, **kwargs)
             key = f"{bucket}:user:{current_user.get_id()}"
             allowed, retry_after = consume(key, max_hits=max_hits, window=window)
             if not allowed:
@@ -156,3 +158,17 @@ def reset() -> None:
     """Clear all limiter state (used by tests)."""
     with _LOCK:
         _ENTRIES.clear()
+
+
+def ai_limit(view):
+    """Per-user rate limit for the AI-powered endpoints.
+
+    Reads ``RATE_LIMIT_AI_PER_MINUTE`` (requests per minute) from the app
+    config at request time. Returns ``None`` when the limit is disabled (e.g.
+    the ``testing`` config), so callers can apply it conditionally.
+    """
+    return per_user_limit(
+        "ai",
+        max_config="RATE_LIMIT_AI_PER_MINUTE",
+        window_config="RATE_LIMIT_AI_WINDOW_SECONDS",
+    )(view)

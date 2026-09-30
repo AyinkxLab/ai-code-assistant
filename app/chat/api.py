@@ -56,6 +56,34 @@ def _login_required(view):
     return wrapper
 
 
+def _ai_rate_limit(view):
+    """Enforce the per-user AI rate limit, returning 429 as RFC 7807.
+
+    Applies to AI-powered endpoints (message streaming and tool calls). The
+    limit is configurable via ``RATE_LIMIT_AI_PER_MINUTE`` and is disabled in
+    the ``testing`` config.
+    """
+
+    @functools.wraps(view)
+    def wrapper(*args, **kwargs):
+        if current_app.config.get("TESTING"):
+            return view(*args, **kwargs)
+        max_hits = current_app.config.get("RATE_LIMIT_AI_PER_MINUTE", 20)
+        window = current_app.config.get("RATE_LIMIT_AI_WINDOW", 60)
+        allowed, retry_after = ratelimit.consume(
+            f"api-ai:user:{current_user.get_id()}",
+            max_hits=max_hits,
+            window=window,
+        )
+        if not allowed:
+            response = _problem(429, "Rate limit exceeded.", "Please retry later.")
+            response.headers["Retry-After"] = str(retry_after)
+            return response
+        return view(*args, **kwargs)
+
+    return wrapper
+
+
 def _rate_limit(bucket: str):
     """Enforce the per-user chat rate limit, returning 429 as RFC 7807."""
 
@@ -158,6 +186,7 @@ def delete_conversation(conversation_id: int):
 
 @bp.route("/conversations/<int:conversation_id>/messages", methods=["POST"])
 @_login_required
+@_ai_rate_limit
 @_rate_limit("message")
 def send_message(conversation_id: int):
     """Persist the user message and return the assistant's reply."""
