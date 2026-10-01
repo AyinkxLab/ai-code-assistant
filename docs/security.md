@@ -30,6 +30,7 @@ kept in sync as the plugin system grows.
 | Project isolation               | The Stellar AI analysis reuses `assert_content_access` (owner-only, fails closed). Project files are only ever read for projects the caller may access. | Implemented |
 | GitHub analysis authorization   | Stellar-aware PR/issue analysis is detection-driven; the bounded repo slice is fetched through the user's own GitHub token (GitHub's permission model decides access). No manual `stellar=true` flag exists and no additional access is granted. | Implemented |
 | Prompt-injection resistance (GitHub analysis) | The Stellar PR/issue guidance frames PR/issue text, commit messages, and repository files as untrusted data, not instructions; detection never follows content from untrusted sources. | Implemented |
+| Prompt-injection resistance (file analysis / AI tools) | Uploaded files and pasted code are sent only inside an explicitly delimited untrusted block, with the governing instruction kept in the system role and re-asserted *after* the content (`app/services/prompt_hardening.py`). The system prompt/rules never appear inside user content and no API keys are ever included. Override and exfiltration markers are detected and reported to the caller. | Implemented |
 | Stellar data access             | `StellarService` is read-only; it never signs, sends, or funds. | Implemented |
 | Secret exposure                 | `.env`/key files are skipped at project import; the Stellar prompt explicitly flags hard-coded credentials; service config uses env vars only; no secrets are stored or logged. | Implemented |
 | Endpoint manipulation           | Endpoint URLs come from `current_app.config` only. | Implemented |
@@ -170,3 +171,44 @@ configuration (see "Known limitations / planned hardening").
 - The `/stellar` read-only endpoints are login-required and lightly rate
   limited but not workspace-scoped: they query public network data bound to the
   configured network (equivalent to a block explorer).
+
+## Prompt injection (untrusted content)
+
+Untrusted text — uploaded files (`/tools/analyze`), pasted code and requests
+(`/tools/code`, `/tools/generate`), and repository/README content — can contain
+text that looks like instructions ("ignore previous instructions", "reveal your
+system prompt"). The model must treat it as **data**, never as instructions.
+
+### Threat model
+
+- The attacker controls the *content* of an uploaded file or pasted code, not
+  the application. Goals: (a) override the assistant's task, (b) exfiltrate the
+  system prompt or API keys, (c) break out of the prompt structure to inject new
+  framing.
+
+### Mitigations (`app/services/prompt_hardening.py`)
+
+- **Instruction boundary.** The task system prompt and the security rules are
+  sent in the `system` role; untrusted text is wrapped in
+  `<<<UNTRUSTED_CONTENT … END_UNTRUSTED_CONTENT>>>` and sent in the `user` role.
+  The system prompt is never placed inside user-controlled content.
+- **Re-assertion after content.** The trusted instruction is repeated *after*
+  the untrusted block, so the model's last-seen framing belongs to the caller.
+- **No secrets in content.** API keys and the system prompt are never placed in
+  user-controlled text.
+- **Detection + quarantine.** Known override/exfiltration markers are detected
+  (`scan_for_injections`) and reported to the caller via `injection.markers`;
+  flagged content is not followed or executed.
+- **Delimiter-breakout defense.** Occurrences of the delimiter tokens inside the
+  content are neutralized so a file cannot close the block early.
+- **Output sanitization (defense in depth).** Model output is additionally
+  sanitized at render time (chat Markdown sanitizer) so injected HTML/script in
+  a model response cannot execute.
+
+### Tests
+
+- `tests/test_prompt_injection.py` — marker detection, delimiter neutralization,
+  the hardened message structure (system vs delimited block, re-assertion), and
+  an end-to-end `/tools/analyze` upload that attempts injection and asserts the
+  fixed system prompt still wins.
+- `tests/test_chat_markdown_sanitize.py` — output sanitization on render.
