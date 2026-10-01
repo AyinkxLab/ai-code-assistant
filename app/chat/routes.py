@@ -33,6 +33,7 @@ from app.models import (
 from app.models.message_attachment import ALLOWED_IMAGE_TYPES
 from app.models.project import STATUS_READY
 from app.services import audit, token_usage
+from app.services.conversation_search import search_conversations
 from app.services.github import (
     GitHubError,
     GitHubNotConnectedError,
@@ -258,6 +259,14 @@ def list_conversations():
         base = base.filter(func.lower(Conversation.title).contains(query))
     conversations = base.order_by(Conversation.updated_at.desc()).all()
     return jsonify([c.to_dict() for c in conversations])
+
+
+@bp.route("/search", methods=["GET"])
+@login_required
+def search():
+    """Search the current user's conversation titles and message content."""
+    query = request.args.get("q", "")
+    return jsonify(search_conversations(current_user.id, query))
 
 
 @bp.route("/conversations", methods=["POST"])

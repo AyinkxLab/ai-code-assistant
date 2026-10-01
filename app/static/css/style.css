@@ -506,6 +506,42 @@ a:hover {
   color: var(--text-muted);
 }
 
+.conversation-search-result {
+  align-items: flex-start;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.conversation-search-matches {
+  color: var(--text-muted, #6b7280);
+  font-size: 0.8rem;
+  line-height: 1.35;
+  max-width: 100%;
+  overflow: hidden;
+}
+
+.conversation-search-match {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.conversation-search-role,
+.conversation-search-title-match {
+  color: var(--text-muted, #6b7280);
+  font-size: 0.7rem;
+  font-weight: 600;
+  margin-right: 0.35rem;
+  text-transform: uppercase;
+}
+
+.conversation-search-match mark {
+  background: #fde68a;
+  border-radius: 0.15rem;
+  color: inherit;
+  padding: 0 0.1rem;
+}
+
 .sidebar-empty {
   color: var(--text-muted);
   font-size: 0.85rem;
