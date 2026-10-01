@@ -15,6 +15,7 @@ existing generic analysis with no Stellar instructions.
 
 from __future__ import annotations
 
+from app.services import prompt_hardening
 from app.services.llm import LLMProviderError, get_provider
 from app.services.stellar_detection import detect_stellar_from_dicts
 
@@ -248,23 +249,31 @@ Provide a structured review with these sections:
 
 
 def analyze_file(filename: str, language: str, code: str, question: str | None = None) -> dict:
-    """Analyze a single file's contents (explain, find problems, etc.)."""
+    """Analyze a single file's contents (explain, find problems, etc.).
+
+    The file content is untrusted: it is wrapped in explicit delimiters with the
+    instruction re-asserted after it (#33/#16), and the system prompt carries the
+    prompt-hardening rules so uploaded content cannot override the task.
+    """
+    untrusted = prompt_hardening.wrap_untrusted(_clip(code), f"file: {filename}")
     if question:
-        prompt = (
+        task = (
             f"File: {filename} (language: {language})\n\n"
-            f"Code:\n{_clip(code)}\n\n"
+            f"{untrusted}\n\n"
             f"Question: {question}\n"
             "Answer the question directly, referencing specific lines where possible."
         )
     else:
-        prompt = (
+        task = (
             f"File: {filename} (language: {language})\n\n"
-            f"Code:\n{_clip(code)}\n\n"
-            "Review this file: briefly explain its purpose, then identify potential "
-            "bugs or problems. Mark [CONFIRMED] for definite defects and [SUGGESTION] "
-            "for possible issues or improvements."
+            f"{untrusted}\n\n"
+            "Review the file in the untrusted block: briefly explain its purpose, "
+            "then identify potential bugs or problems. Mark [CONFIRMED] for definite "
+            "defects and [SUGGESTION] for possible issues or improvements."
         )
-    return {"kind": "file", "filename": filename, "analysis": _run(prompt)}
+    task += "\n\n" + prompt_hardening.REASSERTION
+    system = f"{_SYSTEM}\n\n{prompt_hardening.HARDENING_RULES}"
+    return {"kind": "file", "filename": filename, "analysis": _run(task, system=system)}
 
 
 def summarize_repository(owner: str, repo: str, readme: str | None, file_list: list[str]) -> dict:

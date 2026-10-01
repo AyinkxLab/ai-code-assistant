@@ -15,7 +15,7 @@ from werkzeug.utils import secure_filename
 
 from app.extensions import db
 from app.models import AnalyzedFile, Conversation, FileAnalysis, Message
-from app.services import analysis
+from app.services import analysis, prompt_hardening
 from app.services.github import (
     GitHubError,
     get_github_client,
@@ -118,16 +118,27 @@ def _read_upload(field: str = "file") -> tuple[str, str] | tuple[None, str]:
     return secure_filename(file.filename), text
 
 
-def _run_action(action: str, prompt: str) -> str:
-    """Run a single AI action and return the model output."""
+#: Base system framing for the AI tools. The task-specific system prompt is
+#: merged in per action, and ``prompt_hardening`` appends the security rules.
+_TOOL_SYSTEM = "You are a helpful AI coding assistant."
+
+
+def _run_action(system_prompt: str, instruction: str, label: str, untrusted: str) -> str:
+    """Run one AI action over untrusted content and return the model output.
+
+    The task system prompt is sent in the ``system`` role and the untrusted
+    content is confined to a delimited block with the instruction re-asserted
+    after it (#33), so file/request content cannot override the system
+    behaviour or exfiltrate the prompt.
+    """
     try:
         provider = get_provider()
-        return provider.complete(
-            [
-                {"role": "system", "content": "You are a helpful AI coding assistant."},
-                {"role": "user", "content": prompt},
-            ]
+        messages = prompt_hardening.build_hardened_messages(
+            f"{_TOOL_SYSTEM}\n\n{system_prompt}",
+            instruction,
+            [(label, untrusted)],
         )
+        return provider.complete(messages)
     except LLMProviderError as exc:
         return f"[provider error] {exc}"
 
@@ -143,7 +154,12 @@ def generate():
         return jsonify({"error": "A description is required."}), 400
 
     system = ACTION_PROMPTS["generate"].format(language=language)
-    result = _run_action("generate", f"{system}\n\nRequest: {description}")
+    result = _run_action(
+        system,
+        "Write production-quality code for the request in the untrusted block.",
+        "user request",
+        description,
+    )
     return jsonify({"result": result, "language": language})
 
 
@@ -160,7 +176,12 @@ def code_action():
         return jsonify({"error": "Code or diff content is required."}), 400
 
     system = ACTION_PROMPTS[action]
-    result = _run_action(action, f"{system}\n\nCode:\n{code}")
+    result = _run_action(
+        system,
+        "Perform the analysis the system message describes on the code in the " "untrusted block.",
+        "code",
+        code,
+    )
     return jsonify({"action": action, "result": result})
 
 
@@ -189,25 +210,45 @@ def analyze_file():
         user_id=current_user.id, filename=filename, content_hash=content_hash
     ).first()
     if analyzed_file is not None:
-        cached = FileAnalysis.query.filter(
-            FileAnalysis.file_id == analyzed_file.id,
-            FileAnalysis.user_id == current_user.id,
-            FileAnalysis.action == action,
-            FileAnalysis.created_at >= cutoff,
-        ).order_by(FileAnalysis.created_at.desc()).first()
+        cached = (
+            FileAnalysis.query.filter(
+                FileAnalysis.file_id == analyzed_file.id,
+                FileAnalysis.user_id == current_user.id,
+                FileAnalysis.action == action,
+                FileAnalysis.created_at >= cutoff,
+            )
+            .order_by(FileAnalysis.created_at.desc())
+            .first()
+        )
         if cached is not None:
-            return jsonify({"filename": filename, "action": action, "result": cached.result,
-                            "cached": True, "analysis_id": cached.id, "file_id": analyzed_file.id})
+            return jsonify(
+                {
+                    "filename": filename,
+                    "action": action,
+                    "result": cached.result,
+                    "cached": True,
+                    "analysis_id": cached.id,
+                    "file_id": analyzed_file.id,
+                }
+            )
 
+    injection = prompt_hardening.injection_report(text)
     try:
         provider = get_provider()
-        result = provider.complete([
-            {"role": "system", "content": "You are a helpful AI coding assistant."},
-            {"role": "user", "content": f"{system}\n\nFile: {filename}\n\nCode:\n{text}"},
-        ])
+        messages = prompt_hardening.build_hardened_messages(
+            f"{_TOOL_SYSTEM}\n\n{system}",
+            "Analyze the uploaded file in the untrusted block, following the " "system message.",
+            [(f"file: {filename}", text)],
+        )
+        result = provider.complete(messages)
     except LLMProviderError as exc:
         return jsonify(
-            {"filename": filename, "action": action, "result": f"[provider error] {exc}"}
+            {
+                "filename": filename,
+                "action": action,
+                "result": f"[provider error] {exc}",
+                "injection": injection,
+            }
         )
 
     if analyzed_file is None:
@@ -225,26 +266,41 @@ def analyze_file():
     )
     db.session.add(record)
     db.session.commit()
-    return jsonify({"filename": filename, "action": action, "result": result,
-                    "cached": False, "analysis_id": record.id, "file_id": analyzed_file.id})
+    return jsonify(
+        {
+            "filename": filename,
+            "action": action,
+            "result": result,
+            "cached": False,
+            "analysis_id": record.id,
+            "file_id": analyzed_file.id,
+            "injection": injection,
+        }
+    )
 
 
 @bp.route("/history")
 @login_required
 def analysis_history():
     """Render only this user's persisted file analyses."""
-    records = FileAnalysis.query.filter_by(user_id=current_user.id).join(AnalyzedFile).order_by(
-        FileAnalysis.created_at.desc()
-    ).all()
+    records = (
+        FileAnalysis.query.filter_by(user_id=current_user.id)
+        .join(AnalyzedFile)
+        .order_by(FileAnalysis.created_at.desc())
+        .all()
+    )
     return render_template("tools/analysis_history.html", analyses=[r.to_dict() for r in records])
 
 
 @bp.route("/api/analyses", methods=["GET"])
 @login_required
 def list_file_analyses():
-    records = FileAnalysis.query.filter_by(user_id=current_user.id).join(AnalyzedFile).order_by(
-        FileAnalysis.created_at.desc()
-    ).all()
+    records = (
+        FileAnalysis.query.filter_by(user_id=current_user.id)
+        .join(AnalyzedFile)
+        .order_by(FileAnalysis.created_at.desc())
+        .all()
+    )
     return jsonify([record.to_dict() for record in records])
 
 
