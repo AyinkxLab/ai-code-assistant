@@ -1,6 +1,6 @@
 """Tests for the chat JSON API (``/api/conversations``, issue #5)."""
 
-from app.models import Conversation
+from app.models import Conversation, Message
 
 
 def _register(client, username="apiuser", email="apiuser@example.com"):
@@ -108,6 +108,54 @@ class TestConversationEndpoints:
         )
         assert delete.status_code == 404
         assert db.session.get(Conversation, created["id"]) is not None
+
+    def test_search_finds_message_content_and_returns_highlighted_snippet(self, client, db):
+        _register(client)
+        created = _create_conversation(client, title="Release notes").get_json()
+        db.session.add(
+            Message(
+                conversation_id=created["id"],
+                role="assistant",
+                content="The deployment uses PostgreSQL full-text search.",
+            )
+        )
+        db.session.commit()
+
+        response = client.get("/chat/search?q=postgresql")
+
+        assert response.status_code == 200
+        result = response.get_json()[0]
+        assert result["conversation_id"] == created["id"]
+        assert result["title"] == "Release notes"
+        assert result["matches"][0]["snippet"]["match"] == "PostgreSQL"
+
+    def test_search_is_scoped_to_the_authenticated_user(self, client, db):
+        _register(client, username="owner", email="owner@example.com")
+        owner_conversation = _create_conversation(client, title="Owner").get_json()
+        db.session.add(
+            Message(
+                conversation_id=owner_conversation["id"],
+                role="user",
+                content="private project phrase",
+            )
+        )
+        db.session.commit()
+
+        client.post("/auth/logout")
+        _register(client, username="other", email="other@example.com")
+        other_conversation = _create_conversation(client, title="Other").get_json()
+        db.session.add(
+            Message(
+                conversation_id=other_conversation["id"],
+                role="user",
+                content="private project phrase",
+            )
+        )
+        db.session.commit()
+
+        results = client.get("/chat/search?q=private%20project").get_json()
+
+        assert [result["conversation_id"] for result in results] == [other_conversation["id"]]
 
 
 class TestMessageEndpoint:
