@@ -26,6 +26,7 @@ API (JSON)
     /github/api/repos/.../analyze-file      AI analysis of one file
 """
 
+import logging
 from datetime import UTC, datetime, timedelta
 from urllib.parse import urlencode
 
@@ -59,6 +60,8 @@ from app.services.github import (
 #: The lookups are batched into one GraphQL request, but keeping the count
 #: bounded avoids pathological query sizes on very large repositories.
 MAX_TREE_LAST_COMMITS = 100
+
+logger = logging.getLogger(__name__)
 
 
 # --------------------------------------------------------------------------
@@ -132,10 +135,26 @@ def callback():
     try:
         token_data = response.json()
     except ValueError:
+        token_data = None
+    # GitHub answers a failed exchange with a JSON object, but a proxy or
+    # gateway in front of it can return anything (``null``, a list, HTML).
+    # Normalize to a dict so a malformed body degrades to the friendly
+    # failure path instead of raising.
+    if not isinstance(token_data, dict):
         token_data = {}
     if response.status_code >= 400 or "access_token" not in token_data:
         ratelimit.record(key)
-        message = token_data.get("error_description") or token_data.get("error") or response.text
+        # Only GitHub's own structured error fields are surfaced to the user.
+        # The raw response body may be a gateway HTML page carrying internal
+        # detail, so it is logged rather than flashed (issue #82).
+        message = token_data.get("error_description") or token_data.get("error")
+        if not message:
+            logger.warning(
+                "GitHub token exchange failed (HTTP %s): %s",
+                response.status_code,
+                response.text[:200],
+            )
+            message = "GitHub did not return a token. Please try again."
         flash(f"GitHub authorization failed: {message}", "error")
         return redirect(url_for("github.index"))
 

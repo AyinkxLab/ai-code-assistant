@@ -25,12 +25,27 @@ class FakeResponse:
         return self._data
 
 
-def _make_fake_session(script):
+class FakeHTMLResponse(FakeResponse):
+    """A response whose body is not JSON, mirroring a GitHub 5xx HTML page."""
+
+    def json(self):
+        raise ValueError("Expecting value: line 1 column 1 (char 0)")
+
+
+def _make_fake_session(script, sessions=None):
+    """Build a fake ``requests.Session`` that serves ``script``.
+
+    ``script`` entries are ``(method, path_fragment, status, data)``. When
+    ``sessions`` is a list, every constructed session is appended to it so a
+    test can assert on the auth headers the client used.
+    """
     ordered = sorted(script, key=lambda entry: len(entry[1]), reverse=True)
 
     class FakeSession:
         def __init__(self):
             self.headers = {"Authorization": "", "X-GitHub-Api-Version": "2022-11-28"}
+            if sessions is not None:
+                sessions.append(self)
 
         def request(self, method, url, params=None, timeout=None, **kwargs):
             url_path = url.split("api.github.com", 1)[-1].split("?", 1)[0]
@@ -68,6 +83,46 @@ def _create_account(app):
     db.session.add(account)
     db.session.commit()
     return account
+
+
+def _flashes(client):
+    """Return the pending flash messages as a list of strings."""
+    with client.session_transaction() as sess:
+        return [message for _, message in sess.get("_flashes", [])]
+
+
+def _forbid_token_exchange(calls):
+    """Return a ``requests.post`` stand-in that records no successful exchange.
+
+    Any call appends to ``calls`` and still answers, so a test that expects the
+    exchange to be skipped can assert on an empty ``calls`` list instead of
+    relying on an exception to fail the assertion.
+    """
+
+    def _post(url, **kwargs):
+        calls.append({"url": url, **kwargs})
+        return FakeResponse(200, {"access_token": "should-not-be-used"})
+
+    return _post
+
+
+def _token_exchange(calls, response):
+    """Return a ``requests.post`` stand-in that records the request and replays ``response``."""
+
+    def _post(url, **kwargs):
+        calls.append({"url": url, **kwargs})
+        return response
+
+    return _post
+
+
+def _assert_no_error_leakage(body, secrets):
+    """Assert that no sensitive or internal value reached the rendered page."""
+    text = body if isinstance(body, str) else body.decode()
+    for secret in secrets:
+        assert secret not in text, f"error detail leaked into the page: {secret!r}"
+    for marker in ("Traceback (most recent call last)", "GitHubError", "RequestException"):
+        assert marker not in text, f"internal failure detail leaked into the page: {marker!r}"
 
 
 class TestOAuthFlow:
@@ -332,6 +387,235 @@ class TestOAuthFlow:
         data = client.get("/github/api/status").get_json()
         assert data["connected"] is False
         assert "rate_limit" not in data
+
+
+class TestOAuthCallbackFlow:
+    """End-to-end coverage for ``GET /github/callback`` (issue #82).
+
+    Every case drives the real route through the Flask test client with the
+    token exchange and the ``/user`` verification mocked at the ``requests``
+    layer, then asserts on the redirect target, the flash message, what was
+    persisted, and — for the failure paths — that nothing sensitive leaked.
+    """
+
+    def _start_flow(self, client, app):
+        """Log in, prime the session state, and return the fresh OAuth state."""
+        app.config["GITHUB_CLIENT_ID"] = "client-id"
+        app.config["GITHUB_CLIENT_SECRET"] = "client-secret"
+        _logged_in_client(client)
+        client.get("/github/connect")
+        return _last_session_state(client)
+
+    def _assert_failed(self, client, response, expected_fragment):
+        """Assert a callback failure stayed a friendly redirect with no leak."""
+        assert response.status_code == 302
+        assert response.headers["Location"] == "/github/"
+        assert GithubAccount.query.count() == 0
+        flashes = _flashes(client)
+        assert len(flashes) == 1
+        assert expected_fragment in flashes[0]
+        _assert_no_error_leakage(
+            " ".join(flashes),
+            ("client-secret", "gho_real_token", "should-not-be-used"),
+        )
+
+    def test_success_persists_connection_and_round_trips_token(self, client, app, monkeypatch):
+        state = self._start_flow(client, app)
+        exchanges = []
+        sessions = []
+
+        monkeypatch.setattr(
+            "app.github.routes.requests.post",
+            _token_exchange(
+                exchanges,
+                FakeResponse(
+                    200,
+                    {
+                        "access_token": "gho_real_token",
+                        "token_type": "bearer",
+                        "scope": "read:user repo",
+                    },
+                ),
+            ),
+        )
+        monkeypatch.setattr(
+            "app.services.github.requests.Session",
+            lambda: _make_fake_session(
+                [("GET", "/user", 200, {"id": 4242, "login": "ghuser"})], sessions=sessions
+            ),
+        )
+
+        response = client.get(f"/github/callback?code=auth-code-123&state={state}")
+
+        assert response.status_code == 302
+        assert response.headers["Location"] == "/github/"
+        assert _flashes(client) == ["Connected to GitHub as @ghuser."]
+
+        # The authorization code was exchanged for a token using the app's
+        # credentials, not passed through blindly.
+        assert len(exchanges) == 1
+        assert exchanges[0]["url"] == "https://github.com/login/oauth/access_token"
+        assert exchanges[0]["data"] == {
+            "client_id": "client-id",
+            "client_secret": "client-secret",
+            "code": "auth-code-123",
+            "redirect_uri": "http://localhost/github/callback",
+        }
+
+        # User verification ran with the freshly issued token.
+        assert len(sessions) == 1
+        assert sessions[0].headers["Authorization"] == "Bearer gho_real_token"
+
+        user = User.query.filter_by(username="ghuser").first()
+        account = GithubAccount.query.filter_by(user_id=user.id).first()
+        assert account.github_user_id == 4242
+        assert account.github_username == "ghuser"
+        assert account.scopes == "read:user repo"
+        assert account.token_type == "bearer"
+
+        # The token is stored encrypted and round-trips through decrypt_secret.
+        assert "gho_real_token" not in account.access_token_encrypted
+        assert decrypt_secret(account.access_token_encrypted) == "gho_real_token"
+
+    def test_state_mismatch_skips_exchange_and_redirects(self, client, app, monkeypatch):
+        state = self._start_flow(client, app)
+        exchanges = []
+
+        monkeypatch.setattr("app.github.routes.requests.post", _forbid_token_exchange(exchanges))
+        monkeypatch.setattr(
+            "app.services.github.requests.Session",
+            lambda: _make_fake_session([]),
+        )
+
+        response = client.get("/github/callback?code=auth-code-123&state=attacker-supplied")
+
+        self._assert_failed(client, response, "state mismatch")
+        assert exchanges == []
+        # The legitimate state is single-use, so it cannot be replayed either.
+        assert _last_session_state(client) is None
+        assert state != "attacker-supplied"
+
+    def test_missing_code_skips_exchange_and_redirects(self, client, app, monkeypatch):
+        state = self._start_flow(client, app)
+        exchanges = []
+
+        monkeypatch.setattr("app.github.routes.requests.post", _forbid_token_exchange(exchanges))
+
+        response = client.get(f"/github/callback?state={state}")
+
+        self._assert_failed(client, response, "missing code")
+        assert exchanges == []
+
+    def test_github_error_query_redirects_without_leaking(self, client, app, monkeypatch):
+        exchanges = []
+        monkeypatch.setattr("app.github.routes.requests.post", _forbid_token_exchange(exchanges))
+        _logged_in_client(client)
+
+        response = client.get(
+            "/github/callback?error=access_denied&error_description=The+user+denied"
+        )
+
+        assert response.status_code == 302
+        assert response.headers["Location"] == "/github/"
+        assert GithubAccount.query.count() == 0
+        flashes = _flashes(client)
+        assert len(flashes) == 1
+        assert "GitHub authorization failed" in flashes[0]
+        _assert_no_error_leakage(" ".join(flashes), ("client-secret",))
+        assert exchanges == []
+
+    def test_token_exchange_error_redirects_without_persisting(self, client, app, monkeypatch):
+        state = self._start_flow(client, app)
+        exchanges = []
+
+        monkeypatch.setattr(
+            "app.github.routes.requests.post",
+            _token_exchange(
+                exchanges,
+                FakeResponse(
+                    200,
+                    {
+                        "error": "bad_verification_code",
+                        "error_description": "The code passed is incorrect or expired.",
+                    },
+                ),
+            ),
+        )
+        monkeypatch.setattr(
+            "app.services.github.requests.Session",
+            lambda: _make_fake_session([]),
+        )
+
+        response = client.get(f"/github/callback?code=expired-code&state={state}")
+
+        self._assert_failed(client, response, "incorrect or expired")
+        assert len(exchanges) == 1
+        assert "gho_real_token" not in " ".join(_flashes(client))
+
+    def test_non_json_token_exchange_error_does_not_leak_body(self, client, app, monkeypatch):
+        """A non-JSON upstream body (e.g. a GitHub 5xx HTML page) must not be shown."""
+        state = self._start_flow(client, app)
+        upstream_body = "<html><body>502 Bad Gateway - upstream trace abc123</body></html>"
+
+        monkeypatch.setattr(
+            "app.github.routes.requests.post",
+            _token_exchange([], FakeHTMLResponse(502, None, text=upstream_body)),
+        )
+        monkeypatch.setattr(
+            "app.services.github.requests.Session",
+            lambda: _make_fake_session([]),
+        )
+
+        response = client.get(f"/github/callback?code=auth-code-123&state={state}")
+
+        self._assert_failed(client, response, "GitHub authorization failed")
+        _assert_no_error_leakage(
+            " ".join(_flashes(client)), ("upstream trace", "<html>", "502 Bad Gateway")
+        )
+
+    def test_non_dict_token_body_degrades_to_friendly_redirect(self, client, app, monkeypatch):
+        """A ``null``/list body from the token endpoint must not 500."""
+        state = self._start_flow(client, app)
+
+        monkeypatch.setattr(
+            "app.github.routes.requests.post",
+            _token_exchange([], FakeResponse(200, None, text="null")),
+        )
+        monkeypatch.setattr(
+            "app.services.github.requests.Session",
+            lambda: _make_fake_session([]),
+        )
+
+        response = client.get(f"/github/callback?code=auth-code-123&state={state}")
+
+        self._assert_failed(client, response, "did not return a token")
+
+    def test_user_verification_failure_redirects_without_leaking(self, client, app, monkeypatch):
+        """A rejected token must not surface GitHub's raw error detail."""
+        state = self._start_flow(client, app)
+        upstream_body = '{"message":"Bad credentials for token gho_real_token"}'
+
+        monkeypatch.setattr(
+            "app.github.routes.requests.post",
+            _token_exchange([], FakeResponse(200, {"access_token": "gho_real_token"})),
+        )
+        monkeypatch.setattr(
+            "app.services.github.requests.Session",
+            lambda: _make_fake_session(
+                [("GET", "/user", 401, json.loads(upstream_body))],
+            ),
+        )
+
+        response = client.get(f"/github/callback?code=auth-code-123&state={state}")
+
+        self._assert_failed(client, response, "verify your GitHub account")
+        # GitHub's raw rejection body stays server-side; the user gets the
+        # app's own friendly message instead.
+        assert "Reconnect your account." in _flashes(client)[0]
+        _assert_no_error_leakage(
+            " ".join(_flashes(client)),
+            ("Bad credentials", "gho_real_token"),
+        )
 
 
 class TestRepositoryApi:
