@@ -53,6 +53,21 @@ def _reset_rate_limiter():
     ratelimit.reset()
 
 
+@pytest.fixture(autouse=True)
+def _reset_github_response_cache():
+    """Clear the shared GitHub response cache around each test.
+
+    The ETag cache is a module-level singleton, so without a reset an entry
+    cached by one test would be replayed (and its 304 consumed) by the next,
+    masking the very request the later test expects to make.
+    """
+    from app.services import github_cache
+
+    github_cache.reset()
+    yield
+    github_cache.reset()
+
+
 @pytest.fixture()
 def app():
     """Create a fresh application instance for each test."""
