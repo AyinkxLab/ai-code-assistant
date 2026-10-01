@@ -12,6 +12,7 @@ class _FakeProvider:
 
     def __init__(self):
         self.calls = 0
+        self.base_url = "https://example.test"
 
     def chat(self, messages, *, model=None, params=None):
         self.calls += 1
@@ -56,6 +57,20 @@ class TestSignature:
         assert llm_cache.request_signature(**{**base, "model": "m2"}) != signature
         assert llm_cache.request_signature(**{**base, "params": {"temperature": 1}}) != signature
         assert llm_cache.request_signature(**{**base, "messages": _msgs("b")}) != signature
+
+    def test_timestamps_and_unrelated_message_metadata_do_not_change_signature(self):
+        base = {
+            "user_id": 1,
+            "provider": "p",
+            "model": "m",
+            "params": None,
+            "messages": [{"role": "user", "content": "hello", "timestamp": "t1"}],
+        }
+        changed = {
+            **base,
+            "messages": [{"role": "user", "content": "hello", "timestamp": "t2"}],
+        }
+        assert llm_cache.request_signature(**base) == llm_cache.request_signature(**changed)
 
 
 class TestCacheClass:
@@ -131,5 +146,13 @@ class TestCachedChat:
         key.updated_at = key.updated_at.replace(year=key.updated_at.year + 1)
         db.session.commit()
 
+        llm_cache.cached_chat(user, _msgs(), provider=provider)
+        assert provider.calls == 2
+
+    def test_provider_configuration_change_invalidates(self, app):
+        provider = _FakeProvider()
+        user = _User(1)
+        llm_cache.cached_chat(user, _msgs(), provider=provider)
+        provider.base_url = "https://changed.example"
         llm_cache.cached_chat(user, _msgs(), provider=provider)
         assert provider.calls == 2
