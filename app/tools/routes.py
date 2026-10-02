@@ -117,16 +117,17 @@ def _read_upload(field: str = "file") -> tuple[str, str] | tuple[None, str]:
     return secure_filename(file.filename), text
 
 
-def _run_action(action: str, prompt: str) -> str:
-    """Run a single AI action and return the model output."""
+def _run_action(system: str, content: str, *, label: str) -> str:
+    """Run a single AI action over untrusted content and return the output.
+
+    The instructions live in a system message and the content is fenced and
+    re-asserted as untrusted data (issue #16), so pasted code cannot override
+    the task.
+    """
+    messages, _findings = build_untrusted_task_messages(system, content, label=label)
     try:
         provider = get_provider()
-        return provider.complete(
-            [
-                {"role": "system", "content": "You are a helpful AI coding assistant."},
-                {"role": "user", "content": prompt},
-            ]
-        )
+        return provider.complete(messages)
     except LLMProviderError as exc:
         return f"[provider error] {exc}"
 
@@ -142,7 +143,7 @@ def generate():
         return jsonify({"error": "A description is required."}), 400
 
     system = ACTION_PROMPTS["generate"].format(language=language)
-    result = _run_action("generate", f"{system}\n\nRequest: {description}")
+    result = _run_action(system, description, label="request")
     return jsonify({"result": result, "language": language})
 
 
@@ -159,7 +160,7 @@ def code_action():
         return jsonify({"error": "Code or diff content is required."}), 400
 
     system = ACTION_PROMPTS[action]
-    result = _run_action(action, f"{system}\n\nCode:\n{code}")
+    result = _run_action(system, code, label="code")
     return jsonify({"action": action, "result": result})
 
 
