@@ -54,6 +54,7 @@ def create_app(config_name: str | None = None) -> Flask:
     from app.chat import bp as chat_bp
     from app.chat.api import bp as chat_api_bp
     from app.collaboration import bp as collaboration_bp
+    from app.files import bp as files_bp
     from app.github import bp as github_bp
     from app.keys import bp as keys_bp
     from app.main import bp as main_bp
@@ -75,6 +76,7 @@ def create_app(config_name: str | None = None) -> Flask:
     app.register_blueprint(plugins_bp)
     app.register_blueprint(workspaces_bp)
     app.register_blueprint(collaboration_bp)
+    app.register_blueprint(files_bp)
     app.register_blueprint(reviews_bp)
     app.register_blueprint(stellar_bp)
     app.register_blueprint(admin_bp)

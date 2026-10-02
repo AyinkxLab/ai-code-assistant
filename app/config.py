@@ -73,6 +73,13 @@ class Config:
     # Maximum size of an uploaded file in bytes (configured for future phases).
     MAX_CONTENT_LENGTH = int(os.getenv("MAX_CONTENT_LENGTH", 16 * 1024 * 1024))
 
+    # Persisted uploads (issue #42): uploaded files are written to disk under
+    # ``UPLOAD_FOLDER`` with a random stored name. The folder is created on
+    # demand; only ``UPLOAD_MAX_BYTES`` or ``MAX_CONTENT_LENGTH`` (whichever is
+    # smaller) may be stored.
+    UPLOAD_FOLDER = os.getenv("UPLOAD_FOLDER", str(BASE_DIR / "instance" / "uploads"))
+    UPLOAD_MAX_BYTES = int(os.getenv("UPLOAD_MAX_BYTES", "0")) or None
+
     # LLM provider backend: "mock" (default, offline) or "openai".
     LLM_PROVIDER = os.getenv("LLM_PROVIDER", "mock")
 

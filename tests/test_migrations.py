@@ -126,7 +126,10 @@ class TestMigrationHead:
     def test_head_is_latest_revision(self):
         result = _run_flask(["db", "heads"], {"DATABASE_URL": "sqlite:///:memory:"})
         assert result.returncode == 0, result.stderr
-        assert "d8e9f0a1b2c3" in (result.stdout + result.stderr)
+        # A single head means the migration history has no unresolved fork;
+        # a fork makes ``flask db upgrade`` fail outright.
+        heads = [line for line in result.stdout.splitlines() if line.strip()]
+        assert len(heads) == 1, f"expected a single migration head, got: {heads}"
 
     def test_message_token_columns_upgraded(self):
         with _migration_db() as db_url, _inspect(db_url) as insp:
