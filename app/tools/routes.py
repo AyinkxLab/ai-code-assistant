@@ -21,6 +21,7 @@ from app.services.github import (
     validate_full_name,
 )
 from app.services.llm import LLMProviderError, get_provider
+from app.services.prompt_safety import build_untrusted_task_messages
 from app.services.soroban_generation import generate_soroban_skeleton
 from app.tools import bp
 
@@ -179,8 +180,20 @@ def analyze_file():
         action = "explain"
 
     system = ACTION_PROMPTS[action]
-    result = _run_action(action, f"{system}\n\nFile: {filename}\n\nCode:\n{text}")
-    return jsonify({"filename": filename, "action": action, "result": result})
+    messages, findings = build_untrusted_task_messages(
+        system, text, label="uploaded-file", filename=filename
+    )
+    try:
+        provider = get_provider()
+        result = provider.complete(messages)
+    except LLMProviderError as exc:
+        result = f"[provider error] {exc}"
+
+    payload = {"filename": filename, "action": action, "result": result}
+    if findings:
+        # Surface detected instruction-like markers without executing them.
+        payload["injection_warnings"] = findings
+    return jsonify(payload)
 
 
 @bp.route("/soroban/skeleton", methods=["POST"])
