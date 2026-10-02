@@ -1166,13 +1166,20 @@ Structure (sample):
 Stellar-relevant files:
 {blocks or "(no file contents retrieved)"}
 
-Analyze this project as a Stellar/Soroban developer tool:
+Analyze this project as a Stellar/Soroban developer tool. Cover each section and
+label every claim [CONFIRMED] (demonstrated by the files) or [SUGGESTION]
+(inferred):
 1. What kind of Stellar/Soroban project is it (contract, SDK app, tooling)?
-2. Which contracts / entry points exist and what are their responsibilities?
-3. Which Stellar networks or endpoints are configured, and are any credentials
+2. Entry points: enumerate the contract entry points (the `#[contractimpl]`
+   methods) or SDK entry points and each one's responsibilities.
+3. Storage: list the Soroban storage keys / data keys and what each holds.
+4. Cross-contract calls: identify calls into other contracts and the trust or
+   failure risk each introduces.
+5. Which Stellar networks or endpoints are configured, and are any credentials
    or secrets present in the files (flag hard-coded keys as [CONFIRMED])?
-4. Dependencies: Soroban crates / Stellar SDKs and their purpose.
-5. Concrete risks or improvements for contract developers (bounded context:
+6. Dependencies: Soroban crates / Stellar SDKs and their purpose.
+7. Test coverage: which entry points and invariants have no tests (missing tests).
+8. Concrete risks or improvements for contract developers (bounded context:
    panic! usage, unwraps, authorization checks, test coverage).
 Base every statement on the files shown and mark [CONFIRMED] vs [SUGGESTION].
 Do not claim any Stellar integration, deployment, live contract, ledger,
