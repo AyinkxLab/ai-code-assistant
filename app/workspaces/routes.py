@@ -79,7 +79,7 @@ from app.models.workspace_member import (
     ROLE_VIEWER,
     STATUS_ACTIVE,
 )
-from app.services import project_analysis
+from app.services import cancellation, project_analysis
 from app.services.activity import record_activity
 from app.services.events import emit_event
 from app.services.exporting import export_filename, iter_export_zip
@@ -1243,7 +1243,13 @@ def api_project_chat(project_id: int):
     window_config="RATE_LIMIT_STREAM_WINDOW",
 )
 def api_project_chat_stream(project_id: int):
-    """Stream an assistant reply about the project using Server-Sent Events."""
+    """Stream an assistant reply about the project using Server-Sent Events.
+
+    Cancellation (issue #101): the caller may pass ``request_id`` and POST it to
+    ``/cancel``. The stream stops yielding as soon as the id is cancelled or the
+    client disconnects, and a cancelled/aborted stream never persists a partial
+    assistant message.
+    """
     project = _get_project(project_id)
     if project.status != STATUS_READY:
         return jsonify({"error": "This project has not finished indexing."}), 409
@@ -1266,25 +1272,34 @@ def api_project_chat_stream(project_id: int):
     )
     session.updated_at = datetime.now(UTC)
     db.session.commit()
+    request_id = (data.get("request_id") or "").strip() or None
     messages = project_analysis.build_messages(project, content, history, attachments=attachments)
 
     def generate():
+        provider = get_provider()
+        stream = provider.stream(messages)
+        chunks: list[str] = []
         try:
-            provider = get_provider()
-            for chunk in provider.stream(messages):
+            if cancellation.is_cancelled(request_id):
+                return
+            for chunk in stream:
+                # Stop the moment the caller cancels or the client disconnects.
+                if cancellation.is_cancelled(request_id):
+                    return
+                chunks.append(chunk)
                 yield f"data: {json.dumps({'type': 'token', 'content': chunk})}\n\n"
+        except GeneratorExit:
+            # Client disconnected (Stop button / aborted fetch): persist nothing.
+            return
         except LLMProviderError as exc:
             yield f"data: {json.dumps({'type': 'error', 'error': str(exc)})}\n\n"
             return
+        finally:
+            close = getattr(stream, "close", None)
+            if callable(close):
+                close()
 
-        try:
-            reply = project_analysis.chat_with_project(
-                project, content, attachments, history=history
-            )["analysis"]
-        except LLMProviderError as exc:
-            yield f"data: {json.dumps({'type': 'error', 'error': str(exc)})}\n\n"
-            return
-
+        reply = "".join(chunks).strip()
         message = ProjectMessage(
             project_id=project.id, session=session, role="assistant", content=reply
         )
@@ -1292,7 +1307,13 @@ def api_project_chat_stream(project_id: int):
         db.session.commit()
         yield f"data: {json.dumps({'type': 'done', 'message': message.to_dict()})}\n\n"
 
-    return Response(stream_with_context(generate()), mimetype="text/event-stream")
+    def with_cleanup():
+        try:
+            yield from generate()
+        finally:
+            cancellation.finish(request_id)
+
+    return Response(stream_with_context(with_cleanup()), mimetype="text/event-stream")
 
 
 # --------------------------------------------------------------------------
@@ -1353,7 +1374,19 @@ def api_project_analyze(project_id: int):
     kind = (data.get("kind") or "architecture").strip().lower()
     if kind not in project_analysis.ANALYSIS_KINDS:
         return jsonify({"error": "Unsupported analysis kind."}), 400
+
+    request_id = (data.get("request_id") or "").strip() or None
+    if cancellation.is_cancelled(request_id):
+        cancellation.finish(request_id)
+        return jsonify({"cancelled": True, "kind": kind}), 200
+
     result = project_analysis.analyze_project(project, kind)
+
+    # A cancel that arrived while the model ran skips every side effect below.
+    if cancellation.is_cancelled(request_id):
+        cancellation.finish(request_id)
+        return jsonify({"cancelled": True, "kind": result["kind"]}), 200
+
     record_activity(
         project.workspace_id,
         EVENT_AI_ANALYSIS_RUN,
@@ -1392,4 +1425,18 @@ def api_project_analyze(project_id: int):
             workspace_id=project.workspace_id,
             user_id=current_user.id,
         )
+    cancellation.finish(request_id)
     return jsonify(result)
+
+
+@bp.route("/api/projects/<int:project_id>/cancel", methods=["POST"])
+@login_required
+def api_project_cancel(project_id: int):
+    """Cancel an in-flight project chat stream or analysis (issue #101)."""
+    _get_project(project_id)
+    data = request.get_json(silent=True) or {}
+    request_id = (data.get("request_id") or "").strip()
+    if not request_id:
+        return jsonify({"error": "A request_id is required."}), 400
+    cancellation.cancel(request_id)
+    return jsonify({"cancelled": True, "request_id": request_id})
