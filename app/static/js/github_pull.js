@@ -35,11 +35,10 @@
       pr.files.forEach(function (file) {
         var details = document.createElement("details");
         details.className = "diff-file";
-        var patch = file.patch ? GH.escapeHtml(file.patch) : "(no inline diff available)";
         details.innerHTML =
           "<summary>" + GH.escapeHtml(file.filename) +
           ' <span class="diff-stats">+' + (file.additions || 0) + " / -" + (file.deletions || 0) + "</span></summary>" +
-          '<pre class="code-view">' + patch + "</pre>";
+          GH.renderPatch(file.patch);
         filesEl.appendChild(details);
       });
     }
