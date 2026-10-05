@@ -164,9 +164,10 @@ def create_prompt():
         if workspace_id not in _team_workspace_ids():
             return jsonify({"error": "Workspace not found."}), 404
         if role_for(workspace_id, current_user) not in {ROLE_OWNER, ROLE_CONTRIBUTOR}:
-            return jsonify(
-                {"error": "Only workspace owners and contributors can add team prompts."}
-            ), 403
+            return (
+                jsonify({"error": "Only workspace owners and contributors can add team prompts."}),
+                403,
+            )
         prompt.is_team = True
         prompt.workspace_id = workspace_id
     db.session.add(prompt)
