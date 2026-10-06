@@ -28,11 +28,11 @@ API (JSON)
     /github/api/repos/lookup                resolve owner/name to a repository
 """
 
+import re
 from datetime import UTC, datetime, timedelta
 from urllib.parse import urlencode
 
 import requests
-import re
 from flask import current_app, flash, jsonify, redirect, render_template, request, url_for
 from flask_login import current_user, login_required
 
@@ -443,7 +443,7 @@ def _normalize_full_name(raw: str) -> str | None:
         return None
     for prefix in ("https://github.com/", "http://github.com/", "github.com/"):
         if value.lower().startswith(prefix):
-            value = value[len(prefix):]
+            value = value[len(prefix) :]
             break
     value = value.strip("/")
     if value.endswith(".git"):
