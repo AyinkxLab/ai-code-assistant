@@ -189,22 +189,36 @@ def analyze_file():
         user_id=current_user.id, filename=filename, content_hash=content_hash
     ).first()
     if analyzed_file is not None:
-        cached = FileAnalysis.query.filter(
-            FileAnalysis.file_id == analyzed_file.id,
-            FileAnalysis.user_id == current_user.id,
-            FileAnalysis.action == action,
-            FileAnalysis.created_at >= cutoff,
-        ).order_by(FileAnalysis.created_at.desc()).first()
+        cached = (
+            FileAnalysis.query.filter(
+                FileAnalysis.file_id == analyzed_file.id,
+                FileAnalysis.user_id == current_user.id,
+                FileAnalysis.action == action,
+                FileAnalysis.created_at >= cutoff,
+            )
+            .order_by(FileAnalysis.created_at.desc())
+            .first()
+        )
         if cached is not None:
-            return jsonify({"filename": filename, "action": action, "result": cached.result,
-                            "cached": True, "analysis_id": cached.id, "file_id": analyzed_file.id})
+            return jsonify(
+                {
+                    "filename": filename,
+                    "action": action,
+                    "result": cached.result,
+                    "cached": True,
+                    "analysis_id": cached.id,
+                    "file_id": analyzed_file.id,
+                }
+            )
 
     try:
         provider = get_provider()
-        result = provider.complete([
-            {"role": "system", "content": "You are a helpful AI coding assistant."},
-            {"role": "user", "content": f"{system}\n\nFile: {filename}\n\nCode:\n{text}"},
-        ])
+        result = provider.complete(
+            [
+                {"role": "system", "content": "You are a helpful AI coding assistant."},
+                {"role": "user", "content": f"{system}\n\nFile: {filename}\n\nCode:\n{text}"},
+            ]
+        )
     except LLMProviderError as exc:
         return jsonify(
             {"filename": filename, "action": action, "result": f"[provider error] {exc}"}
@@ -225,26 +239,40 @@ def analyze_file():
     )
     db.session.add(record)
     db.session.commit()
-    return jsonify({"filename": filename, "action": action, "result": result,
-                    "cached": False, "analysis_id": record.id, "file_id": analyzed_file.id})
+    return jsonify(
+        {
+            "filename": filename,
+            "action": action,
+            "result": result,
+            "cached": False,
+            "analysis_id": record.id,
+            "file_id": analyzed_file.id,
+        }
+    )
 
 
 @bp.route("/history")
 @login_required
 def analysis_history():
     """Render only this user's persisted file analyses."""
-    records = FileAnalysis.query.filter_by(user_id=current_user.id).join(AnalyzedFile).order_by(
-        FileAnalysis.created_at.desc()
-    ).all()
+    records = (
+        FileAnalysis.query.filter_by(user_id=current_user.id)
+        .join(AnalyzedFile)
+        .order_by(FileAnalysis.created_at.desc())
+        .all()
+    )
     return render_template("tools/analysis_history.html", analyses=[r.to_dict() for r in records])
 
 
 @bp.route("/api/analyses", methods=["GET"])
 @login_required
 def list_file_analyses():
-    records = FileAnalysis.query.filter_by(user_id=current_user.id).join(AnalyzedFile).order_by(
-        FileAnalysis.created_at.desc()
-    ).all()
+    records = (
+        FileAnalysis.query.filter_by(user_id=current_user.id)
+        .join(AnalyzedFile)
+        .order_by(FileAnalysis.created_at.desc())
+        .all()
+    )
     return jsonify([record.to_dict() for record in records])
 
 
