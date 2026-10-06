@@ -14,9 +14,9 @@ escaped so a search term cannot inject HTML.
 from __future__ import annotations
 
 import re
-from typing import Iterable
+from collections.abc import Iterable
 
-#/: File extension -> highlight.js language id.
+# /: File extension -> highlight.js language id.
 EXTENSION_LANGUAGES: dict[str, str] = {
     "py": "python",
     "pyi": "python",
@@ -123,7 +123,7 @@ def normalize_language(token: str | None) -> str | None:
         return None
     if value in LANGUAGE_ALIASES:
         return LANGUAGE_ALIASES[value]
-    if value in KNOWN_LANGUAGE_IDs:
+    if value in KNOWN_LANGUAGE_IDS:
         return value
     return EXTENSION_LANGUAGES.get(value)
 
@@ -163,7 +163,11 @@ def _escape_html(text: str) -> str:
     )
 
 
-def highlight_matches(content: str, terms: Iterable[str] | str | None, case_sensitive: bool = False) -> str:
+def highlight_matches(
+    content: str,
+    terms: Iterable[str] | str | None,
+    case_sensitive: bool = False,
+) -> str:
     """Return HTML-escaped content with every occurrence of each term wrapped in a mark.
 
     The stored content is never mutated: this function operates on an
@@ -175,10 +179,7 @@ def highlight_matches(content: str, terms: Iterable[str] | str | None, case_sens
         return ""
     if terms is None:
         return _escape_html(content)
-    if isinstance(terms, str):
-        term_list = [terms]
-    else:
-        term_list = [t for t in terms if isinstance(t, str)]
+    term_list = [terms] if isinstance(terms, str) else [t for t in terms if isinstance(t, str)]
 
     cleaned = []
     seen = set()
@@ -200,7 +201,7 @@ def highlight_matches(content: str, terms: Iterable[str] | str | None, case_sens
     out = []
     last = 0
     for match in pattern.finditer(content):
-        out.append(_escape_html(content[last:match.start()]))
+        out.append(_escape_html(content[last : match.start()]))
         out.append('<mark class="search-hit">')
         out.append(_escape_html(match.group(0)))
         out.append("</mark>")
