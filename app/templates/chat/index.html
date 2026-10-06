@@ -48,8 +48,31 @@
 
   <section class="chat-main">
     <div id="chat-messages" class="chat-messages" role="log" aria-live="polite" aria-label="Conversation messages">
-      <div class="chat-placeholder">
-        <p>Start a conversation with the AI assistant.</p>
+      <div id="chat-welcome" class="chat-welcome">
+        <div class="chat-welcome-hero">
+          <div class="chat-welcome-badge" aria-hidden="true">AI</div>
+          <h2>Welcome to {{ config.APP_NAME }}</h2>
+          <p>Your AI assistant for code, explanations, and debugging. Ask a question or pick an example below to get started.</p>
+        </div>
+
+        <div class="chat-starters" role="group" aria-label="Example prompts">
+          <button type="button" class="chat-starter-chip" data-prompt="Explain this code like I am new to the project.">Explain this code</button>
+          <button type="button" class="chat-starter-chip" data-prompt="Help me debug this error: ">Debug an error</button>
+          <button type="button" class="chat-starter-chip" data-prompt="Write a unit test for this function.">Write a test</button>
+          <button type="button" class="chat-starter-chip" data-prompt="Refactor this snippet for readability and performance.">Refactor a snippet</button>
+        </div>
+
+        <details class="chat-capabilities">
+          <summary>What can this assistant do?</summary>
+          <ul>
+            <li>Explain code and concepts in plain language.</li>
+            <li>Help debug errors and suggest fixes.</li>
+            <li>Write and refactor code with examples.</li>
+            <li>Read attached images (up to 4 png/jpeg/webp).</li>
+            <li>Generate tests and documentation drafts.</li>
+          </ul>
+          <p class="chat-capabilities-limits">Limits: the assistant can make mistakes and cannot access the internet unless a file or image is attached. Always review code before running it.</p>
+        </details>
       </div>
     </div>
 
@@ -124,10 +147,122 @@
   <button id="delete-conversation" class="btn btn-ghost btn-sm btn-danger" type="button">Delete</button>
   <div id="share-links-list" aria-live="polite"></div>
 </div>
+<style>
+.chat-welcome {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 2.5rem 1rem;
+}
+
+.chat-welcome-hero {
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.chat-welcome-badge {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  background: var(--accent, #2563eb);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+}
+
+.chat-welcome-hero h2 {
+  margin: 0;
+  font-size: 1.5rem;
+}
+
+.chat-welcome-hero p {
+  margin: 0;
+  color: var(--muted, #64748b);
+  max-width: 560px;
+}
+
+.chat-starters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  justify-content: center;
+}
+
+.chat-starter-chip {
+  border: 1px solid var(--border, #e2e8f0);
+  background: var(--surface, #fff);
+  color: inherit;
+  border-radius: 999px;
+  padding: 0.5em 0.9rem;
+  cursor: pointer;
+  font-size: 0.9rem;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.chat-starter-chip:hover,
+.chat-starter-chip:focus-visible {
+  border-color: var(--accent, #2563eb);
+  background: var(--surface-hover, #f1f5f9);
+}
+
+.chat-capabilities {
+  border: 1px solid var(--border, #e2e8f0);
+  border-radius: 8px;
+  padding: 0.75rem 1rem;
+  background: var(--surface, #fff);
+  font-size: 0.9rem;
+}
+
+.chat-capabilities summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.chat-capabilities ul {
+  margin: 0.5rem 0 0 1.25rem;
+  padding: 0;
+}
+
+.chat-capabilities-limits {
+  margin: 0.75rem 0 0;
+  color: var(--muted, #64748b);
+  font-size: 0.85rem;
+}
+</style>
 {% endblock %}
 
 {% block scripts %}
 <script src="{{ url_for('static', filename='js/chat_markdown.js') }}"></script>
 <script src="{{ url_for('static', filename='js/chat.js') }}"></script>
 <script src="{{ url_for('static', filename='js/chat_files.js') }}"></script>
+<script>
+  // Welcome panel: prefill the composer when a starter chip is clicked.
+  (function () {
+    var welcome = document.getElementById('chat-welcome');
+    var input = document.getElementById('chat-input');
+    if (!welcome || !input) {
+      return;
+    }
+    welcome.addEventListener('click', function (event) {
+      var chip = event.target.closest('.chat-starter-chip');
+      if (!chip) {
+        return;
+      }
+      var prompt = chip.getAttribute('data-prompt') || chip.textContent || '';
+      input.value = prompt.trim();
+      input.focus();
+      if (typeof input.setSelectionRange === 'function') {
+        input.setSelectionRange(input.value.length, input.value.length);
+      }
+    });
+  })();
+</script>
 {% endblock %}

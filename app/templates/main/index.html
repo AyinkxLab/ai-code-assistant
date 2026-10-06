@@ -2,20 +2,77 @@
 
 {% block content %}
 <section class="hero">
-  <h1 class="hero-title">Your AI pair programmer, ready when you are.</h1>
-  <p class="hero-subtitle">
-    AI Code Assistant helps you write, review, and understand code faster.
-    This is the foundation — authentication, infrastructure, and a solid base
-    for the intelligence to come.
-  </p>
+  {% if current_user.is_authenticated %}
+    <h1 class="hero-title">Welcome back. What can we build together?</h1>
+    <p class="hero-subtitle">
+      Start a new conversation by picking an example below or typing your own prompt.
+      AI Code Assistant helps you write, review, and understand code faster.
+    </p>
+  {% else %}
+    <h1 class="hero-title">Your AI pair programmer, ready when you are.</h1>
+    <p class="hero-subtitle">
+      AI Code Assistant helps you write, review, and understand code faster.
+      This is the foundation — authentication, infrastructure, and a solid base
+      for the intelligence to come.
+    </p>
+  {% endif %}
   <div class="hero-actions">
     {% if current_user.is_authenticated %}
-      <a class="btn btn-primary" href="{{ url_for('auth.me') }}">Open your account</a>
+      <a class="btn btn-primary" href="#composer">Start a conversation</a>
+    <a class="btn btn-ghost" href="{{ url_for('auth.me') }}">Open your account</a>
     {% else %}
       <a class="btn btn-primary" href="{{ url_for('auth.register') }}">Get started</a>
       <a class="btn btn-ghost" href="{{ url_for('auth.login') }}">Log in</a>
     {% endif %}
   </div>
+</section>
+
+<section class="welcome-panel" id="composer">
+  <h1 class="welcome-title">What would you like to build?</h1>
+  <p class="welcome-subtitle">
+    Pick a starter prompt below to fill the composer, or write your own.
+  </p>
+
+  <div class="example-chips" role="list" aria-label="Example prompts">
+    <button type="button" class="example-chip" role="listitem"
+      data-prompt="Explain this code snippet line by line and highlight any bugs.">
+      Explain a code snippet
+    </button>
+    <button type="button" class="example-chip" role="listitem"
+      data-prompt="Review this pull request for correctness, security, and style issues.">
+      Review my changes
+    </button>
+    <button type="button" class="example-chip" role="listitem"
+      data-prompt="Write unit tests for this function, including edge cases.">
+      Write unit tests
+    </button>
+    <button type="button" class="example-chip" role="listitem"
+      data-prompt="Refactor this function for readability without changing behavior.">
+      Refactor for readability
+    </button>
+  </div>
+
+  <form class="composer-form" method="post" action="#">
+    <label class="sr-only" for="composer-input">Message</label>
+    <textarea id="composer-input" name="message" class="composer-input"
+       rows="3" placeholder="Ask anything about your code..."></textarea>
+    <div class="composer-actions">
+      <button type="submit" class="btn btn-primary">Send</button>
+    </div>
+  </form>
+
+  <details class="capabilities">
+    <summary>What can this assistant do?</summary>
+    <ul>
+      <li>Explain code and concepts in plain language.</li>
+      <li>Suggest fixes and refactors with reasoning.</li>
+      <li>Generate tests and documentation from your source.</li>
+      <li>Answer questions about your codebase and tooling.</li>
+    </ul>
+    <p class="capabilities-note">
+      Limits: responses may be incomplete or incorrect. Always review code before running it.
+    </p>
+  </details>
 </section>
 
 <section class="feature-grid">
@@ -35,4 +92,18 @@
     <p>Dockerized application with CI pipelines, health checks, and production-ready config.</p>
   </article>
 </section>
+
+<script>
+  (function () {
+    var input = document.getElementById('composer-input');
+    if (!input) return;
+    var chips = document.querySelectorAll('.example-chip');
+    chips.forEach(function (chip) {
+      chip: addEventListener('click', function () {
+        input.value = chip.getAttribute('data-prompt') || chip.textContent.trim();
+        input.focus();
+      });
+    });
+  })();
+</script>
 {% endblock %}
