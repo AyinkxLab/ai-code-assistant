@@ -754,3 +754,97 @@ class TestSecurity:
 def _last_session_state(client):
     with client.session_transaction() as sess:
         return sess.get("github_oauth_state")
+
+
+class TestDashboardGrantedScopes:
+    """The dashboard shows the granted scopes and warns when repo is missing (#57)."""
+
+    def test_shows_granted_scopes_without_warning_when_repo_present(self, client, app, monkeypatch):
+        _logged_in_client(client)
+        _create_account(app)
+        monkeypatch.setattr(
+            "app.services.github.requests.Session",
+            lambda: _make_fake_session(
+                [
+                    (
+                        "GET",
+                        "/user",
+                        200,
+                        {"id": 42, "login": "ghuser"},
+                        {"X-OAuth-Scopes": "read:user, repo"},
+                    )
+                ]
+            ),
+        )
+        body = client.get("/github/").get_data(as_text=True)
+        assert "granted scopes" in body
+        assert "read:user" in body
+        assert "repo" in body
+        assert "Missing the" not in body
+
+    def test_warns_when_repo_scope_missing(self, client, app, monkeypatch):
+        _logged_in_client(client)
+        _create_account(app)
+        monkeypatch.setattr(
+            "app.services.github.requests.Session",
+            lambda: _make_fake_session(
+                [
+                    (
+                        "GET",
+                        "/user",
+                        200,
+                        {"id": 42, "login": "ghuser"},
+                        {"X-OAuth-Scopes": "read:user, gist"},
+                    )
+                ]
+            ),
+        )
+        body = client.get("/github/").get_data(as_text=True)
+        assert "Missing the" in body
+
+    def test_falls_back_to_stored_scopes_when_header_unavailable(self, client, app, monkeypatch):
+        _logged_in_client(client)
+        account = _create_account(app)
+        account.scopes = "read:user, repo"
+        db.session.commit()
+        monkeypatch.setattr(
+            "app.services.github.requests.Session",
+            lambda: _make_fake_session([("GET", "/user", 200, {"id": 42, "login": "ghuser"})]),
+        )
+        body = client.get("/github/").get_data(as_text=True)
+        assert "read:user, repo" in body
+
+
+class TestStatusScopes:
+    """The status API reports whether the repo scope is missing (issue #57)."""
+
+    _RATE_LIMIT = (
+        "GET",
+        "/rate_limit",
+        200,
+        {"resources": {"core": {"limit": 5000, "remaining": 4999, "reset": 1700000000, "used": 1}}},
+    )
+
+    def _patch(self, monkeypatch):
+        monkeypatch.setattr(
+            "app.services.github.requests.Session",
+            lambda: _make_fake_session([self._RATE_LIMIT]),
+        )
+
+    def test_status_flags_missing_repo_scope(self, client, app, monkeypatch):
+        _logged_in_client(client)
+        account = _create_account(app)
+        account.scopes = "read:user"
+        db.session.commit()
+        self._patch(monkeypatch)
+        data = client.get("/github/api/status").get_json()
+        assert data["repo_scope_missing"] is True
+
+    def test_status_repo_scope_present(self, client, app, monkeypatch):
+        _logged_in_client(client)
+        account = _create_account(app)
+        account.scopes = "read:user,repo"
+        db.session.commit()
+        self._patch(monkeypatch)
+        data = client.get("/github/api/status").get_json()
+        assert data["repo_scope_missing"] is False

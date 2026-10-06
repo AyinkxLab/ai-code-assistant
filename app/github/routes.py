@@ -69,9 +69,39 @@ MAX_TREE_LAST_COMMITS = 100
 @bp.route("/")
 @login_required
 def index():
-    """Dashboard showing the user's GitHub connection status."""
+    """Dashboard showing the user's GitHub connection status.
+
+    Displays the scopes GitHub actually *granted* (issue #57), falling back to
+    the scopes captured at connect time, and warns when the ``repo`` scope is
+    missing (private repositories will not load).
+    """
     account = GithubAccount.query.filter_by(user_id=current_user.id).first()
-    return render_template("github/index.html", account=account)
+    granted_scopes = _granted_scopes(account)
+    repo_scope_missing = bool(granted_scopes) and "repo" not in granted_scopes
+    return render_template(
+        "github/index.html",
+        account=account,
+        granted_scopes=granted_scopes,
+        repo_scope_missing=repo_scope_missing,
+    )
+
+
+def _granted_scopes(account: GithubAccount | None) -> list[str]:
+    """Return the scopes to display for the dashboard.
+
+    Prefers a live ``GET /user`` read (the token's current grants) and falls
+    back to the scopes stored at connect time. Best-effort: a failed read never
+    breaks the dashboard, and the value is used for display only — never for an
+    authorization decision (issue #57).
+    """
+    if account is None:
+        return []
+    stored = [scope.strip() for scope in (account.scopes or "").split(",") if scope.strip()]
+    try:
+        live = _client().get_granted_scopes()
+    except GitHubError:
+        live = []
+    return live or stored
 
 
 @bp.route("/connect")
@@ -154,7 +184,13 @@ def callback():
         db.session.add(account)
     account.github_user_id = user["id"]
     account.github_username = user.get("login", "")
-    account.scopes = token_data.get("scope", "")
+    # Prefer the scopes GitHub reports via the X-OAuth-Scopes header, falling
+    # back to the token-exchange `scope` value. Informational only (issue #57).
+    try:
+        granted = client.get_granted_scopes()
+    except GitHubError:
+        granted = []
+    account.scopes = ",".join(granted) if granted else token_data.get("scope", "")
     account.token_type = token_data.get("token_type", "bearer")
     account.set_access_token(token)
     account.set_refresh_token(token_data.get("refresh_token"))
@@ -216,6 +252,8 @@ def status():
     }
     if account is not None:
         payload["rate_limit"] = _rate_limit_summary()
+        scopes = [scope.strip() for scope in (account.scopes or "").split(",") if scope.strip()]
+        payload["repo_scope_missing"] = bool(scopes) and "repo" not in scopes
     return jsonify(payload)
 
 

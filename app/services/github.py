@@ -356,6 +356,23 @@ class GitHubClient:
     def get_user(self) -> dict:
         return self._get("/user")
 
+    def get_granted_scopes(self) -> list[str]:
+        """Return the OAuth scopes GitHub actually granted this token (issue #57).
+
+        GitHub reports the granted scopes in the ``X-OAuth-Scopes`` response
+        header of an authenticated request (the token exchange response also
+        carries them, but the header reflects the token's *current* grants).
+        The result is informational only: it is never used to make
+        authorization decisions, which always depend on the token itself.
+        """
+        response = self.session.get(f"{self.api_url}/user", timeout=self.timeout)
+        if response.status_code >= 400:
+            # Re-issue through _request so failures become the typed errors the
+            # rest of the app expects (auth, rate limit, not found, ...).
+            self._request("GET", "/user")
+        raw = response.headers.get("X-OAuth-Scopes", "")
+        return [scope.strip() for scope in raw.split(",") if scope.strip()]
+
     def get_rate_limit(self) -> dict | None:
         """Return the caller's core rate-limit budget, or ``None`` if unknown.
 
