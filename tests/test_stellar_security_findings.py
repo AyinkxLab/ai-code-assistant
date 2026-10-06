@@ -34,13 +34,15 @@ def _create_user(username, email):
 
 
 def _project(owner, files):
-    workspace = Workspace(user_id=owner.id, name="Stellar workspace")
-    db.session.add(workspace)
-    db.session.commit()
+    workspace = Workspace.query.filter_by(user_id=owner.id).first()
+    if workspace is None:
+        workspace = Workspace(user_id=owner.id, name="Stellar workspace")
+        db.session.add(workspace)
+        db.session.commit()
     project = Project(
         workspace_id=workspace.id,
         user_id=owner.id,
-        name="Stellar project",
+        name=f"Stellar project {Project.query.filter_by(user_id=owner.id).count() + 1}",
         source="archive",
         status="ready",
         file_count=len(files),
