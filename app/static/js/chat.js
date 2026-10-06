@@ -38,6 +38,14 @@
   var stickToBottom = true;
   var SCROLL_STICK_THRESHOLD_PX = 40;
 
+  // Conversation list pagination (issue: paginate conversation list/history).
+  var CONVERSATIONS_PER_PAGE = 20;
+  var listPage = 1;
+  var listPages = 1;
+  var listTotal = 0;
+  var listLoading = false;
+  var listQuery = "";
+
   var CSRF_TOKEN = null;
 
   function getCsrf() {
@@ -651,20 +659,66 @@
     updateTimestamps(li);
   }
 
-  function refreshList() {
-    var query = searchEl ? searchEl.value.trim() : "";
-    api("/chat/conversations" + (query ? "?q=" + encodeURIComponent(query) : ""))
-      .then(function (items) {
-        listEl.innerHTML = "";
+  function renderLoadMore() {
+    var existing = document.getElementById("conversation-load-more");
+    if (existing) existing.remove();
+    if (listPage >= listPages) return;
+    var button = document.createElement("button");
+    button.type = "button";
+    button.id = "conversation-load-more";
+    button.className = "btn btn-ghost btn-sm conversation-load-more";
+    button.textContent = "Load more";
+    button.addEventListener("click", function () {
+      fetchConversations(listPage + 1);
+    });
+    listEl.appendChild(button);
+  }
+
+  function fetchConversations(page) {
+    if (listLoading) return Promise.resolve();
+    listLoading = true;
+    var params = new URLSearchParams();
+    params.set("page", String(page));
+    params.set("per_page", String(CONVERSATIONS_PER_PAGE));
+    if (listQuery) params.set("q", listQuery);
+    return api("/chat/conversations?" + params.toString())
+      .then(function (data) {
+        var items = data && data.items ? data.items : [];
+        if (page <= 1) listEl.innerHTML = "";
         items.forEach(addListItem);
-        if (items.length === 0) {
+        listPage = data && data.page ? data.page : page;
+        listPages = data && data.pages ? data.pages : 1;
+        listTotal = data && data.total != null ? data.total : items.length;
+        if (listTotal === 0) {
           listEl.innerHTML = '<p class="sidebar-empty">No conversations match your search.</p>';
+        } else {
+          renderLoadMore();
         }
         updateTimestamps(listEl);
       })
       .catch(function (error) {
         flashError(error.message);
+      })
+      .finally(function () {
+        listLoading = false;
       });
+  }
+
+  function refreshList() {
+    listQuery = searchEl ? searchEl.value.trim() : "";
+    listPage = 1;
+    listPages = 1;
+    return fetchConversations(1);
+  }
+
+  // Infinite scroll: fetch the next page when the sidebar reaches the bottom.
+  if (listEl) {
+    listEl.addEventListener("scroll", function () {
+      if (listLoading || listPage >= listPages) return;
+      if (listEl.scrollHeight - listEl.scrollTop - listEl.clientHeight < 40) {
+        fetchConversations(listPage + 1);
+      }
+    });
   }
 
   // Apply syntax highlighting once markdown has been rendered (issue #44).

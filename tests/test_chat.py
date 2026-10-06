@@ -2,6 +2,7 @@
 
 from app.extensions import db as database
 from app.models import Conversation, ConversationShare, Message, Notification, User
+from app.models import Conversation, ConversationShare, Message, Notification, User
 
 
 def _register(client, username="tester", email="tester@example.com"):
@@ -64,6 +65,46 @@ class TestChatPage:
         assert 'tabindex="0"' in html
         assert 'aria-label="Open conversation: Accessible chat"' in html
         assert 'class="conversation-time"' in html
+
+
+class TestConversationPagination:
+    def test_list_conversations_returns_paginated_envelope(self, client, db):
+        _register(client)
+        for index in range(5):
+            _create_conversation(client, title=f"Chat {index}")
+        response = client.get("/chat/conversations?page=1&per_page=2")
+        assert response.status_code == 200
+        payload = response.get_json()
+        assert set(payload.keys()) == {"items", "page", "pages", "total"}
+        assert payload["page"] == 1
+        assert payload["pages"] == 3
+        assert payload["total"] == 5
+        assert len(payload["items"]) == 2
+
+    def test_list_conversations_defaults(self, client, db):
+        _register(client)
+        _create_conversation(client, title="Only one")
+        payload = client.get("/chat/conversations").get_json()
+        assert payload["page"] == 1
+        assert payload["pages"] == 1
+        assert payload["total"] == 1
+        assert len(payload["items"]) == 1
+
+    def test_list_conversations_rejects_invalid_bounds(self, client, db):
+        _register(client)
+        _create_conversation(client, title="Bounds")
+        assert client.get("/chat/conversations?page=0").status_code == 400
+        assert client.get("/chat/conversations?page=-1").status_code == 400
+        assert client.get("/chat/conversations?per_page=0").status_code == 400
+        assert client.get("/chat/conversations?per_page=101").status_code == 400
+
+    def test_list_conversations_beyond_last_page_is_empty(self, client, db):
+        _register(client)
+        _create_conversation(client, title="Solo")
+        payload = client.get("/chat/conversations?page=5&per_page=10").get_json()
+        assert payload["items"] == []
+        assert payload["page"] == 5
+        assert payload["total"] == 1
 
 
 class TestConversationApi:
@@ -147,14 +188,14 @@ class TestConversationApi:
         _register(client, username="other", email="other@example.com")
         response = client.get("/chat/conversations")
         assert response.status_code == 200
-        assert response.get_json() == []
+        assert response.get_json()["items"] == []
 
     def test_search_conversations(self, client, db):
         _register(client)
         _create_conversation(client, title="Refactor session")
         _create_conversation(client, title="Bug hunt")
         response = client.get("/chat/conversations?q=refactor")
-        titles = [c["title"] for c in response.get_json()]
+        titles = [c["title"] for c in response.get_json()["items"]]
         assert titles == ["Refactor session"]
 
     def test_rename_conversation(self, client, db):
@@ -242,6 +283,45 @@ class TestMessageApi:
         response = client.get(f"/chat/conversations/{conversation['id']}")
         messages = response.get_json()["messages"]
         assert [m["role"] for m in messages] == ["user", "assistant"]
+
+    def test_history_paginates_messages(self, client, db):
+        _register(client)
+        conversation = _create_conversation(client)
+        stored = db.session.get(Conversation, conversation["id"])
+        for index in range(10):
+            stored.messages.append(Message(role="user", content=f"msg {index}"))
+        db.session.commit()
+
+        response = client.get(
+            f"/chat/conversations/{conversation['id']}?page=1&per_page=4"
+        )
+        assert response.status_code == 200
+        payload = response.get_json()
+        assert payload["page"] == 1
+        assert payload["pages"] == 3
+        assert payload["total"] == 10
+        assert len(payload["messages"]) == 4
+
+    def test_history_defaults_and_bounds(self, client, db):
+        _register(client)
+        conversation = _create_conversation(client)
+        stored = db.session.get(Conversation, conversation["id"])
+        stored.messages.append(Message(role="user", content="only"))
+        db.session.commit()
+
+        payload = client.get(f"/chat/conversations/{conversation['id']}").get_json()
+        assert payload["page"] == 1
+        assert payload["total"] == 1
+        assert len(payload["messages"]) == 1
+
+        assert (
+            client.get(f"/chat/conversations/{conversation['id']}?page=0").status_code
+            == 400
+        )
+        assert (
+            client.get(f"/chat/conversations/{conversation['id']}?per_page=0").status_code
+            == 400
+        )
 
 
 class TestStreaming:
@@ -419,7 +499,7 @@ class TestShareApi:
         response = client.get(f"/chat/conversations/{conversation['id']}")
         assert response.status_code == 200
         assert response.get_json()["title"] == "Readable"
-        listed = [c["id"] for c in client.get("/chat/conversations").get_json()]
+        listed = [c["id"] for c in client.get("/chat/conversations").get_json()["items"]]
         assert conversation["id"] in listed
 
     def test_unshared_user_cannot_read(self, client, db, login):
@@ -435,7 +515,7 @@ class TestShareApi:
         response = client.get(f"/chat/conversations/{conversation['id']}")
         assert response.status_code == 404
         assert conversation["id"] not in [
-            c["id"] for c in client.get("/chat/conversations").get_json()
+            c["id"] for c in client.get("/chat/conversations").get_json()["items"]
         ]
 
     def test_share_is_owner_only(self, client, db, login):
