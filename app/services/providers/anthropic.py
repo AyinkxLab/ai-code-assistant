@@ -179,7 +179,6 @@ class AnthropicProvider(LLMProvider):
             model=data.get("model") or payload["model"],
             prompt_tokens=usage.get("input_tokens"),
             completion_tokens=usage.get("output_tokens"),
-            total_tokens=(usage.get("input_tokens") or 0) + (usage.get("output_tokens") or 0),
             latency_seconds=time.perf_counter() - started,
         )
 

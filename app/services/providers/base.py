@@ -130,13 +130,19 @@ class ProviderResponse:
     model: str | None = None
     prompt_tokens: int | None = None
     completion_tokens: int | None = None
-    total_tokens: int | None = None
     latency_seconds: float | None = None
+
+    @property
+    def total_tokens(self) -> int | None:
+        """Total tokens used, or ``None`` when the provider reports no usage."""
+        if self.prompt_tokens is None and self.completion_tokens is None:
+            return None
+        return (self.prompt_tokens or 0) + (self.completion_tokens or 0)
 
     @property
     def usage(self) -> TokenUsage:
         """Token usage metadata for this completion (issue #2)."""
-        return TokenUsage.from_counts(self.prompt_tokens, self.completion_tokens, self.total_tokens)
+        return TokenUsage.from_counts(self.prompt_tokens, self.completion_tokens)
 
     def to_dict(self) -> dict[str, Any]:
         """Serialize the response for logging/telemetry."""
