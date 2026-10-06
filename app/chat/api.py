@@ -16,8 +16,8 @@ the same model/service layer.
 
 from __future__ import annotations
 
-import json
 import functools
+import json
 
 from flask import Blueprint, current_app, jsonify, request
 from flask_login import current_user
@@ -25,8 +25,7 @@ from flask_login import current_user
 from app.chat import routes as chat_routes
 from app.extensions import db
 from app.models import Conversation, Message
-from app.services import ratelimit
-from app.services import streaming
+from app.services import ratelimit, streaming
 from app.services.llm import LLMProviderError, provider_status
 from app.services.provider_config import ProviderSettingsError, apply_settings, build_provider
 from app.services.providers.retry import RetryingProvider
