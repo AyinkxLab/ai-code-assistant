@@ -7,6 +7,7 @@ Machine-facing REST surface for the chat feature:
     GET    /api/conversations/<id>                 conversation with its messages
     POST   /api/conversations/<id>/messages        send a message (LLM reply)
     DELETE /api/conversations/<id>                 delete (cascade)
+    GET    /api/rate-limit                         remaining chat quota for the caller
 
 All routes require authentication and are owner-scoped. Errors use RFC 7807
 (``application/problem+json``) documents so API clients never receive HTML error
@@ -16,7 +17,6 @@ the same model/service layer.
 
 from __future__ import annotations
 
-import datetime as dt
 import functools
 
 from flask import Blueprint, current_app, jsonify, request
@@ -61,7 +61,8 @@ def _rate_limit_headers(bucket: str) -> dict:
     """Return informational rate-limit headers for the given bucket."""
     max_hits = current_app.config.get("RATE_LIMIT_CHAT_MAX", 30)
     window = current_app.config.get("RATE_LIMIT_CHAT_WINDOW", 60)
-    daily_cap = current_app.config.get("RATE_LIMIT_CHAT_DAILY", 500)
+    # The daily cap only applies to message sends, not to reads (list/get).
+    daily_cap = current_app.config.get("RATE_LIMIT_CHAT_DAILY", 500) if bucket == "message" else 0
     remaining, reset_after = ratelimit.peek(
         f"api-chat:{bucket}:user:{current_user.get_id()}",
         max_hits=max_hits,
@@ -76,20 +77,30 @@ def _rate_limit_headers(bucket: str) -> dict:
 
 
 def _rate_limit(bucket: str):
-    """Enforce the per-user chat rate limit, returning 429 as RFC 7807."""
+    """Enforce the per-user chat rate limit, returning 429 as RFC 7807.
+
+    Applies both the in-memory sliding window and the persistent daily cap; the
+    stricter of the two wins. The daily counter lives in the database, so it
+    survives restarts and is shared across workers.
+    """
 
     def decorator(view):
         @functools.wraps(view)
         def wrapper(*args, **kwargs):
             max_hits = current_app.config.get("RATE_LIMIT_CHAT_MAX", 30)
             window = current_app.config.get("RATE_LIMIT_CHAT_WINDOW", 60)
-            daily_cap = current_app.config.get("RATE_LIMIT_CHAT_DAILY", 500)
-            allowed, retry_after, reason = ratelimit.consume(
-                f"api-chat:{bucket}:user:{current_user.get_id()}",
-                max_hits=max_hits,
-                window=window,
-                daily_cap=daily_cap,
+            # The daily cap only applies to message sends, not to reads.
+            daily_cap = (
+                current_app.config.get("RATE_LIMIT_CHAT_DAILY", 500) if bucket == "message" else 0
             )
+            key = f"api-chat:{bucket}:user:{current_user.get_id()}"
+
+            allowed, retry_after = ratelimit.consume(key, max_hits=max_hits, window=window)
+            reason = "window"
+            if allowed and daily_cap:
+                allowed, retry_after = ratelimit.daily_consume(key, max_hits=daily_cap)
+                reason = "daily"
+
             if not allowed:
                 detail = (
                     "Daily message limit reached. Please retry tomorrow."
@@ -101,6 +112,7 @@ def _rate_limit(bucket: str):
                 for header, value in _rate_limit_headers(bucket).items():
                     response.headers[header] = value
                 return response
+
             response = view(*args, **kwargs)
             if hasattr(response, "headers"):
                 for header, value in _rate_limit_headers(bucket).items():
@@ -124,16 +136,14 @@ def rate_limit_status():
     max_hits = current_app.config.get("RATE_LIMIT_CHAT_MAX", 30)
     window = current_app.config.get("RATE_LIMIT_CHAT_WINDOW", 60)
     daily_cap = current_app.config.get("RATE_LIMIT_CHAT_DAILY", 500)
+    key = f"api-chat:message:user:{current_user.get_id()}"
     remaining, reset_after = ratelimit.peek(
-        f"api-chat:message:user:{current_user.get_id()}",
+        key,
         max_hits=max_hits,
         window=window,
         daily_cap=daily_cap,
     )
-    daily_remaining, daily_reset = ratelimit.peek_daily(
-        f"api-chat:message:user:{current_user.get_id()}",
-        daily_cap=daily_cap,
-    )
+    daily_remaining, daily_reset = ratelimit.peek_daily(key, daily_cap=daily_cap)
     return jsonify(
         {
             "limit": max_hits,

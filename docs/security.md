@@ -142,8 +142,8 @@ configuration (see "Known limitations / planned hardening").
 - `tests/test_plugin_lifecycle.py` — lifecycle hooks and plugin events.
 - `tests/test_plugins_cli.py` — CLI commands, `--json`, exit codes, URL
   refusal, and no implicit grants.
-- `tests/test_chat_rate_limit.py` — per-user limit enforcement, 429 with
-  `Retry-After`, persistent tracking across requests, and window/daily reset.
+- `tests/test_rate_limit_endpoints.py` — per-user limit enforcement, 429 with
+  `Retry-After`, and persistent daily-cap tracking across requests.
 
 ## Known limitations / planned hardening
 

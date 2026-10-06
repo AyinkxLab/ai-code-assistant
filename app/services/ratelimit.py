@@ -1,14 +1,12 @@
-"""Small sliding-window rate limiter with a persistent daily cap.
+"""Small in-memory sliding-window rate limiter.
 
 Used for the public collaboration endpoints (invitation accept/decline/landing)
 and the presence heartbeat, and — via :func:`per_user_limit` — for the costly
 per-user Phase 5 endpoints (project import, search, chat/stream, analysis, #106).
 Limits are per-key (typically per client IP, or per user id for the endpoint
 limiter) over a configurable window. The limiter is process-local, which is
-acceptable for the default single-worker deployments and CI; the daily cap is
-backed by the existing Postgres store so it survives restarts and is shared
-across workers. Multi-worker deployments should back the sliding window with a
-shared store too (out of scope here).
+acceptable for the default single-worker deployments and CI; multi-worker
+deployments should back it with a shared store (out of scope here).
 """
 
 from __future__ import annotations
@@ -16,93 +14,14 @@ from __future__ import annotations
 import functools
 import threading
 import time
-from datetime import date, datetime, timezone
+from datetime import UTC, datetime, timedelta
 
 from flask import current_app, jsonify
 from flask_login import current_user
-from sqlalchemy import func
 
 _ENTRIES: dict[str, list[float]] = {}
 _LOCK = threading.Lock()
-
-_DAILY_ENTRIES: dict[str, int] = {}
 _DAILY_LOCK = threading.Lock()
-
-
-def _today() -> str:
-    return datetime.now(timezone.utc).date().isoformat()
-
-
-def _daily_key(key: str) -> str:
-    return f"{key}:{_today()}"
-
-
-def _daily_count(key: str) -> int:
-    """Return the persisted daily hit count for ``key`` (today, UTC)."""
-    daily_key = _daily_key(key)
-    try:
-        from app.extensions import db
-        from app.models import RateLimitDaily
-
-        row = db.session.query(RateLimitDaily).filter_by(key=daily_key).one_or_none()
-        return row.count if row else 0
-    except Exception:
-        with _DAILY_LOCK:
-            return _DAILY_ENTRIES.get(daily_key, 0)
-
-
-def _daily_increment(key: str) -> int:
-    """Increment and return the persisted daily hit count for ``key``."""
-    daily_key = _daily_key(key)
-    try:
-        from app.extensions import db
-        from app.models import RateLimitDaily
-
-        row = db.session.query(RateLimitDaily).filter_by(key=daily_key).one_or_none()
-        if row is None:
-            row = RateLimitDaily(key=daily_key, count=0)
-            db.session.add(row)
-        row.count = (row.count or 0) + 1
-        db.session.commit()
-        return row.count
-    except Exception:
-        db.session.rollback()
-        with _DAILY_LOCK:
-            _DAILY_ENTRIES[daily_key] = _DAILY_ENTRIES.get(daily_key, 0) + 1
-            return _DAILY_ENTRIES[daily_key]
-
-
-def daily_consume(key: str, *, max_hits: int) -> tuple[bool, int]:
-    """Record a hit against the persistent daily cap for ``key``.
-
-    Returns ``(allowed, retry_after_seconds)``. ``retry_after`` is the number of
-    seconds until the next UTC midnight, i.e. when the daily counter resets.
-    """
-    if max_hits <= 0:
-        return True, 0
-    current = _daily_count(key)
-    if current >= max_hits:
-        now = datetime.now(timezone.utc)
-        tomorrow = datetime.combine(
-            now.date(), datetime.min.time(), tzinfo=timezone.utc
-        )
-        tomorrow = tomorrow.replace(hour=0, minute=0, second=0, microsecond=0)
-        from datetime import timedelta
-
-        tomorrow = tomorrow + timedelta(days=1)
-        return False, max(round((tomorrow - now).total_seconds()), 1)
-    _daily_increment(key)
-    return True, 0
-
-
-def daily_count(key: str) -> int:
-    """Return the current persisted daily hit count for ``key``."""
-    return _daily_count(key)
-
-
-def daily_remaining(key: str, *, max_hits: int) -> int:
-    """Return how many daily hits remain for ``key`` (never negative)."""
-    return max(max_hits - _daily_count(key), 0)
 
 
 def _prune(key: str, window: int) -> None:
@@ -235,7 +154,128 @@ def client_key(extra: str = "") -> str:
     return f"{extra}:{ip}"
 
 
+# --------------------------------------------------------------------------- #
+# Persistent daily counters
+# --------------------------------------------------------------------------- #
+# The sliding window above is process-local; a daily cap must survive restarts
+# and be shared by every worker, so it is backed by the ``rate_limits`` table.
+# An in-memory dict is kept as a fallback for when the database is unavailable
+# (e.g. before migrations have run), so chat never hard-fails on the limiter.
+
+_DAILY_ENTRIES: dict[str, int] = {}
+
+
+def _daily_key(key: str) -> str:
+    """Bucket key for ``key`` scoped to the current UTC day."""
+    return f"{key}:{datetime.now(UTC).date().isoformat()}"
+
+
+def _seconds_until_utc_midnight(now: datetime | None = None) -> int:
+    now = now or datetime.now(UTC)
+    tomorrow = (now + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
+    return max(round((tomorrow - now).total_seconds()), 1)
+
+
+def _daily_count(key: str) -> int:
+    """Return the persisted daily hit count for ``key`` (today, UTC)."""
+    daily_key = _daily_key(key)
+    try:
+        from app.models import RateLimit
+
+        row = RateLimit.query.filter_by(key=daily_key).first()
+        return row.hits if row is not None else 0
+    except Exception:  # pragma: no cover - database unavailable
+        return _DAILY_ENTRIES.get(daily_key, 0)
+
+
+def daily_count(key: str) -> int:
+    """Return the persisted daily hit count for ``key``."""
+    return _daily_count(key)
+
+
+def daily_remaining(key: str, *, max_hits: int) -> int:
+    """Return how many daily hits remain for ``key`` (never negative)."""
+    return max(max_hits - _daily_count(key), 0)
+
+
+def daily_consume(key: str, *, max_hits: int) -> tuple[bool, int]:
+    """Record a hit against the persistent daily cap for ``key``.
+
+    Returns ``(allowed, retry_after_seconds)``. ``retry_after`` is the number of
+    seconds until the counter resets (the next UTC midnight) when the caller is
+    over ``max_hits``, and ``0`` otherwise. A ``max_hits`` of ``0`` or less
+    disables the cap.
+    """
+    if max_hits <= 0:
+        return True, 0
+    daily_key = _daily_key(key)
+    now = datetime.now(UTC)
+    try:
+        from app.extensions import db
+        from app.models import RateLimit
+
+        row = RateLimit.query.filter_by(key=daily_key).first()
+        if row is None:
+            row = RateLimit(key=daily_key, window_start=now, hits=1)
+            db.session.add(row)
+            db.session.commit()
+            return True, 0
+        if (row.hits or 0) >= max_hits:
+            return False, _seconds_until_utc_midnight(now)
+        row.hits = (row.hits or 0) + 1
+        db.session.commit()
+        return True, 0
+    except Exception:  # pragma: no cover - database unavailable
+        try:
+            from app.extensions import db
+
+            db.session.rollback()
+        except Exception:
+            pass
+        current = _DAILY_ENTRIES.get(daily_key, 0)
+        if current >= max_hits:
+            return False, _seconds_until_utc_midnight(now)
+        _DAILY_ENTRIES[daily_key] = current + 1
+        return True, 0
+
+
+def peek(
+    key: str,
+    *,
+    max_hits: int,
+    window: int,
+    daily_cap: int = 0,
+) -> tuple[int, int]:
+    """Report ``(remaining, reset_after)`` without recording a hit.
+
+    ``remaining`` is the smaller of the sliding-window and daily budgets so the
+    UI can warn the user before the stricter of the two is exhausted.
+    """
+    remaining = max(max_hits - count(key, window=window), 0)
+    reset_after = retry_after(key, window=window)
+    if daily_cap > 0:
+        daily = daily_remaining(key, max_hits=daily_cap)
+        if daily < remaining:
+            remaining = daily
+            reset_after = _seconds_until_utc_midnight()
+    return remaining, reset_after
+
+
+def peek_daily(key: str, *, daily_cap: int) -> tuple[int, int]:
+    """Report ``(daily_remaining, seconds_until_reset)`` without recording a hit."""
+    if daily_cap <= 0:
+        return 0, 0
+    return daily_remaining(key, max_hits=daily_cap), _seconds_until_utc_midnight()
+
+
+def reset_daily() -> None:
+    """Clear persisted + in-memory daily counters (used by tests)."""
+    with _DAILY_LOCK:
+        _DAILY_ENTRIES.clear()
+
+
 def reset() -> None:
-    """Clear all limiter state (used by tests)."""
+    """Clear all in-memory limiter state (used by tests)."""
     with _LOCK:
         _ENTRIES.clear()
+    reset_daily()

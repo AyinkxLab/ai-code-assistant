@@ -1,8 +1,8 @@
-<%{ extends "base.html" %}
+{% extends "base.html" %}
 
-{{% block title %}}Chat - {{ config.APP_NAME }}{{% endblock %}}
+{% block title %}Chat - {{ config.APP_NAME }}{% endblock %}
 
-{{% block content %}
+{% block content %}
 <div class="chat-layout">
   <aside class="chat-sidebar">
     <div class="sidebar-header">
@@ -12,13 +12,13 @@
     <input id="conversation-search" class="sidebar-search" type="search" placeholder="Search conversations...">
     <ul id="conversation-list" class="conversation-list" aria-label="Conversations">
       {% for conversation in conversations %}
-        <li class="conversation-item{{% if loop.first %} active{{% endif %}}"
+        <li class="conversation-item{% if loop.first %} active{% endif %}"
             data-id="{{ conversation.id }}"
             data-title="{{ conversation.title }}"
             tabindex="0"
             role="button"
             aria-label="Open conversation: {{ conversation.title }}"
-            {{% if loop.first %}aria-current="true"{{% endif %}>
+            {% if loop.first %}aria-current="true"{% endif %}>
           <span class="conversation-title">{{ conversation.title }}</span>
           <span class="conversation-meta">{{ conversation.message_count }} messages <time class="conversation-time" datetime="{{ conversation.updated_at.isoformat() if conversation.updated_at else '' }}"></time></span>
         </li>
@@ -37,7 +37,7 @@
       </div>
       <div id="project-file-viewer" class="file-viewer" hidden>
         <div class="file-viewer-header">
-          <button id="project-file-back" class="btn btn-ghost btn-sm" type="button">&lrarr; Back</button>
+          <button id="project-file-back" class="btn btn-ghost btn-sm" type="button">&larr; Back</button>
           <button id="project-file-ask" class="btn btn-primary btn-sm" type="button">Ask about this file</button>
         </div>
         <p id="project-file-meta" class="file-viewer-meta"></p>
@@ -109,8 +109,8 @@
         <button id="send-message" class="btn btn-primary" type="button" aria-label="Send message">Send</button>
       </div>
       <p id="composer-error" class="composer-error" role="alert" hidden></p>
-      <p id="chat-rate-limit" class="chat-hint" aria-live="polite" data-limit-per-minute="" data-limit-per-day=""></p>
       <p id="conversation-usage" class="chat-hint" aria-live="polite"></p>
+      <p id="chat-rate-limit" class="chat-hint" aria-live="polite" hidden></p>
       <p id="chat-composer-hint" class="chat-hint">Press Enter to send, Shift+Enter for a new line. The assistant streams its reply. Markdown and code blocks are supported. Attach up to 4 png/jpeg/webp images.</p>
     </div>
   </section>
@@ -125,40 +125,10 @@
   <button id="delete-conversation" class="btn btn-ghost btn-sm btn-danger" type="button">Delete</button>
   <div id="share-links-list" aria-live="polite"></div>
 </div>
-{{% endblock %}}
+{% endblock %}
 
-{{% block scripts %}}
+{% block scripts %}
 <script src="{{ url_for('static', filename='js/chat_markdown.js') }}"></script>
 <script src="{{ url_for('static', filename='js/chat.js') }}"></script>
 <script src="{{ url_for('static', filename='js/chat_files.js') }}"></script>
-<script>
-  (function () {
-    var el = document.getElementById('chat-rate-limit');
-    if (!el) return;
-    var perMinute = parseInt(el.getAttribute('data-limit-per-minute'), 10);
-    var perDay = parseInt(el.getAttribute('data-limit-per-day'), 10);
-    if (!isFinite(perMinute) || perMinute <= 0) {
-      var statusUrl = '/api/chat/rate-limit';
-      fetch(statusUrl, { credentials: 'same-origin' })
-        .then(function (resp) { return resp.ok ? resp.json() : null; })
-        .then(function (data) {
-          if (!data) return;
-          el.setAttribute('data-limit-per-minute', data.per_minute || '');
-          el.setAttribute('data-limit-per-day', data.per_day || '');
-          renderRateLimit(data);
-        })
-        .catch(function () {});
-    } else {
-      renderRateLimit({ per_minute: perMinute, per_day: perDay });
-    }
-
-    function renderRateLimit(data) {
-      var parts = [];
-      if (data.per_minute) parts.push(data.per_minute + ' requests/minute');
-      if (data.per_day) parts.push(data.per_day + ' requests/day');
-      if (!parts.length) return;
-      el.textContent = 'Rate limit: ' + parts.join(', ') + '. Slow down if you hit the cap.';
-    }
-  })();
-</script>
-{{% endblock %}}
+{% endblock %}
