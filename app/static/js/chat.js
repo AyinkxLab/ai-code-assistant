@@ -651,12 +651,67 @@
     updateTimestamps(li);
   }
 
+  function addHighlightedSnippet(parent, match) {
+    var snippet = match.snippet || {};
+    var item = document.createElement("div");
+    item.className = "conversation-search-match";
+    item.dataset.messageId = match.message_id;
+
+    var role = document.createElement("span");
+    role.className = "conversation-search-role";
+    role.textContent = match.role === "assistant" ? "Assistant" : "You";
+    item.appendChild(role);
+
+    item.appendChild(document.createTextNode(snippet.before || ""));
+    var highlighted = document.createElement("mark");
+    highlighted.textContent = snippet.match || "";
+    item.appendChild(highlighted);
+    item.appendChild(document.createTextNode(snippet.after || ""));
+    parent.appendChild(item);
+  }
+
+  function addSearchResult(result) {
+    var li = document.createElement("li");
+    li.className = "conversation-item conversation-search-result";
+    li.dataset.id = result.conversation_id;
+    li.dataset.title = result.title || "Untitled conversation";
+    li.tabIndex = 0;
+    li.setAttribute("role", "button");
+    li.setAttribute("aria-label", "Open conversation: " + li.dataset.title);
+
+    var title = document.createElement("span");
+    title.className = "conversation-title";
+    title.textContent = li.dataset.title;
+    li.appendChild(title);
+
+    var matches = document.createElement("div");
+    matches.className = "conversation-search-matches";
+    (result.matches || []).forEach(function (match) {
+      addHighlightedSnippet(matches, match);
+    });
+    if (!result.matches || result.matches.length === 0) {
+      var titleMatch = document.createElement("span");
+      titleMatch.className = "conversation-search-title-match";
+      titleMatch.textContent = "Title match";
+      matches.appendChild(titleMatch);
+    }
+    li.appendChild(matches);
+    listEl.appendChild(li);
+  }
+
   function refreshList() {
     var query = searchEl ? searchEl.value.trim() : "";
-    api("/chat/conversations" + (query ? "?q=" + encodeURIComponent(query) : ""))
-      .then(function (items) {
-        listEl.innerHTML = "";
-        items.forEach(addListItem);
+    var endpoint = query
+      ? "/chat/search?q=" + encodeURIComponent(query)
+      : "/chat/conversations";
+    api(endpoint).then(function (items) {
+        if (query) {
+          listEl.innerHTML = "";
+          items.forEach(addSearchResult);
+        } else {
+          listEl.innerHTML = "";
+          items.forEach(addListItem);
+        }
         if (items.length === 0) {
           listEl.innerHTML = '<p class="sidebar-empty">No conversations match your search.</p>';
         }

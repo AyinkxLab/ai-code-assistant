@@ -34,8 +34,7 @@ from dataclasses import dataclass
 from app.services.providers import get_provider
 from app.services.providers.base import (
     ProviderResponse,
-    message_content,
-    message_role,
+    normalize_messages,
 )
 
 logger = logging.getLogger(__name__)
@@ -45,19 +44,8 @@ DEFAULT_MAX_ENTRIES = 256
 
 
 def _canonical_messages(messages) -> list[dict]:
-    """Canonicalize messages, keeping every field (e.g. image attachments).
-
-    Message objects are reduced to ``role``/``content``; dict messages keep all
-    of their keys so two requests that differ only by attached images do not
-    collide in the cache.
-    """
-    canonical: list[dict] = []
-    for message in messages:
-        if isinstance(message, dict):
-            canonical.append({key: message[key] for key in sorted(message)})
-        else:
-            canonical.append({"role": message_role(message), "content": message_content(message)})
-    return canonical
+    """Canonicalize model-visible message fields for stable cache keys."""
+    return normalize_messages(messages)
 
 
 def prompt_hash(messages) -> str:
@@ -82,6 +70,18 @@ def _canonical_params(params) -> str:
     )
 
 
+def _provider_config(provider) -> dict:
+    """Return stable, non-secret settings that can affect a provider result."""
+    config = {
+        "class": f"{type(provider).__module__}.{type(provider).__qualname__}",
+        "name": getattr(provider, "name", ""),
+    }
+    for attr in ("base_url", "model", "temperature", "max_tokens", "version", "supports_vision"):
+        if hasattr(provider, attr):
+            config[attr] = getattr(provider, attr)
+    return config
+
+
 def request_signature(
     *,
     user_id,
@@ -90,6 +90,7 @@ def request_signature(
     params,
     messages,
     key_version: str = "",
+    provider_config=None,
 ) -> str:
     """Build the cache key for one completion request.
 
@@ -104,6 +105,7 @@ def request_signature(
             _canonical_params(params),
             prompt_hash(messages),
             str(key_version or ""),
+            _canonical_params(provider_config),
         ]
     )
     return hashlib.sha256(material.encode("utf-8")).hexdigest()
@@ -265,6 +267,7 @@ def cached_chat(
         params=params,
         messages=messages,
         key_version=_user_key_version(user, provider.name),
+        provider_config=_provider_config(provider),
     )
     cached = _cache.get(signature)
     if cached is not None:
