@@ -1,6 +1,6 @@
-{% extends "base.html" %}
+<%extends "base.html" %}
 
-{% block title %}{{ project.name }} - {{ config.APP_NAME }}{% endblock %}
+{% block title %}{{ project.name }} - {{ config.APP_NAME }}{{ endblock %}}
 
 {% block content %}
 <div class="github-header">
@@ -11,9 +11,9 @@
       / {{ project.name }}
     </h1>
     <p class="repo-meta">
-      {{ project.source }}{% if project.source_url %} · <span id="project-source-url">{{ project.source_url }}</span>{% endif %}
-      · <span id="project-status" class="project-status project-status-{{ project.status }}">{{ project.status }}</span>
-      {% if project.status == 'ready' %} · {{ project.file_count }} files{% endif %}
+      {{ project.source }}{% if project.source_url %}} &#183; &#183; <span id="project-source-url">{{ project.source_url }}</span>{% endif %}
+      &#183; &#183; <span id="project-status" class="project-status project-status-{{ project.status }}">{{ project.status }}</span>
+      {% if project.status == 'ready' %} &#183; &#183; {{ project.file_count }} files{% endif %}
     </p>
   </div>
   <div class="repo-toolbar">
@@ -74,7 +74,7 @@
     <div id="tab-chat" class="project-tab" hidden>
       <div id="review-summary" class="review-summary collab-panel">
         <h3>Review threads</h3>
-        <p class="sidebar-empty">Loading review threads…</p>
+        <p class="sidebar-empty">Loading review threads&#8230;</p>
       </div>
       <div class="project-chat-layout">
         <aside class="chat-sessions" aria-label="Chat sessions">
@@ -135,7 +135,7 @@
 
     <div id="tab-stellar" class="project-tab" hidden>
       <div id="stellar-detection-output" class="analysis-output">
-        <p class="sidebar-empty">Loading Stellar/Soroban detection…</p>
+        <p class="sidebar-empty">Loading Stellar/Soroban detection&#8230;</p>
       </div>
 
       <section id="stellar-live-panel" class="prompt-editor stellar-live-panel">
@@ -149,16 +149,16 @@
         <div class="repo-toolbar">
           <button id="stellar-network-refresh" class="btn btn-ghost btn-sm" type="button">Refresh network status</button>
         </div>
-        <div id="stellar-network-output"><p class="sidebar-empty">Loading network status…</p></div>
+        <div id="stellar-network-output"><p class="sidebar-empty">Loading network status&#8230;</p></div>
 
         <div class="repo-toolbar">
-          <input id="stellar-account-input" class="sidebar-search" type="text" placeholder="G… account address">
+          <input id="stellar-account-input" class="sidebar-search" type="text" placeholder="G&#8230; account address">
           <button id="stellar-account-btn" class="btn btn-primary btn-sm" type="button">Inspect account</button>
         </div>
         <div id="stellar-account-output"></div>
 
         <div class="repo-toolbar">
-          <input id="stellar-contract-input" class="sidebar-search" type="text" placeholder="C… contract id">
+          <input id="stellar-contract-input" class="sidebar-search" type="text" placeholder="C&#8230; contract id">
           <input id="stellar-wasm-input" class="sidebar-search" type="text" placeholder="wasm hash (hex, optional)">
           <button id="stellar-contract-btn" class="btn btn-primary btn-sm" type="button">Inspect contract</button>
         </div>
@@ -186,9 +186,19 @@
     </div>
   </section>
 </div>
+<script type="application/json" id="project-search-highlight-config">
+{
+  "highlightClass": "search-highlight",
+  "maxHighlights": 500,
+  "caseSensitive": false,
+  "regex": false
+}
+</script>
 {% endblock %}
 
 {% block scripts %}
 <script src="{{ url_for('static', filename='js/stellar_tools.js') }}"></script>
 <script src="{{ url_for('static', filename='js/project.js') }}"></script>
+<script src="{{ url_for('static', filename='js/search_highlight.js') }}"></script>
+<script src="{{ url_for('static', filename='js/highlight.js') }}"></script>
 {% endblock %}

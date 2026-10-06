@@ -10,6 +10,13 @@
 // Oversized files are left as plain text so a large document never blocks
 // rendering, and already-highlighted blocks are skipped so repeated calls
 // (e.g. during SSE streaming) never re-render the whole document.
+//
+// Search-match highlighting (issue: highlight search matches in the file
+// viewer) is applied as a separate pass over the already-rendered block.
+// The match term is passed in by the caller and never mutates the stored
+// content: we only wrap text nodes in `<mark>` elements and always escape
+// the term and the matched text before inserting it into the DOM.
+// This keeps the highlighting safe against XSS.
 (function () {
   "use strict";
 
@@ -17,14 +24,14 @@
   //: very large files unsearchable; this guards the client-only path too.
   var MAX_HIGHLIGHT_CHARS = 200000;
 
-  //: Minimal keyword sets for the stored languages the vendored grammar does
-  //: not ship. The tokenizer still handles comments, strings, and numbers.
+  //: Minimal keyword sets for the stored languages the vendored grammar
+  //: does not ship. The tokenizer still handles comments, strings, and numbers.
   var FALLBACK_KEYWORDS = {
     solidity: [
       "pragma", "solidity", "contract", "interface", "library", "function", "modifier",
       "event", "struct", "enum", "mapping", "address", "bool", "string", "bytes", "uint",
       "uint256", "int", "int256", "payable", "public", "private", "internal", "external",
-      "view", "pure", "constant", "immutable", "memory", "storage", "calldata", "returns",
+      "view", "pure", "constant", "immutable", "memory", "storage", "caldata", "returns",
       "return", "require", "assert", "revert", "emit", "new", "delete", "if", "else",
       "for", "while", "do", "break", "continue", "try", "catch", "import", "is", "using",
       "constructor", "receive", "fallback", "virtual", "override", "true", "false",
@@ -48,7 +55,7 @@
   }
 
   function escapeRegExp(text) {
-    return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    return text.replace(/[.*+?~$|{}\[\]\\\\]/g, "\\$&");
   }
 
   var LANGUAGE_CLASS_RE = /(?:^|\s)(?:language|lang)-([\w+#-]+)/i;
@@ -63,8 +70,8 @@
     var keywords = FALLBACK_KEYWORDS[language] || [];
     var kw = keywords.length ? keywords.map(escapeRegExp).join("|") : "$^";
     var pattern = new RegExp(
-      "\\/\\/[^\\n]*|#[^\\n]*|\\/\\*[\\s\\S]*?\\*\\/" +
-        "|\"(?:\\\\.|[^\"\\\\])*\"|'(?:\\\\.|[^'\\\\])*'|`(?:\\\\.|[^`\\\\])*`" +
+      "\\\\/\\\\/[^\\n]*|#[^\\n]*|\\\\/\\\\*[\\s\\S]*?\\\\*\\\\/" +
+        '|"(?:\\\\\\\\.|[^"\\\\\\\\])*"|\\'(\\\\\\\\.|[^\\'\\\\\\\\])*\\'|`(?:\\\\\\\\.|[^`\\\\\\\\])*`' +
         "|\\b(?:" + kw + ")\\b" +
         "|\\b\\d+(?:\\.\\d+)?\\b",
       "g",
@@ -86,6 +93,62 @@
     }
     out += escapeHtml(code.slice(last));
     return out;
+  }
+
+  // Wraps every case-insensitive occurrence of `term` in a text node with
+  // a <mark> element. Returns the number of matches found. The term and
+  // matched text are escaped before being inserted into the DOM.
+  function highlightTextNode(node, term) {
+    var text = node.nodeValue || "";
+    if (!text || !term) return 0;
+    var pattern = new RegExp(escapeRegExp(term), "gi");
+    var matches = text.match(pattern);
+    if (!matches || !matches.length) return 0;
+
+    var fragment = document.createDocumentFragment();
+    var last = 0;
+    var match;
+    pattern.lastIndex = 0;
+    while ((match = pattern.exec(text)) !== null) {
+      if (match.index > last) {
+        fragment.appendChild(document.createTextNode(text.slice(last, match.index)));
+      }
+      var mark = document.createElement("mark");
+      mark.className = "search-highlight";
+      mark.textContent = match[0];
+      fragment.appendChild(mark);
+      last = match.index + match[0].length;
+      if (match[0].length === 0) pattern.lastIndex += 1; // guard against zero-width
+    }
+    if (last < text.length) {
+      fragment.appendChild(document.createTextNode(text.slice(last)));
+    }
+    node.parentNode.replaceChild(fragment, node);
+    return matches.length;
+  }
+
+  // Highlights every occurrence of `term` in the given root (or the whole
+  // document). Only text nodes are touched, so the stored content is not
+  // mutated and markup is never interpreted as HTML. Returns the number of
+  // matches highlighted.
+  function highlightMatches(root, term) {
+    if (!root || typeof window === "undefined") return 0;
+    if (!term || typeof term !== "string") return 0;
+    var scope = root.querySelectorAll ? root : document;
+    var walker = document.createTreeWalker(scope, NodeFilter.SHOW_TEXT);
+    var nodes = [];
+    var node;
+    while ((node = walker.nextNode())) {
+      // Skip text inside already-highlighted marks so repeated calls do not
+      // nest markers.
+      if (node.parentNode && node.parentNode.className === "search-highlight") continue;
+      nodes.push(node);
+    }
+    var total = 0;
+    for (var i = 0; i < nodes.length; i += 1) {
+      total += highlightTextNode(nodes[i], term);
+    }
+    return total;
   }
 
   function apply(root) {
@@ -133,6 +196,7 @@
 
   window.AICASyntaxHighlight = {
     apply: apply,
+    highlightMatches: highlightMatches,
     MAX_HIGHLIGHT_CHARS: MAX_HIGHLIGHT_CHARS,
     FALLBACK_KEYWORDS: FALLBACK_KEYWORDS,
   };
