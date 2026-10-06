@@ -81,7 +81,7 @@ def backoff_delay(attempt: int, *, random_func: Callable[[], float] = random.ran
     clients from retrying in lockstep.
     """
     attempt = max(0, int(attempt))
-    ceiling = min(_max_delay(), _base_delay() * (2 ** attempt))
+    ceiling = min(_max_delay(), _base_delay() * (2**attempt))
     if ceiling <= 0:
         return 0.0
     try:
@@ -140,7 +140,6 @@ class ProviderError(Exception):
     """
 
     def __init__(
-        self,
         self,
         message: str,
         *,

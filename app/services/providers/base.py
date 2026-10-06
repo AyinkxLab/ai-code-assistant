@@ -20,13 +20,12 @@ must perform all network/SDK work internally so callers stay vendor-neutral.
 from __future__ import annotations
 
 import logging
+import random
+import time
 from abc import ABC, abstractmethod
 from collections.abc import Iterable, Iterator
 from dataclasses import dataclass
-import random
-import time
 from typing import Any, ClassVar
-
 
 logger = logging.getLogger(__name__)
 
@@ -243,13 +242,11 @@ class LLMProvider(ABC):
     def _record_failure(self) -> None:
         self._consecutive_failures += 1
         if self._consecutive_failures >= self.circuit_breaker_threshold:
-            self._circuit_open_until = (
-                time.monotonic() + self.circuit_breaker_cooldown_seconds
-            )
+            self._circuit_open_until = time.monotonic() + self.circuit_breaker_cooldown_seconds
 
     def _backoff_delay(self, attempt: int) -> float:
         """Jittered exponential backoff for the given zero-based ``attempt``."""
-        base = self.backoff_base_seconds * (2 ** attempt)
+        base = self.backoff_base_seconds * (2**attempt)
         capped = min(base, self.backoff_max_seconds)
         # Full jitter: uniform in [0, capped] avoids thundering herds.
         return random.uniform(0.0, capped)
@@ -312,9 +309,7 @@ class LLMProvider(ABC):
         params: dict[str, Any] | None = None,
     ) -> ProviderResponse:
         """Like :meth:`chat` but with bounded retries and backoff."""
-        return self._run_with_retry(
-            lambda: self.chat(messages, model=model, params=params)
-        )
+        return self._run_with_retry(lambda: self.chat(messages, model=model, params=params))
 
     def stream_with_retry(
         self,
@@ -328,9 +323,7 @@ class LLMProvider(ABC):
         Only the initial connection is retried; once chunks start flowing the
         generator is yielded through without re-running the request.
         """
-        iterator = self._run_with_retry(
-            lambda: self.stream(messages, model=model, params=params)
-        )
+        iterator = self._run_with_retry(lambda: self.stream(messages, model=model, params=params))
         yield from iterator
 
     def complete(self, messages: Iterable[Any], *, stream: bool = False) -> str:

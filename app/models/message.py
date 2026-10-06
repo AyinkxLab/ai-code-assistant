@@ -1,14 +1,14 @@
 """Chat message model."""
 
-from enum import Enum
 from datetime import UTC, datetime
+from enum import StrEnum
 
 from app.extensions import db
 
 ERROR_STATUSES = ("retrying", "failed")
 
 
-class ErrorStatus(str, Enum):
+class ErrorStatus(StrEnum):
     """Provider failure states persisted on a message."""
 
     RETRYING = "retrying"

@@ -27,7 +27,7 @@ from app.models import Conversation, Message
 from app.services import ratelimit
 from app.services.llm import LLMProviderError, provider_status
 from app.services.provider_config import ProviderSettingsError, apply_settings, build_provider
-from app.services.providers.retry import RetryingProvider, RetryExhaustedError, CircuitOpenError
+from app.services.providers.retry import CircuitOpenError, RetryExhaustedError, RetryingProvider
 
 bp = Blueprint("chat_api", __name__, url_prefix="/api")
 

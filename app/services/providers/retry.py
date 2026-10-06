@@ -101,14 +101,10 @@ class RetryingProvider(LLMProvider):
         self.max_delay = _env_float("LLM_RETRY_MAX_DELAY", DEFAULT_MAX_DELAY)
         if max_delay is not None:
             self.max_delay = max(0.0, max_delay)
-        self.circuit_threshold = _env_int(
-            "LLM_CIRCUIT_THRESHOLD", DEFAULT_CIRCUIT_THRESHOLD
-        )
+        self.circuit_threshold = _env_int("LLM_CIRCUIT_THRESHOLD", DEFAULT_CIRCUIT_THRESHOLD)
         if circuit_threshold is not None:
             self.circuit_threshold = max(0, circuit_threshold)
-        self.circuit_cooldown = _env_float(
-            "LLM_CIRCUIT_COOLDOWN", DEFAULT_CIRCUIT_COOLDOWN
-        )
+        self.circuit_cooldown = _env_float("LLM_CIRCUIT_COOLDOWN", DEFAULT_CIRCUIT_COOLDOWN)
         if circuit_cooldown is not None:
             self.circuit_cooldown = max(0.0, circuit_cooldown)
         self._consecutive_failures = 0
@@ -138,10 +134,7 @@ class RetryingProvider(LLMProvider):
 
     def _record_failure(self) -> None:
         self._consecutive_failures += 1
-        if (
-            self.circuit_threshold > 0
-            and self._consecutive_failures >= self.circuit_threshold
-        ):
+        if self.circuit_threshold > 0 and self._consecutive_failures >= self.circuit_threshold:
             self._circuit_opened_at = time.monotonic()
 
     def _guard_circuit(self) -> None:
@@ -250,7 +243,6 @@ class RetryingProvider(LLMProvider):
         yield from iterator
 
 
-
 def get_retrying_provider(name: str | None = None) -> RetryingProvider:
     """Resolve a provider (``name`` or ``LLM_PROVIDER``) wrapped in retries."""
     from app.services.providers.registry import get_provider
@@ -259,9 +251,9 @@ def get_retrying_provider(name: str | None = None) -> RetryingProvider:
 
 
 __all__ = [
+    "DEFAULT_BASE_DELAY",
     "DEFAULT_CIRCUIT_COOLDOWN",
     "DEFAULT_CIRCUIT_THRESHOLD",
-    "DEFAULT_BASE_DELAY",
     "DEFAULT_MAX_DELAY",
     "DEFAULT_MAX_RETRIES",
     "TRANSIENT_PROVIDER_ERRORS",
