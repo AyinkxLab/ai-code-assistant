@@ -162,6 +162,7 @@ class OpenAIProvider(LLMProvider):
             model=data.get("model") or payload["model"],
             prompt_tokens=usage.get("prompt_tokens"),
             completion_tokens=usage.get("completion_tokens"),
+            total_tokens=usage.get("total_tokens"),
             latency_seconds=time.perf_counter() - started,
         )
 

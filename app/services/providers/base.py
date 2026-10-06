@@ -130,19 +130,30 @@ class ProviderResponse:
     model: str | None = None
     prompt_tokens: int | None = None
     completion_tokens: int | None = None
+    total_tokens: int | None = None
     latency_seconds: float | None = None
 
-    @property
-    def total_tokens(self) -> int | None:
-        """Total tokens used, or ``None`` when the provider reports no usage."""
-        if self.prompt_tokens is None and self.completion_tokens is None:
-            return None
-        return (self.prompt_tokens or 0) + (self.completion_tokens or 0)
+    def __post_init__(self) -> None:
+        """Derive ``total_tokens`` when the provider reports only the parts.
+
+        Vendors such as OpenAI/Anthropic may omit the total, and most call sites
+        (audit logging, the message columns, ``to_dict``) read ``total_tokens``
+        directly, so it must never stay ``None`` while the parts are known.
+        ``TokenUsage.from_counts`` applies the same rule to the ``usage`` view.
+        """
+        if self.total_tokens is None and (
+            self.prompt_tokens is not None or self.completion_tokens is not None
+        ):
+            object.__setattr__(
+                self,
+                "total_tokens",
+                (self.prompt_tokens or 0) + (self.completion_tokens or 0),
+            )
 
     @property
     def usage(self) -> TokenUsage:
         """Token usage metadata for this completion (issue #2)."""
-        return TokenUsage.from_counts(self.prompt_tokens, self.completion_tokens)
+        return TokenUsage.from_counts(self.prompt_tokens, self.completion_tokens, self.total_tokens)
 
     def to_dict(self) -> dict[str, Any]:
         """Serialize the response for logging/telemetry."""

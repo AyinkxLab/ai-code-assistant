@@ -62,6 +62,7 @@ class MockProvider(LLMProvider):
             model=model or self.models[0],
             prompt_tokens=usage["prompt_tokens"],
             completion_tokens=usage["completion_tokens"],
+            total_tokens=usage["total_tokens"],
             latency_seconds=time.perf_counter() - started,
         )
 
