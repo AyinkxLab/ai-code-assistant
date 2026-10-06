@@ -7,13 +7,8 @@ of matches, and binary or content-less files are skipped for content matches.
 
 The literal (default) mode escapes LIKE wildcards so user input matches
 literally; regex mode compiles the pattern safely (an invalid pattern raises
-:Sclass `SearchQueryError`, which the route maps to a 400) and applies Python's
-`re` engine while still respecting the result limit.
-
-Content matches are served from the dedicated full-text index (issue #199,
-see `app.services.fts`) when the storage engine supports FTS; otherwise the
-service falls back to the LIKE based scan. Path matches always use the
-column index on `project_files.path`.
+:class:`SearchQueryError`, which the route maps to a 400) and applies Python's
+``re`` engine while still respecting the result limit.
 """
 
 from __future__ import annotations
@@ -25,7 +20,6 @@ from sqlalchemy import func
 
 from app.extensions import db
 from app.models import ProjectFile
-from app.services import fts
 
 _SNIPPET_RADIUS = 80
 _SCOPES = ("all", "path", "content")
@@ -45,9 +39,9 @@ def _escape_like(value: str) -> str:
 
 
 def _snippet_span(text: str, start: int, end: int) -> str:
-    """Return a short snippet surrounding the `[start, end)` match."""
+    """Return a short snippet surrounding the ``[start, end)`` match."""
     start = max(0, start - _SNIPPET_RADIUS)
-    end = min((len(text), end + _SNIPPET_RADIUS)
+    end = min(len(text), end + _SNIPPET_RADIUS)
     prefix = "…" if start > 0 else ""
     suffix = "…" if end < len(text) else ""
     snippet = text[start:end].replace("\n", " ").replace("\r", "")
@@ -55,7 +49,7 @@ def _snippet_span(text: str, start: int, end: int) -> str:
 
 
 def _snippet(text: str, needle: str) -> str | None:
-    """Return a short snippet surrounding the first literal match of `needle`."""
+    """Return a short snippet surrounding the first literal match of ``needle``."""
     index = text.lower().find(needle)
     if index < 0:
         return None
@@ -63,7 +57,7 @@ def _snippet(text: str, needle: str) -> str | None:
 
 
 def _compile_regex(query: str, case_sensitive: bool):
-    """Compile `query` as a regex, raising :Sclass:`SearchQueryError` if invalid."""
+    """Compile ``query`` as a regex, raising :class:`SearchQueryError` if invalid."""
     flags = 0 if case_sensitive else re.IGNORECASE
     try:
         return re.compile(query, flags)
@@ -75,7 +69,7 @@ def _normalize_limit(limit) -> int:
     max_results = current_app.config["PROJECT_SEARCH_MAX_RESULTS"]
     if limit is None:
         limit = max_results
-    return max(1, min((int(limit), max_results))
+    return max(1, min(int(limit), max_results))
 
 
 def _base_criteria(project_id: int, language: str | None) -> list:
@@ -94,60 +88,6 @@ def _row_result(file: ProjectFile, matched: str) -> dict:
     }
 
 
-def _literal_path_search(
-    project_id: int,
-    query: str,
-    *,
-    case_sensitive: bool,
-    limit: int,
-    language: str | None,
-) -> list[dict]:
-    needle = query if case_sensitive else query.lower()
-    pattern = f"%{"_escape_like(needle)}%"
-    path_col = ProjectFile.path if case_sensitive else func.lower(ProjectFile.path)
-    rows = (
-        db.session.query(ProjectFile)
-        .filter(*_base_criteria(project_id, language), path_col.like(pattern, escape="\\"))
-        .order_by(ProjectFile.path.asc())
-        .limit(limit)
-        .all()
-    )
-    return [_row_result(file, "path") for file in rows]
-
-
-def _literal_content_search(
-    project_id: int,
-    query: str,
-    *,
-    case_sensitive: bool,
-    limit: int,
-    language: str | None,
-) -> list[dict]:
-    """LIKE-based content scan used when FTS is unavailable."""
-    needle = query if case_sensitive else query.lower()
-    pattern = f"[%{_escape_like(needle)}%"
-    content_col = ProjectFile.content if case_sensitive else func.lower(ProjectFile.content)
-    rows = (
-        db.session.query(ProjectFile)
-        .filter(
-            *_base_criteria(project_id, language),
-            ProjectFile.is_binary.is(False),
-            ProjectFile.content.isnot(None),
-            content_col.like(pattern, escape="\\"),
-        )
-        .order_by(ProjectFile.path.asc())
-        .limit(limit)
-        .all()
-    )
-    results = []
-    for file in rows:
-        result = _row_result(file, "content")
-        if file.content:
-            result["snippet"] = _snippet(file.content, needle)
-        results.append(result)
-    return results
-
-
 def _literal_search(
     project_id: int,
     query: str,
@@ -157,44 +97,48 @@ def _literal_search(
     language: str | None,
     scope: str,
 ) -> list[dict]:
+    needle = query if case_sensitive else query.lower()
+    pattern = f"%{_escape_like(needle)}%"
+    path_col = ProjectFile.path if case_sensitive else func.lower(ProjectFile.path)
+    content_col = ProjectFile.content if case_sensitive else func.lower(ProjectFile.content)
+    criteria = _base_criteria(project_id, language)
+
+    def rows_for(*extra):
+        return (
+            db.session.query(ProjectFile)
+            .filter(*criteria, *extra)
+            .order_by(ProjectFile.path.asc())
+            .limit(limit)
+            .all()
+        )
+
+    path_rows = rows_for(path_col.like(pattern, escape="\\")) if scope in ("all", "path") else []
+    content_rows = (
+        rows_for(
+            ProjectFile.is_binary.is_(False),
+            ProjectFile.content.isnot(None),
+            content_col.like(pattern, escape="\\"),
+        )
+        if scope in ("all", "content")
+        else []
+    )
+
     results: list[dict] = []
     seen: set[int] = set()
-
-    if scope in ("all", "path"):
-        for result in _literal_path_search(
-            project_id,
-            query,
-            case_sensitive=case_sensitive,
-            limit=limit,
-            language=language,
-        ):
-            if len(results) >= limit:
-                break
-            results.append(result)
-
-    if scope in ("all", "content") and len(results) < limit:
-        remaining = limit - len(results)
-        if fts.available():
-            content_rows = fts.search_content(
-                project_id,
-                query,
-                case_sensitive=case_sensitive,
-                limit=remaining,
-                language=language,
-            )
-        else:
-            content_rows = _literal_content_search(
-                project_id,
-                query,
-                case_sensitive=case_sensitive,
-                limit=remaining,
-                language=language,
-            )
-        for result in content_rows:
-            if len(results) >= limit:
-                break
-            results.append(result)
-
+    combined = [
+        *((f, "path") for f in path_rows),
+        *((f, "content") for f in content_rows),
+    ]
+    for file, matched in combined:
+        if len(results) >= limit:
+            break
+        if file.id in seen:
+            continue
+        seen.add(file.id)
+        result = _row_result(file, matched)
+        if matched == "content" and file.content:
+            result["snippet"] = _snippet(file.content, needle)
+        results.append(result)
     return results
 
 
@@ -208,7 +152,7 @@ def _regex_search(
 ) -> list[dict]:
     criteria = _base_criteria(project_id, language)
     if scope == "content":
-        criteria.append(ProjectFile.is_binary.is(False))
+        criteria.append(ProjectFile.is_binary.is_(False))
         criteria.append(ProjectFile.content.isnot(None))
     candidates = (
         db.session.query(ProjectFile)
@@ -244,15 +188,15 @@ def search_project(
     scope: str = "all",
     regex: bool = False,
 ) -> dict:
-    """Search `project_id` for `query` and return bounded results.
+    """Search ``project_id`` for ``query`` and return bounded results.
 
-    Filters compose with the query string API: `language` restricts to files
-    whose language matches (case-insensitive), `scope` is `all`/`path`/
-    `content`, and `regex` switches from literal to regular-expression
-    matching. Returns `{"query", "total", "results", "language", "scope",
-    "regex"}` where each result is a file with `path`, `size`,
-    `language`, `matched` (`path` or `content`), and an optional
-    `snippet`. An invalid regex or scope raises :class:`SearchQueryError`.
+    Filters compose with the query string API: ``language`` restricts to files
+    whose language matches (case-insensitive), ``scope`` is ``all``/``path``/
+    ``content``, and ``regex`` switches from literal to regular-expression
+    matching. Returns ``{"query", "total", "results", "language", "scope",
+    "regex"}`` where each result is a file with ``path``, ``size``,
+    ``language``, ``matched`` (``path`` or ``content``), and an optional
+    ``snippet``. An invalid regex or scope raises :class:`SearchQueryError`.
     """
     query = (query or "").strip()
     scope = (scope or "all").strip().lower()

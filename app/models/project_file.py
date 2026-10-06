@@ -3,10 +3,7 @@
 Stores sanitized metadata for every file in an imported project plus, for
 plain-text files under the size cap, a bounded copy of the file content that
 powers project-wide search and AI context retrieval. Binary or oversized files
-are stored with `content=None` so search and analysis can skip them.
-
-The dedicated full-text index (issue #199) is maintained in `app.services.fts.
-It is built from these rows and kept consistent on import/refresh.
+are stored with ``content=None`` so search and analysis can skip them.
 """
 
 from datetime import UTC, datetime

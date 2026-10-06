@@ -1,18 +1,14 @@
 """In-process background workers for project imports.
 
-Imports are offloaded to a bounded `ThreadPoolExecutor` so the HTTP request
-returns immediately with the project in `indexing` status; the client polls
-`'GET /workspaces/api/workspaces/<id>/projects` for the `progress` percentage
-and terminal `status`/`error_message`.
+Imports are offloaded to a bounded ``ThreadPoolExecutor`` so the HTTP request
+returns immediately with the project in ``indexing`` status; the client polls
+``GET /workspaces/api/workspaces/<id>/projects`` for the ``progress`` percentage
+and terminal ``status``/``error_message``.
 
 No new external dependencies: the worker pushes its own Flask app context and
 reuses the existing importing services. Tests can swap the executor via
-:Func:set_executor` (e.g. to a fake that records submissions) and run jobs
-deterministically with :func:run_import_job`.
-
-After a successful import the dedicated full-text index is rebuilt from the
-canonical `project_files` rows (issue #199) so search stays consistent with the
-stored files.
+:func:`set_executor` (e.g. to a fake that records submissions) and run jobs
+deterministically with :func:`run_import_job`.
 """
 
 from __future__ import annotations
@@ -24,7 +20,6 @@ from datetime import UTC, datetime
 from app.extensions import db
 from app.models import Project, User
 from app.models.project import STATUS_FAILED, STATUS_INDEXING, STATUS_READY
-from app.services import fts
 
 logger = logging.getLogger(__name__)
 
@@ -45,24 +40,15 @@ def _set_progress(project_id: int, progress: int) -> None:
     project = db.session.get(Project, project_id)
     if project is None:
         return
-    project.progress = max(0, min((int(progress), 100))
+    project.progress = max(0, min(int(progress), 100))
     db.session.commit()
 
 
-def _rebuild_search_index(project_id: int) -> None:
-    """Rebuild the FTS index for a project, tolerating engines without FTS."""
-    try:
-        fts.rebuild(project_id)
-    except Exception:  # pragma: no cover - indexing must never fail an import
-        logger.exception("FTS index rebuild failed for project %s", project_id)
-
-
 def run_import_job(app, project_id: int, task) -> None:
-    """Run `task(project, user, set_progress)` and finalize the project.
+    """Run ``task(project, user, set_progress)`` and finalize the project.
 
-    On success the project becomes `ready` at 100% and the full-text index is
-    rebuilt. On any failure it becomes `failed` with the error message stored
-    (never raised to the request)."""
+    On success the project becomes ``ready`` at 100%. On any failure it becomes
+    ``failed`` with the error message stored (never raised to the request)."""
     with app.app_context():
         try:
             project = db.session.get(Project, project_id)
@@ -70,8 +56,6 @@ def run_import_job(app, project_id: int, task) -> None:
                 return
             user = db.session.get(User, project.user_id)
             task(project, user, lambda pct: _set_progress(project_id, pct))
-
-            _rebuild_search_index(project_id)
 
             project = db.session.get(Project, project_id)
             project.status = STATUS_READY

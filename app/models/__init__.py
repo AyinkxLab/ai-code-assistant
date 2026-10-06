@@ -11,7 +11,6 @@ from app.models.audit_log import AuditLog
 from app.models.conversation import Conversation
 from app.models.conversation_share import ConversationShare
 from app.models.file_analysis import FileAnalysis
-import app.models.fts as fts
 from app.models.github_account import GithubAccount
 from app.models.invitation import WorkspaceInvitation
 from app.models.message import Message
@@ -71,5 +70,4 @@ __all__ = [
     "WorkspaceInvitation",
     "WorkspaceMember",
     "WorkspaceSettings",
-    "fts",
 ]

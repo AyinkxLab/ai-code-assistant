@@ -3,7 +3,8 @@
 Configuration is loaded from environment variables so the same codebase can
 run locally, in CI, and in production without modification. Sensitive values
 such as the database password and secret key must never be committed to the
-repository; supply them through environment variables or a local `.env` file (see `.env.example`).
+repository; supply them through environment variables or a local ``.env``
+file (see ``.env.example``).
 """
 
 import json
@@ -17,9 +18,9 @@ from sqlalchemy.pool import StaticPool
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 # Load environment variables from a .env file if one exists. This is a
-	# convenience for local development only; production deployments should
-	# provide variables via the container/platform environment.
-	load_dotenv(BASE_DIR / ".env")
+# convenience for local development only; production deployments should
+# provide variables via the container/platform environment.
+load_dotenv(BASE_DIR / ".env")
 
 
 def _db_uri() -> str:
@@ -27,18 +28,18 @@ def _db_uri() -> str:
 
     Defaults to a local SQLite file so the application is runnable with zero
     configuration for development, while still being PostgreSQL-first in
-    production (see `docker-compose.yml`).
+    production (see ``docker-compose.yml``).
 
     For file-backed SQLite databases the parent directory is created
     automatically (SQLAlchemy does not create parent folders itself).
     """
     uri = os.getenv(
         "DATABASE_URL",
-        f"sqlite://{BASE_DIR / 'instance' / 'app.db'}",
+        f"sqlite:///{BASE_DIR / 'instance' / 'app.db'}",
     )
-    if uri.startswith("sqlite:///") and "sqlite://:memory:" not in uri:
+    if uri.startswith("sqlite:///") and "sqlite:///:memory:" not in uri:
         db_file = Path(uri.replace("sqlite:///", "", 1))
-        db_file.parent.mkddirs(parents=True, exist_ok=True)
+        db_file.parent.mkdir(parents=True, exist_ok=True)
     return uri
 
 
@@ -76,10 +77,10 @@ class Config:
     LLM_PROVIDER = os.getenv("LLM_PROVIDER", "mock")
 
     # LLM resilience (issue #29): transient provider failures (network errors,
-    # HTTP 429/5xx) are retried with exponential backoff plus jritter, while
-    # non-transient errors (e.g. 401/400) fail fast. `LLM_MAX_RETRIES` is the
+    # HTTP 429/5xx) are retried with exponential backoff plus jitter, while
+    # non-transient errors (e.g. 401/400) fail fast. ``LLM_MAX_RETRIES`` is the
     # number of retries after the initial attempt; delays are in seconds and
-    # capped at `LLM_RETRY_MAX_DELAY`.
+    # capped at ``LLM_RETRY_MAX_DELAY``.
     LLM_MAX_RETRIES = int(os.getenv("LLM_MAX_RETRIES", "3"))
     LLM_RETRY_BASE_DELAY = float(os.getenv("LLM_RETRY_BASE_DELAY", "0.5"))
     LLM_RETRY_MAX_DELAY = float(os.getenv("LLM_RETRY_MAX_DELAY", "8.0"))
@@ -99,7 +100,7 @@ class Config:
     # Pre-flight token/cost estimate (issue #104). The rate is only used to turn
     # an estimated token count into a rough USD figure shown before sending.
     LLM_ESTIMATE_USD_PER_1K_TOKENS = float(os.getenv("LLM_ESTIMATE_USD_PER_1K_TOKENS", "0.002"))
-    # Structured chat audit logging (issue #17). `CHAT_AUDIT_LOG_LEVEL` may be
+    # Structured chat audit logging (issue #17). ``CHAT_AUDIT_LOG_LEVEL`` may be
     # any logging level or OFF to disable.
     CHAT_AUDIT_LOG_ENABLED = os.getenv("CHAT_AUDIT_LOG_ENABLED", "1") == "1"
     CHAT_AUDIT_LOG_LEVEL = os.getenv("CHAT_AUDIT_LOG_LEVEL", "INFO")
@@ -109,26 +110,26 @@ class Config:
     # many days before being purged.
     PROMPT_VERSION_RETENTION_DAYS = int(os.getenv("PROMPT_VERSION_RETENTION_DAYS", "30"))
 
-    # Plugin manifest authenticity. ``if-present` preserves the default local
-    # plugin behavior; `required` rejects unsigned and invalid manifests.
+    # Plugin manifest authenticity. ``if-present`` preserves the default local
+    # plugin behavior; ``required`` rejects unsigned and invalid manifests.
     PLUGIN_TRUST_POLICY = os.getenv("PLUGIN_TRUST_POLICY", "if-present")
     PLUGIN_TRUSTED_KEYS = _trusted_plugin_keys()
 
     # Directory scanned by the read-only plugin discovery endpoint (#172).
-    # Discovery only reads `manifest.json` files from plugin subdirectories
+    # Discovery only reads ``manifest.json`` files from plugin subdirectories
     # and never installs, loads, or mutates anything. Defaults to the repo's
-    # `plugins/` directory; point it at a local directory to advertise
+    # ``plugins/`` directory; point it at a local directory to advertise
     # discoverable plugins.
     PLUGIN_DISCOVERY_DIR = os.getenv("PLUGIN_DISCOVERY_DIR", str(BASE_DIR / "plugins"))
 
     # Plugin outbound network policy (#193). Every plugin-triggered request must
-    # pass `app.services.plugin_network`: it is https-only, denies
+    # pass ``app.services.plugin_network``: it is https-only, denies
     # private/loopback/link-local/reserved targets by default, and only reaches
-    # hosts on `PLUGIN_NETWORK_ALLOWLIST` (comma-separated; `*` allows any
-    # public host, `*.example.com` allows subdomains). An empty allowlist
+    # hosts on ``PLUGIN_NETWORK_ALLOWLIST`` (comma-separated; ``*`` allows any
+    # public host, ``*.example.com`` allows subdomains). An empty allowlist
     # denies all plugin outbound requests (fail closed).
     PLUGIN_NETWORK_ALLOWLIST = os.getenv("PLUGIN_NETWORK_ALLOWLIST", "")
-    PLUGIN_NETWORK_HTTPSO_ONLY = os.getenv("PLUGIN_NETWORK_HTTPS_ONLY", "1") == "1"
+    PLUGIN_NETWORK_HTTPS_ONLY = os.getenv("PLUGIN_NETWORK_HTTPS_ONLY", "1") == "1"
     PLUGIN_NETWORK_ALLOW_PRIVATE = os.getenv("PLUGIN_NETWORK_ALLOW_PRIVATE", "0") == "1"
     PLUGIN_NETWORK_TIMEOUT = int(os.getenv("PLUGIN_NETWORK_TIMEOUT", "15"))
     PLUGIN_NETWORK_MAX_BYTES = int(os.getenv("PLUGIN_NETWORK_MAX_BYTES", str(2 * 1024 * 1024)))
@@ -183,7 +184,7 @@ class Config:
     )
     # Project import indexing (#89): run imports in an in-process background
     # worker so the HTTP request returns immediately with the project in
-    # `indexing` status and the client polls `progress`. Disabled in the
+    # ``indexing`` status and the client polls ``progress``. Disabled in the
     # test config for deterministic assertions.
     IMPORT_JOBS_ASYNC = os.getenv("IMPORT_JOBS_ASYNC", "1") == "1"
 
@@ -207,7 +208,7 @@ class Config:
     # decline/landing) and the presence heartbeat. Simple sliding-window limiter
     # in app/services/ratelimit.py; broader per-user AI/import limits are the
     # scope of the umbrella issues (#28/#81/#106).
-    RATE_LIMIT_MAX_REQUESTS = int(os.getenv("RATE_LIMIT_MAX_REQUESTS", "30"))
+    RATE_LIMIT_MAX = int(os.getenv("RATE_LIMIT_MAX", "30"))
     RATE_LIMIT_WINDOW_SECONDS = int(os.getenv("RATE_LIMIT_WINDOW_SECONDS", "300"))
     # Per-user sliding-window limits for the costly Phase 5 endpoints (#106):
     # project import, project search, project chat, chat streaming, and project
@@ -220,7 +221,109 @@ class Config:
     RATE_LIMIT_SEARCH_WINDOW = int(os.getenv("RATE_LIMIT_SEARCH_WINDOW", "60"))
     RATE_LIMIT_CHAT_MAX = int(os.getenv("RATE_LIMIT_CHAT_MAX", "30"))
     RATE_LIMIT_CHAT_WINDOW = int(os.getenv("RATE_LIMIT_CHAT_WINDOW", "60"))
-    RATE_LIMIT_STREAM_MAX = int(os.getenv("RATE_LIMIT_STREAM_MAX", "60"))
+    RATE_LIMIT_STREAM_MAX = int(os.getenv("RATE_LIMIT_STREAM_MAX", "30"))
     RATE_LIMIT_STREAM_WINDOW = int(os.getenv("RATE_LIMIT_STREAM_WINDOW", "60"))
-    RATE_LIMIT_ANALYZE_MAX = int(os.getenv("RATE_LIMIT_ANALYZE_MAX", "10"))
-    RATE_LIMIT_ANALYZE_WINDOW = int(os.getenv("RATE_LIMIT_ANALYZE_WINDOW", "3600"))
+    RATE_LIMIT_ANALYZE_MAX = int(os.getenv("RATE_LIMIT_ANALYZE_MAX", "20"))
+    RATE_LIMIT_ANALYZE_WINDOW = int(os.getenv("RATE_LIMIT_ANALYZE_WINDOW", "300"))
+    # Snapshot export (#107): builds a zip in memory per request, so it gets a
+    # tight per-user limit of its own.
+    RATE_LIMIT_EXPORT_MAX = int(os.getenv("RATE_LIMIT_EXPORT_MAX", "10"))
+    RATE_LIMIT_EXPORT_WINDOW = int(os.getenv("RATE_LIMIT_EXPORT_WINDOW", "3600"))
+    # Optional SMTP for invitation email delivery. When unset, invitations are
+    # delivered as in-app notifications only and the app never crashes on mail.
+    SMTP_HOST = os.getenv("SMTP_HOST", "")
+    SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))
+    SMTP_USER = os.getenv("SMTP_USER", "")
+    SMTP_PASSWORD = os.getenv("SMTP_PASSWORD", "")
+    MAIL_DEFAULT_SENDER = os.getenv("MAIL_DEFAULT_SENDER", "")
+    MAIL_USE_TLS = os.getenv("MAIL_USE_TLS", "1") == "1"
+
+    # Stellar / Soroban integration (Phase 8).
+    # Default network the Stellar service points at. One of: mainnet, testnet,
+    # futurenet, custom. Everything defaults to testnet so the foundation is
+    # safe by default (no real XLM involved).
+    STELLAR_NETWORK = os.getenv("STELLAR_NETWORK", "testnet")
+    # Explicit Horizon / Soroban RPC endpoints. When unset the built-in presets
+    # for STELLAR_NETWORK are used (see app/services/stellar.py). These can be
+    # pointed at a local `stellar-core`/`soroban-rpc` during development.
+    STELLAR_HORIZON_URL = os.getenv("STELLAR_HORIZON_URL", "")
+    STELLAR_RPC_URL = os.getenv("STELLAR_RPC_URL", "")
+    # Request timeout in seconds for outbound Stellar network calls. A short,
+    # fixed timeout keeps SSRF-style probing and slow endpoints bounded.
+    STELLAR_REQUEST_TIMEOUT = int(os.getenv("STELLAR_REQUEST_TIMEOUT", "15"))
+    # Cap on bytes read from a Stellar network response body.
+    STELLAR_MAX_RESPONSE_BYTES = int(os.getenv("STELLAR_MAX_RESPONSE_BYTES", str(2 * 1024 * 1024)))
+    # Maximum ledger keys accepted per Soroban RPC getLedgerEntries call
+    # (the RPC service hard-caps at 200; this keeps the app's own bound lower).
+    STELLAR_RPC_MAX_KEYS = int(os.getenv("STELLAR_RPC_MAX_KEYS", "100"))
+    # When enabled, public-network endpoints are additionally verified (via DNS)
+    # to resolve to a globally routable address before any request is made
+    # (defense-in-depth against SSRF through a misconfigured endpoint).
+    STELLAR_STRICT_HOST_VALIDATION = os.getenv("STELLAR_STRICT_HOST_VALIDATION", "1") == "1"
+
+
+class DevelopmentConfig(Config):
+    """Local development configuration."""
+
+    DEBUG = True
+    SESSION_COOKIE_SECURE = False
+
+
+class TestingConfig(Config):
+    """Configuration used by the automated test suite.
+
+    Uses an in-memory SQLite database and disables CSRF so that test clients
+    do not need to fetch and submit a token for every request.
+    """
+
+    TESTING = True
+    WTF_CSRF_ENABLED = False
+    SQLALCHEMY_DATABASE_URI = os.getenv("TEST_DATABASE_URL", "sqlite:///:memory:")
+    # Run import jobs inline so tests can assert final status deterministically.
+    PROJECT_SEARCH_FTS_ENABLED = False
+    IMPORT_JOBS_ASYNC = False
+    # In-memory SQLite needs a single shared connection, and ``check_same_thread``
+    # is a SQLite-only connect arg. A PostgreSQL test database (issue #20) must
+    # not receive either, or the driver rejects the DSN outright.
+    if SQLALCHEMY_DATABASE_URI.startswith("sqlite"):
+        SQLALCHEMY_ENGINE_OPTIONS: ClassVar[dict] = {
+            "poolclass": StaticPool,
+            "connect_args": {"check_same_thread": False},
+        }
+    else:
+        SQLALCHEMY_ENGINE_OPTIONS: ClassVar[dict] = {}
+
+
+class ProductionConfig(Config):
+    """Production configuration.
+
+    Requires explicit configuration of the secret key and database URL. Fails
+    fast on startup if required settings are missing rather than silently
+    running with insecure defaults.
+    """
+
+    DEBUG = False
+
+    def __init__(self) -> None:
+        if not os.getenv("SECRET_KEY"):
+            raise RuntimeError("SECRET_KEY must be set in the production environment.")
+        if not os.getenv("DATABASE_URL"):
+            raise RuntimeError("DATABASE_URL must be set in the production environment.")
+        if not os.getenv("DATABASE_URL", "").startswith("postgresql"):
+            raise RuntimeError(
+                "Production must use PostgreSQL (DATABASE_URL starting with " "postgresql://)."
+            )
+
+    # Secure session cookie over HTTPS.
+    SESSION_COOKIE_SECURE = True
+    SESSION_COOKIE_HTTPONLY = True
+    SESSION_COOKIE_SAMESITE = "Lax"
+
+
+# Registry used by the application factory via ``create_app(config_name)``.
+config_by_name = {
+    "development": DevelopmentConfig,
+    "testing": TestingConfig,
+    "production": ProductionConfig,
+    "default": DevelopmentConfig,
+}

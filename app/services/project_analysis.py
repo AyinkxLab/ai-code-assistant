@@ -13,7 +13,6 @@ from __future__ import annotations
 import json
 import re
 
-from sqlalchemy import text
 from app.extensions import db
 from app.models import ProjectFile, User, Workspace, WorkspaceMember
 from app.models.workspace_member import (
@@ -40,7 +39,6 @@ except ImportError:  # pragma: no cover - runtime fallback
 MAX_CONTEXT_FILES = 10
 MAX_HISTORY_MESSAGES = 12
 MAX_HISTORY_PATHS = 3
-PROJECT_SEARCH_MAX_RESULTS = 50
 ANALYSIS_KINDS = (
     "architecture",
     "bugs",
@@ -168,153 +166,6 @@ _STOPWORDS = {
 # included.
 
 _ROSTER_ROLE_RANK = {ROLE_OWNER: 0, ROLE_CONTRIBUTOR: 1, ROLE_VIEWER: 2}
-
-
-def _fts_supported() -> bool:
-    """Return True when the current storage engine supports full-text search."""
-    try:
-        engine = db.session.get_bind()
-    except Exception:  # pragma: no cover - defensive
-        return False
-    if engine is None:
-        return False
-    dialect = getattr(engine.dialect, "name", "")
-    if dialect == "sqlite":
-        try:
-            row = db.session.execute(
-                text("SELECT 1 FROM pragma_compile_options WHERE compile_options LIKE '%FTS5%'")
-            ).first()
-            return row is not None
-        except Exception:
-            return False
-    if dialect in ("postgresql", "postgres"):
-        return True
-    return False
-
-
-def _fts_table_name() -> str:
-    return "project_files_fts"
-
-
-def _fts_available() -> bool:
-    """Return True when the FTS index table exists and is usable."""
-    if not _fts_supported():
-        return False
-    try:
-        db.session.execute(
-            text(f"SELECT 1 FROM {_fts_table_name()} LIMIT 1")
-        ).first()
-        return True
-    except Exception:
-        db.session.rollback()
-        return False
-
-
-def rebuild_project_index(project) -> bool:
-    """Rebuild the full-text index for ``project`` from ``project_files``.
-
-    Returns True when the index was rebuilt, False when the storage engine
-    lacks FTS support (callers fall back to LIKE scanning). Safe to call on
-    import/refresh: it is idempotent and only touches rows for this project.
-    """
-    if not _fts_supported():
-        return False
-    table = _fts_table_name()
-    try:
-        db.session.execute(
-            text(f"DELETE FROM {table} WHERE project_id = :pid"),
-            {"pid": project.id},
-        )
-        rows = (
-            db.session.query(ProjectFile)
-            .filter(ProjectFile.project_id == project.id)
-            .all()
-        )
-        for file in rows:
-            if file.content is None:
-                continue
-            db.session.execute(
-                text(
-                    f"INSERT INTO {table} (project_id, path, content) "
-                    "VALUES (:pid, :path, :content)"
-                ),
-                {"pid": project.id, "path": file.path, "content": file.content},
-            )
-        db.session.commit()
-        return True
-    except Exception:  # pragma: no cover - defensive
-        db.session.rollback()
-        return False
-
-
-def _fts_search(project, tokens: list[str], limit: int) -> list[ProjectFile]:
-    """Ranked full-text search over the project's indexed files.
-
-    Returns an empty list when the index is unavailable so the caller can fall
-    back to LIKE scanning.
-    """
-    if not tokens or not _fts_available():
-        return []
-    table = _fts_table_name()
-    query = " OR ".join(tokens)
-    try:
-        rows = db.session.execute(
-            text(
-                f"SELECT path FROM {table} "
-                "WHERE project_id = :pid AND content MATCH :q "
-                "ORDER BY rank LIMIT :lim"
-            ),
-            {"pid": project.id, "q": query, "lim": limit},
-        ).all()
-    except Exception:  # pragma: no cover - defensive
-        db.session.rollback()
-        return []
-    paths = [row[0] for row in rows]
-    if not paths:
-        return []
-    files = (
-        db.session.query(ProjectFile)
-        .filter(ProjectFile.project_id == project.id, ProjectFile.path.in_(paths))
-        .all()
-    )
-    by_path = {f.path: f for f in files}
-    return [by_path[p] for p in paths if p in by_path]
-
-
-def _like_search(project, tokens: list[str], limit: int) -> list[ProjectFile]:
-    """Fallback LIKE-based scan used when FTS is unavailable."""
-    if not tokens:
-        return []
-    files = project.files.all()
-    matches: list[ProjectFile] = []
-    for file in files:
-        if file.content is None:
-            continue
-        lower = file.content.lower()
-        if any(token in lower for token in tokens):
-            matches.append(file)
-        if len(matches) >= limit:
-            break
-    return matches
-
-
-def search_project_files(project, question: str, *, limit: int | None = None) -> list[ProjectFile]:
-    """Return ranked project files matching ``question``.
-
-    Uses the dedicated full-text index when available and falls back to a
-    bounded LIKE scan otherwise. Results are always capped by
-    ``PROJECT_SEARCH_MAX_RESULTS``.
-    """
-    if limit is None:
-        limit = PROJECT_SEARCH_MAX_RESULTS
-    limit = min(limit, PROJECT_SEARCH_MAX_RESULTS)
-    tokens = _keywords(question)
-    if not tokens:
-        return []
-    results = _fts_search(project, tokens, limit)
-    if results:
-        return results[:limit]
-    return _like_search(project, tokens, limit)[:limit]
 
 
 def _escape(value: str) -> str:
@@ -591,12 +442,14 @@ def build_context(
 
     # 3) Direct answer fallback: files whose contents mention a keyword.
     if tokens:
-        for file in search_project_files(project, question):
+        for file in files:
             if len(selected) >= MAX_CONTEXT_FILES:
                 break
             if file.content is None or file in selected:
                 continue
-            selected.append(file)
+            lower = file.content.lower()
+            if any(token in lower for token in tokens):
+                selected.append(file)
 
     blocks = []
     remaining = budget
