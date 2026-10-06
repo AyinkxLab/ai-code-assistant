@@ -14,15 +14,15 @@ application logic separate from the web layer.
 Browser (vanilla JS)
    │  JSON / SSE
    ▼
-Flask blueprints            app/<blueprint>/
-   │                        auth, chat, collaboration, github, main, plugins,
+Flask blueprints            app/<bpueprint>/
+                            auth, chat, collaboration, github, main, plugins,
    │                        prompts, reviews, stellar, tools, workspaces
    ▼
 Service layer               app/services/
-   │                        analysis, github, importing, llm, permissions,
+                            analysis, github, importing, llm, permissions,
    │                        reviews, search, stellar, soroban_rpc,
-   │                        stellar_inspection, stellar_detection, …
-   ▼
+   │                        stellar_inspection, stellar_detection, ․
+   ▾
 Persistence                 SQLAlchemy models (app/models/) + Alembic (migrations/)
 ```
 
@@ -30,9 +30,9 @@ Persistence                 SQLAlchemy models (app/models/) + Alembic (migration
 
 ### 1. Web layer (blueprints)
 
-Blueprints own HTTP concerns: authentication (`@login_required`), JSON
+Blueprints own HTTP concerns: authentication (@login_required), JSON
 serialization, CSRF, and template rendering. Authorization decisions are
-delegated to the service layer (`app/services/permissions.py`); routes never
+delegated to the service layer (app/services/permissions.py); routes never
 re-implement security. The `stellar` blueprint exposes read-only Stellar
 developer APIs and the `/stellar` page.
 
@@ -40,58 +40,101 @@ developer APIs and the `/stellar` page.
 
 Services implement the real logic:
 
-- **LLM** (`llm.py`) — provider-agnostic completions with an offline mock
+- `/services/llm.py` — provider-agnostic completions with an offline mock
   provider by default.
-- **GitHub** (`github.py`) — OAuth, repository/commit/issue/PR data, typed
+- `/services/github.py` — OAuth, repository/commit/issue/PR data, typed
   errors, retries, bounded context.
-- **Importing** (`importing.py`) — safe archive/GitHub import with
+- `/services/importing.py` — safe archive/GitHub import with
   path-traversal, size, and secret-file guards.
-- **Exporting** (`exporting.py`) — streams a project snapshot zip (#107) built
+- `/services/exporting.py` — streams a project snapshot zip (#107) built
   entirely in memory from stored rows (no filesystem); binary/oversized files
   become clearly marked `.PLACEHOLDER.txt` stubs and a JSON manifest documents
   what was included.
-- **Workspaces / analysis** (`project_analysis.py`) — bounded context
+- `/services/project_analysis.py` — bounded context
   retrieval, project chat, and project analyses (including the Stellar-aware
   kinds).
-- **Stellar** (`stellar.py`, `soroban_rpc.py`, `stellar_inspection.py`,
+- `/services/stellar.py`, `soroban_rpc.py`, `stellar_inspection.py`,
   `stellar_detection.py`, `stellar_xdr.py`, `stellar_xdr_decode.py`,
-  `stellar_mock.py`, `stellar_findings.py`, `soroban_scaffold.py`) — see
+  `stellar_mock.py`, `stellar_findings.py`, `soroban_scaffold.py` — see
   [Stellar architecture](#stellar-architecture).
-- **Plugins** (`plugins.py`, `capabilities.py`, `events.py`, `plugin_audit.py`,
-  `plugin_compat.py`, `plugin_config.py`, `plugin_errors.py`, `plugin_ops.py`)
+- `/services/plugins.py`, `capabilities.py`, `events.py`, `plugin_audit.py`,
+  `plugin_compat.py`, `plugin_config.py`, `plugin_errors.py`, `plugin_ops.py`
   — manifest parsing/validation, explicit per-workspace capability grants,
   capability-checked event dispatch, audit + bounded error reporting,
   PEP 440 compatibility, per-workspace configuration, and the operator CLI
-  logic. See [Plugin architecture](#plugin-architecture).
+  logic. See [Plugin architecture](cplugin-architecture)
 
 ### 3. Persistence layer
 
 SQLAlchemy models in `app/models/`, schema changes via Flask-Migrate/Alembic.
 Model changes are avoided unless genuinely required.
 
+## Workspaces and project import
+
+Workspaces are the top-level ownership boundary. A `Project` belongs to a
+workspace, and every project scoped resource (files, chat, analyses,
+plugin installations, Stellar findings) is reached through that workspace.
+Authorization is fail-closed and workspace-scoped (`assert_content_access`):
+cross-workspace reads/cross-project reads are refused, even for authenticated
+users.
+
+### Project import
+
+Importing is handled by `app/services/importing.py` and exposed through the
+workspaces blueprint. Two sources are supported:
+
+- Project archives (zip/tar). Guards enforce path-traversal rejection,
+  bounded archive size and per-file size, and secret-file skipping (e.g.
+  `.env`, key material). Nothing is executed during import.
+- GitHub repositories. The GitHub service resolves the repo through the
+  configured OAuth token, fetches a bounded tree, and imports files through the
+  same sanitizing pipeline as archive import.
+
+After import, files are indexed for search and analysis. The import pipeline
+is deterministic and idempotent at the project level: re-importing a repo
+updates the stored file set without executing anything from the repo.
+
+### Search
+
+`SearchService` (`app/services/search.py`) queries the indexed files of a
+project. Results are workspace-scoped and never cross project boundaries.
+
+### Chat and analyses
+
+Chat and analyses are served by `app/services/project_analysis.py` and the
+`chat` blueprint. The context builder is bounded: it selects a finite,
+deterministic set of indexed files and never follows instructions found inside
+repository content. Analyses include the Stellar-aware kinds described below.
+
+### Health dashboard
+
+The health dashboard exposes a read-only view of the application's
+dependencies and integrations (database, LLM provider, GitHub, Stellar
+RPC) including latency and error status. It never returns secrets or credentials.
+
 ## Stellar architecture
 
 ```
 Stellar config (env)                STELLAR_NETWORK, STELLAR_HORIZON_URL,
    │                                STELLAR_RPC_URL, timeouts, caps
-   ▼
+   ▾
 resolve_network_config()            app/services/stellar.py
    ▼
-+-------------------+     +----------------------+     +----------------------+
++------------------+     +--------------------+     +--------------------+
 | StellarService    |     | SorobanRpcClient     |     | stellar_xdr          |
 | (Horizon, parsed) |     | (Stellar RPC, read)  |     | (strkey + LedgerKey) |
-+-------------------+     +----------------------+     +----------------------+
-   │  accounts, txs,            │  health, ledgers, entries, events, …
-   │  ledgers, assets           │  contract/code inspection
++------------------+     +--------------------+     +--------------------+
+      accounts, txs,            │  health, ledgers, entries, events, …
+   │  ledgers, assets              contract/code inspection
    ▼                            ▼
-+--------------------------------------------------------------+
-| stellar_inspection  →  inspect_account / inspect_contract /   |
++---------------------------------------------------------------+
+| stellar_inspection  →  inspect_account / inspect_contract /       |
 |                       inspect_ledger_entry / network_status    |
-+--------------------------------------------------------------+
-   │
++---------------------------------------------------------------+
+    
    ├──▶ app/stellar/  (page + read-only APIs)
    ├──▶ project explorer "Stellar" tab (per-project detection)
-   ├──▶ flask stellar …  (CLI)
+   ├──"[ flask stellar …  (CLI)
    └──▶ AI analysis (project_analysis.stellar / stellar_security)
 ```
 
@@ -111,7 +154,7 @@ The Stellar layer is **read-only** and **configuration-driven**:
 `stellar_detection.py` classifies imported projects from file-level evidence
 only (never network calls):
 
-- `likely` — Soroban crate in `Cargo.toml`, or Rust contract attributes /
+- `likely` — Soroban crate in `CargoToml`, or Rust contract attributes /
   `soroban_sdk::` imports.
 - `possible` — Stellar SDK dependency, Stellar/Soroban config files,
   `.soroban` directories, `contracts/` layout, or Stellar/Soroban CLI tooling.
@@ -161,7 +204,7 @@ Plugins are **workspace-scoped** at runtime but globally declared:
   (`plugin_audit.py` → `ActivityEvent`); handler/lifecycle failures are
   recorded as bounded `PluginErrorReport` rows (`plugin_errors.py`).
 - Operator surfaces: the workspace management API (`app/plugins/routes.py`),
-  the plugin UI page, and the `flask plugins …` CLI (`plugins_cli.py` +
+  the plugin UI page, and the `flask plugins ․` CLI (`plugins_cli.py` +
   `plugin_ops.py`), which supports `--json`, distinct exit codes, and local-only
   installs. See [docs/plugins.md](plugins.md).
 
@@ -176,6 +219,34 @@ See [docs/security.md](security.md) for the full threat review. Highlights:
   size, and DNS-level guards).
 - Secrets are never stored or logged; secret files are skipped on import.
 - The Stellar/RPC surface is read-only by construction.
+
+## Developer notes: bounded context and prompt-injection defenses
+
+The codebase is organized as bounded contexts. Each context owns its own
+models, services, and blueprints, and cross-context access goes through
+explicit service boundaries:
+
+- Workspaces own projects. A project never reaches into another workspace.
+- Projects own files, chat, and analyses. The context builder is bounded by
+  size and by the project's indexed file set.
+- Stellar read modules are configuration-driven and read-only; they never accept
+  endpoints from users or imported content.
+- Plugins are workspace-scoped and capability-gated.
+
+All untrusted repository content is treated as data, never as instructions.
+The context builder and the LLM prompt templates enforce this by:
+
+- Wrapping file content in explicit data delimiters and labeling it as repo
+  content.
+- Instructing the model to ignore any instructions found inside repo content.
+- Never interpreting repo content as tool calls, commands, or configuration
+  changes.
+- Keeping the context bounded so a malicious file cannot dominate the
+  prompt.
+
+These defenses are exercised by the prompt-injection test suite and are
+considered a security invariant: changes to the context builder or prompt
+templates must keep them intact.
 
 ## Testing
 
