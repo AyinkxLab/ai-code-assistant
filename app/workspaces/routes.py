@@ -73,6 +73,7 @@ from app.models.project import (
     STATUS_INDEXING,
     STATUS_READY,
 )
+from app.models.workspace import generate_slug
 from app.models.workspace_member import (
     MEMBER_ROLES,
     ROLE_OWNER,
@@ -284,9 +285,31 @@ def api_create_workspace():
     name = (data.get("name") or "").strip()
     if not name:
         return jsonify({"error": "A workspace name is required."}), 400
+    slug = generate_slug(name[:200])
+    if not slug:
+        return (
+            jsonify(
+                {"error": "The workspace name must contain at least one alphanumeric character."}
+            ),
+            400,
+        )
+    existing = Workspace.query.filter_by(user_id=current_user.id, slug=slug).first()
+    if existing is not None:
+        return (
+            jsonify(
+                {
+                    "error": f'A workspace with the slug "{slug}" already exists. '
+                    "Choose a different name.",
+                    "slug": slug,
+                    "existing_workspace_id": existing.id,
+                }
+            ),
+            400,
+        )
     workspace = Workspace(
         user_id=current_user.id,
         name=name[:200],
+        slug=slug,
         description=((data.get("description") or "").strip()[:2000] or None),
     )
     db.session.add(workspace)
@@ -303,6 +326,33 @@ def api_update_workspace(workspace_id: int):
         name = (data.get("name") or "").strip()
         if not name:
             return jsonify({"error": "A workspace name is required."}), 400
+        new_slug = generate_slug(name[:200])
+        if not new_slug:
+            return (
+                jsonify(
+                    {
+                        "error": (
+                            "The workspace name must contain at least one alphanumeric character."
+                        )
+                    }
+                ),
+                400,
+            )
+        if new_slug != workspace.slug:
+            existing = Workspace.query.filter_by(user_id=current_user.id, slug=new_slug).first()
+            if existing is not None:
+                return (
+                    jsonify(
+                        {
+                            "error": f'A workspace with the slug "{new_slug}" already exists. '
+                            "Choose a different name.",
+                            "slug": new_slug,
+                            "existing_workspace_id": existing.id,
+                        }
+                    ),
+                    400,
+                )
+            workspace.slug = new_slug
         workspace.name = name[:200]
     if "description" in data:
         workspace.description = (data.get("description") or "").strip()[:2000] or None
