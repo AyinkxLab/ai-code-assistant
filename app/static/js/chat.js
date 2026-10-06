@@ -556,6 +556,7 @@
       var decoder = new TextDecoder();
       var buffer = "";
       var fullText = "";
+      var streamError = null;
 
       while (true) {
         var chunk = await reader.read();
@@ -564,47 +565,71 @@
         var events = buffer.split("\n\n");
         buffer = events.pop();
         events.forEach(function (event) {
-          var line = event.split("\n")[0];
-          if (!line.startsWith("data: ")) return;
+          var lines = event.split("\n");
+          var eventName = "";
+          var dataLine = null;
+          lines.forEach(function (raw) {
+            if (raw.startsWith("event: ")) {
+              eventName = raw.slice(7).trim();
+            } else if (raw.startsWith("data: ")) {
+              dataLine = raw.slice(6);
+            }
+          });
+          if (dataLine === null) return;
           var payload = null;
           try {
-            payload = JSON.parse(line.slice(6));
+            payload = JSON.parse(dataLine);
           } catch (e) {
             return;
           }
-          if (payload.type === "token") {
-            fullText += payload.content;
+          var type = payload.type || eventName;
+          if (type === "content" || type === "token") {
+            var delta = payload.content != null ? payload.content : payload.delta;
+            if (delta) {
+              fullText += delta;
+              streamBody.innerHTML = renderMarkdown(fullText);
+              maybeScrollToBottom();
+            }
+          } else if (type === "message_start") {
+            if (payload.message && payload.message.id) {
+              typing.dataset.messageId = payload.message.id;
+            }
+          } else if (type === "error") {
+            streamError = payload.error || "Stream error.";
+            flashError(streamError);
+          } else if (type === "message_end" || type === "done") {
+            var message = payload.message || payload;
+            if (message && message.content) {
+              fullText = message.content;
+            }
             streamBody.innerHTML = renderMarkdown(fullText);
-            maybeScrollToBottom();
-          } else if (payload.type === "error") {
-            flashError(payload.error);
-          } else if (payload.type === "done") {
-            if (payload.message) {
-              streamBody.innerHTML =
-                renderMarkdown(payload.message.content) +
-                renderAttachments(payload.message.attachments);
-              enhanceCode(streamBody);
-              var usage = payload.message.token_usage;
-              if (usage) {
-                var usageRow = document.createElement("div");
-                usageRow.className = "message-usage";
-                usageRow.textContent =
-                  usage.total_tokens.toLocaleString() +
-                  " tokens (" +
-                  (usage.prompt_tokens || 0).toLocaleString() +
-                  " + " +
-                  (usage.completion_tokens || 0).toLocaleString() +
-                  ")";
-                typing.appendChild(usageRow);
-                conversationUsage.prompt_tokens += usage.prompt_tokens || 0;
-                conversationUsage.completion_tokens += usage.completion_tokens || 0;
-                conversationUsage.total_tokens += usage.total_tokens || 0;
-                renderUsage();
-              }
+            if (message && message.attachments) {
+              streamBody.innerHTML += renderAttachments(message.attachments);
+            }
+            enhanceCode(streamBody);
+            var usage = message && message.token_usage;
+            if (usage) {
+              var usageRow = document.createElement("div");
+              usageRow.className = "message-usage";
+              usageRow.textContent =
+                usage.total_tokens.toLocaleString() +
+                " tokens (" +
+                (usage.prompt_tokens || 0).toLocaleString() +
+                " + " +
+                (usage.completion_tokens || 0).toLocaleString() +
+                ")";
+              typing.appendChild(usageRow);
+              conversationUsage.prompt_tokens += usage.prompt_tokens || 0;
+              conversationUsage.completion_tokens += usage.completion_tokens || 0;
+              conversationUsage.total_tokens += usage.total_tokens || 0;
+              renderUsage();
             }
             maybeScrollToBottom();
           }
         });
+      }
+      if (streamError) {
+        throw new Error(streamError);
       }
     } catch (error) {
       if (error && error.name === "AbortError") {

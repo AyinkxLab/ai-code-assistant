@@ -6,6 +6,7 @@ Machine-facing REST surface for the chat feature:
     GET    /api/conversations                      list the user's conversations
     GET    /api/conversations/<id>                 conversation with its messages
     POST   /api/conversations/<id>/messages        send a message (LLM reply)
+    POST   /api/conversations/<id>/stream          stream a message (SSE)
     DELETE /api/conversations/<id>                 delete (cascade)
 
 All routes require authentication and are owner-scoped. Errors use RFC 7807
@@ -17,8 +18,10 @@ the same model/service layer.
 from __future__ import annotations
 
 import functools
+import json
+import time
 
-from flask import Blueprint, current_app, jsonify, request
+from flask import Blueprint, Response, current_app, jsonify, request, stream_with_context
 from flask_login import current_user
 
 from app.chat import routes as chat_routes
@@ -30,6 +33,20 @@ from app.services.provider_config import ProviderSettingsError, apply_settings, 
 from app.services.providers.retry import RetryingProvider
 
 bp = Blueprint("chat_api", __name__, url_prefix="/api")
+
+
+def _sse_event(event: str, data: dict) -> str:
+    """Serialize one Server-Sent Event frame."""
+    return f"event: {event}\ndata: {json.dumps(data)}\n\n"
+
+
+def _sse_response(generator):
+    """Wrap a generator in an unbuffered ``text/event-stream`` response."""
+    response = Response(stream_with_context(generator), mimetype="text/event-stream")
+    response.headers["Cache-Control"] = "no-cache"
+    response.headers["X-Accel-Buffering"] = "no"
+    response.headers["Connection"] = "keep-alive"
+    return response
 
 
 def _problem(status: int, title: str, detail: str | None = None, **extra):
@@ -216,3 +233,101 @@ def send_message(conversation_id: int):
         conversation.title = content.strip()[:60] or "New conversation"
     db.session.commit()
     return jsonify({"assistant_message": conversation.messages[-1].to_dict()}), 201
+
+
+@bp.route("/conversations/<int:conversation_id>/stream", methods=["POST"])
+@_login_required
+@_rate_limit("message")
+def stream_message(conversation_id: int):
+    """Stream the assistant reply token-by-token over Server-Sent Events."""
+    conversation = _owned_conversation(conversation_id)
+    if conversation is None:
+        return _problem(404, "Conversation not found.", "No such conversation exists.")
+    data = _json_object()
+    if data is None:
+        return _problem(400, "Invalid request body.", "A JSON object body is required.")
+    content = (data.get("content") or "").strip()
+    attachment_ids = data.get("attachment_ids") or []
+    if not content and not attachment_ids:
+        return _problem(400, "Invalid message.", "Message content or an image is required.")
+    if not content:
+        content = "(image attached)"
+
+    status = provider_status(current_user)
+    if not status["configured"]:
+        return _problem(
+            503,
+            "Provider not configured.",
+            "No API key is configured for the selected provider.",
+            code="provider_not_configured",
+            provider=status.get("provider"),
+        )
+
+    context_messages, context_error, context_status = chat_routes._github_context_messages(
+        current_user, content
+    )
+    if context_error is not None:
+        extras = {key: value for key, value in context_error.items() if key != "error"}
+        return _problem(
+            context_status,
+            "GitHub context unavailable.",
+            context_error["error"],
+            **extras,
+        )
+
+    user_message = Message(role="user", content=content)
+    conversation.messages.append(user_message)
+    error = chat_routes._link_attachments(conversation, user_message, attachment_ids)
+    if error:
+        db.session.rollback()
+        return _problem(400, "Invalid attachment.", error)
+
+    messages = chat_routes._conversation_messages(conversation, context_messages)
+    kwargs = chat_routes._generation_kwargs(conversation)
+    heartbeat = current_app.config.get("SSE_HEARTBEAT_SECONDS", 15)
+
+    def generate():
+        provider = RetryingProvider(build_provider(current_user, conversation.provider))
+        chunks: list[str] = []
+        usage = None
+        try:
+            yield _sse_event("message_start", {"conversation_id": conversation.id})
+            stream = provider.stream(messages, **kwargs)
+            last_beat = time.monotonic()
+            for chunk in stream:
+                delta = chunk if isinstance(chunk, str) else None
+                if delta is None:
+                    delta = getattr(chunk, "delta", None) or getattr(chunk, "content", "") or ""
+                if delta:
+                    chunks.append(delta)
+                    yield _sse_event("content", {"delta": delta})
+                chunk_usage = getattr(chunk, "usage", None)
+                if chunk_usage is not None:
+                    usage = chunk_usage
+                now = time.monotonic()
+                if heartbeat and now - last_beat >= heartbeat:
+                    last_beat = now
+                    yield ": keep-alive\n\n"
+        except LLMProviderError as exc:
+            db.session.rollback()
+            yield _sse_event("error", {"detail": str(exc)})
+            return
+        except GeneratorExit:
+            db.session.rollback()
+            raise
+
+        reply = "".join(chunks)
+        assistant_message = Message(role="assistant", content=reply)
+        conversation.messages.append(assistant_message)
+        if conversation.title == "New conversation":
+            conversation.title = content.strip()[:60] or "New conversation"
+        db.session.commit()
+        yield _sse_event(
+            "message_end",
+            {
+                "message": assistant_message.to_dict(),
+                "usage": usage,
+            },
+        )
+
+    return _sse_response(generate())
