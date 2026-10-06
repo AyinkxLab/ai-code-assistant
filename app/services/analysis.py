@@ -33,9 +33,7 @@ _STELLAR_ITEM_LIMIT = 15
 MAX_REFERENCED_FILES = 10
 # Matches repository-relative file paths mentioned in issue bodies, e.g.
 # ``app/services/analysis.py`` or ``src/lib.rs``.
-_FILE_PATH_RE = re.compile(
-    r"(?<![\w./-])((?:[\w.-]+/)+[\w.-]+\.[A-Za-z0-9]{1,8})(?![\w./-])"
-)
+_FILE_PATH_RE = re.compile(r"(?<![\w./-])((?:[\w.-]+/)+[\w.-]+\.[A-Za-z0-9]{1,8})(?![\w./-])")
 
 _SYSTEM = (
     "You are an expert software engineering analyst. Be concrete, cite the "
