@@ -669,16 +669,23 @@ def api_issues(owner: str, repo: str):
     assignee = request.args.get("assignee", "").strip() or None
     search = request.args.get("q", "").strip() or None
     page, per_page = _page_params()
+    # Only forward the optional filters when they are actually supplied so the
+    # call stays compatible with clients/tests that do not know about them.
+    filters = {}
+    if labels:
+        filters["labels"] = labels
+    if assignee:
+        filters["assignee"] = assignee
+    if search:
+        filters["search"] = search
     try:
         client = _client()
         result = client.list_issues_page(
             full_name,
             state=state,
-            labels=labels,
-            assignee=assignee,
-            search=search,
             page=page,
             per_page=per_page,
+            **filters,
         )
     except GitHubError as exc:
         return jsonify(github_error_payload(exc)), 502
