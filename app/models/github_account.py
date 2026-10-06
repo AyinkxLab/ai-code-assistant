@@ -9,7 +9,6 @@ from datetime import UTC, datetime
 
 from app.extensions import db
 
-
 # Scopes required to create issues and post comments via the GitHub API.
 # GitHub accepts either the classic `public_repo` scope or the finer-grained
 # `repos` scope for writing to public repositories. Private repositories require

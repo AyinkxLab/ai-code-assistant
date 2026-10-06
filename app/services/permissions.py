@@ -54,8 +54,7 @@ CAPABILITIES: dict[str, tuple[tuple[str, ...], str]] = {
     "transfer_ownership": ((ROLE_OWNER,), "Transfer workspace ownership"),
     "view_audit": ((ROLE_OWNER,), "Read the workspace audit log"),
     "comment": (
-        (ROLE_OWNER,
-        "contributor", "viewer"),
+        (ROLE_OWNER, "contributor", "viewer"),
         "Create project discussion comments",
     ),
     "create_issue": (
@@ -213,7 +212,7 @@ def resolve_project_collab(project_id: int, user=None):
 
     if user is None:
         user = current_user
-    project = Project.query.filter_by id=project_id).first()
+    project = Project.query.filter_by(id=project_id).first()
     if project is None or not can_access_project(project, user):
         abort(404)
     return project

@@ -695,13 +695,16 @@ def _write_scope_required():
     """Return a ``403`` JSON response when the token cannot write issues."""
     account = GithubAccount.query.filter_by(user_id=current_user.id).first()
     if not _has_write_scope(account):
-        return jsonify(
-            {
-                "error": "Your GitHub connection does not grant permission to "
-                "create issues or comments. Reconnect with the 'repo' scope.",
-                "code": "insufficient_scope",
-            }
-        ), 403
+        return (
+            jsonify(
+                {
+                    "error": "Your GitHub connection does not grant permission to "
+                    "create issues or comments. Reconnect with the 'repo' scope.",
+                    "code": "insufficient_scope",
+                }
+            ),
+            403,
+        )
     return None
 
 
@@ -778,15 +781,18 @@ def api_create_issue_comment(owner: str, repo: str, number: int):
         comment = client.create_issue_comment(full_name, number, body)
     except GitHubError as exc:
         return jsonify(github_error_payload(exc)), 502
-    return jsonify(
-        {
-            "id": comment.get("id"),
-            "body": comment.get("body"),
-            "html_url": comment.get("html_url"),
-            "created_at": comment.get("created_at"),
-            "user": (comment.get("user") or {}).get("login"),
-        }
-    ), 201
+    return (
+        jsonify(
+            {
+                "id": comment.get("id"),
+                "body": comment.get("body"),
+                "html_url": comment.get("html_url"),
+                "created_at": comment.get("created_at"),
+                "user": (comment.get("user") or {}).get("login"),
+            }
+        ),
+        201,
+    )
 
 
 # --------------------------------------------------------------------------

@@ -50,6 +50,7 @@ _LINK_RE = re.compile(r'<([^>]+)>\s*;\s*rel="([^"]+)"')
 #: GitHub OAuth scopes that permit writing issues and comments.
 WRITE_SCOPES = ("repo", "public_repo")
 
+
 @dataclass(frozen=True)
 class GitHubPage:
     """A single page of a GitHub list endpoint plus its navigation metadata.
@@ -149,7 +150,10 @@ ERROR_MESSAGES = {
     "network": "Could not reach the GitHub API. Please try again.",
     "validation": "The GitHub request was invalid.",
     "github_error": "The GitHub request failed. Please try again.",
-    "scope": "Your GitHub connection does not have permission to write. Reconnect with the repo scope.",
+    "scope": (
+        "Your GitHub connection does not have permission to write. "
+        "Reconnect with the repo scope."
+    ),
 }
 
 
@@ -669,9 +673,7 @@ class GitHubClient:
     def get_issue(self, full_name: str, number: int) -> dict:
         return self._get(f"/repos/{full_name}/issues/{number}")
 
-    def create_issue(
-        self, full_name: str, *, title: str, body: str | None = None
-    ) -> dict:
+    def create_issue(self, full_name: str, *, title: str, body: str | None = None) -> dict:
         """Open a new issue. Requires the token to carry a write scope."""
         payload: dict = {"title": title}
         if body:
