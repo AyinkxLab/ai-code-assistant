@@ -216,6 +216,10 @@ class Config:
     RATE_LIMIT_SEARCH_WINDOW = int(os.getenv("RATE_LIMIT_SEARCH_WINDOW", "60"))
     RATE_LIMIT_CHAT_MAX = int(os.getenv("RATE_LIMIT_CHAT_MAX", "30"))
     RATE_LIMIT_CHAT_WINDOW = int(os.getenv("RATE_LIMIT_CHAT_WINDOW", "60"))
+    # Persistent daily cap on chat messages/streams per authenticated user. The
+    # counter is stored in the ``rate_limits`` table so it survives restarts and
+    # is shared across workers; set to 0 to disable the daily cap.
+    RATE_LIMIT_CHAT_DAILY = int(os.getenv("RATE_LIMIT_CHAT_DAILY", "500"))
     RATE_LIMIT_STREAM_MAX = int(os.getenv("RATE_LIMIT_STREAM_MAX", "30"))
     RATE_LIMIT_STREAM_WINDOW = int(os.getenv("RATE_LIMIT_STREAM_WINDOW", "60"))
     RATE_LIMIT_ANALYZE_MAX = int(os.getenv("RATE_LIMIT_ANALYZE_MAX", "20"))

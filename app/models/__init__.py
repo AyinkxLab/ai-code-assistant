@@ -26,6 +26,7 @@ from app.models.project_file import ProjectFile
 from app.models.project_message import ProjectMessage
 from app.models.prompt import Prompt
 from app.models.prompt_version import PromptVersion
+from app.models.rate_limit import RateLimit
 from app.models.review import Review
 from app.models.review_comment import ReviewComment
 from app.models.review_config import ReviewConfig
@@ -60,6 +61,7 @@ __all__ = [
     "ProjectMessage",
     "Prompt",
     "PromptVersion",
+    "RateLimit",
     "Review",
     "ReviewComment",
     "ReviewConfig",

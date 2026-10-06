@@ -1,6 +1,7 @@
 // AI Code Assistant — chat UI
 // Conversation list, SSE streaming of assistant replies, client-side
 // markdown rendering, and conversation management (rename/pin/delete/export).
+// Includes per-user rate-limit awareness (429 + Retry-After) for chat sends.
 
 (function () {
   "use strict";
@@ -11,6 +12,7 @@
   var composerErrorEl = document.getElementById("composer-error");
   var usageEl = document.getElementById("conversation-usage");
   var conversationUsage = { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 };
+  var rateLimitEl = document.getElementById("chat-rate-limit");
   var listEl = document.getElementById("conversation-list");
   var searchEl = document.getElementById("conversation-search");
   var actionsEl = document.getElementById("conversation-actions");
@@ -31,6 +33,12 @@
   var systemEl = document.getElementById("chat-system-prompt");
   var providerOptions = [];
   var defaults = { provider: "", model: "", temperature: 0.7, system_prompt: "" };
+
+  // Rate-limit state (issue: rate limiting for chat API endpoints). The server
+  // is the source of truth; we mirror the last known budget so the UI can warn
+  // the user before they hit the wall, and so we can disable Send when empty.
+  var rateLimit = { limit: null, remaining: null, reset: null, retryAfter: null };
+  var rateLimitTimer = null;
 
   // Streaming scroll safety (issue #9): auto-follow new tokens only while the
   // user is already pinned to the bottom, so scrolling up mid-stream is never
@@ -80,6 +88,110 @@
       }
     }
     return relative ? relative.format(seconds, "second") : "just now";
+  }
+
+  // -- Rate limit UI (issue: rate limiting for chat API endpoints) ----------
+
+  function parseRetryAfter(response) {
+    var header = response && response.headers ? response.headers.get("Retry-After") : null;
+    if (!header) return null;
+    var seconds = parseInt(header, 10);
+    if (!isNaN(seconds)) return seconds;
+    var date = new Date(header);
+    if (!isNaN(date.getTime())) {
+      return Math.max(0, Math.round((date.getTime() - Date.now()) / 1000));
+    }
+    return null;
+  }
+
+  function applyRateLimitHeaders(response) {
+    if (!response || !response.headers) return;
+    var limit = response.headers.get("X-RateLimit-Limit");
+    var remaining = response.headers.get("X-RateLimit-Remaining");
+    var reset = response.headers.get("X-RateLimit-Reset");
+    if (limit !== null) rateLimit.limit = parseInt(limit, 10);
+    if (remaining !== null) rateLimit.remaining = parseInt(remaining, 10);
+    if (reset !== null) rateLimit.reset = parseInt(reset, 10);
+    renderRateLimit();
+  }
+
+  function formatRetryAfter(seconds) {
+    if (seconds == null) return "";
+    if (seconds < 60) return seconds + "s";
+    var minutes = Math.ceil(seconds / 60);
+    return minutes + (minutes === 1 ? " minute" : " minutes");
+  }
+
+  function renderRateLimit() {
+    if (!rateLimitEl) return;
+    var remaining = rateLimit.remaining;
+    var limit = rateLimit.limit;
+    if (remaining === null || limit === null) {
+      rateLimitEl.textContent = "";
+      rateLimitEl.hidden = true;
+      return;
+    }
+    rateLimitEl.hidden = false;
+    if (remaining <= 0) {
+      rateLimitEl.textContent =
+        "Rate limit reached. Try again in " +
+        formatRetryAfter(rateLimit.retryAfter) +
+        ".";
+      rateLimitEl.classList.add("rate-limit-exceeded");
+    } else {
+      rateLimitEl.textContent =
+        remaining.toLocaleString() + " of " + limit.toLocaleString() +
+        " messages remaining this minute.";
+      rateLimitEl.classList.remove("rate-limit-exceeded");
+    }
+  }
+
+  // Countdown so the "try again in N" text stays accurate without a reload.
+  function startRateLimitCountdown() {
+    window.clearInterval(rateLimitTimer);
+    if (rateLimit.retryAfter == null) return;
+    rateLimitTimer = window.setInterval(function () {
+      if (rateLimit.retryAfter == null) {
+        window.clearInterval(rateLimitTimer);
+        return;
+      }
+      rateLimit.retryAfter -= 1;
+      if (rateLimit.retryAfter <= 0) {
+        rateLimit.retryAfter = null;
+        rateLimit.remaining = rateLimit.limit;
+        window.clearInterval(rateLimitTimer);
+      }
+      renderRateLimit();
+      updateSendDisabled();
+    }, 1000);
+  }
+
+  function handleRateLimited(response, data) {
+    var retryAfter = parseRetryAfter(response);
+    if (retryAfter == null && data && data.retry_after != null) {
+      retryAfter = parseInt(data.retry_after, 10);
+    }
+    rateLimit.retryAfter = retryAfter;
+    rateLimit.remaining = 0;
+    if (data && data.limit != null) rateLimit.limit = data.limit;
+    renderRateLimit();
+    startRateLimitCountdown();
+    updateSendDisabled();
+    var message =
+      (data && data.error) ||
+      "You've hit the chat rate limit. Try again in " +
+        formatRetryAfter(retryAfter) +
+        ".";
+    showComposerError(message);
+    flashError(message);
+  }
+
+  function updateSendDisabled() {
+    if (!sendBtn) return;
+    if (streaming) return;
+    var onboardingBlocked = !!(onboardingEl && !onboardingEl.hidden);
+    var rateLimited = rateLimit.remaining !== null && rateLimit.remaining <= 0;
+    sendBtn.disabled = onboardingBlocked || rateLimited;
   }
 
   function updateTimestamps(root) {
@@ -285,6 +397,7 @@
       "X-CSRFToken": getCsrf(),
     });
     var response = await fetch(url, options);
+    applyRateLimitHeaders(response);
     var data;
     try {
       data = await response.json();
@@ -292,6 +405,10 @@
       data = null;
     }
     if (!response.ok) {
+      if (response.status === 429) {
+        handleRateLimited(response, data);
+        throw new Error("Rate limit exceeded.");
+      }
       var message = data && data.error ? data.error : "Request failed (" + response.status + ").";
       throw new Error(message);
     }
@@ -527,12 +644,18 @@
         signal: currentController.signal,
       });
 
+      applyRateLimitHeaders(response);
+
       if (!response.ok) {
         var errData = null;
         try {
           errData = await response.json();
         } catch (e) {
           errData = null;
+        }
+        if (response.status === 429) {
+          handleRateLimited(response, errData);
+          return;
         }
         if (errData && errData.code === "provider_not_configured") {
           showOnboarding(errData);
@@ -627,7 +750,7 @@
       cancelRequested = false;
       streaming = false;
       setComposerState("idle");
-      sendBtn.disabled = !!(onboardingEl && !onboardingEl.hidden);
+      updateSendDisabled();
       inputEl.focus();
     }
   }
@@ -730,7 +853,7 @@
 
   function hideOnboarding() {
     if (onboardingEl) onboardingEl.hidden = true;
-    sendBtn.disabled = false;
+    updateSendDisabled();
   }
 
   // Re-check the server's provider status so a key added on another page
@@ -741,12 +864,13 @@
         if (status && status.configured) {
           var wasVisible = !!(onboardingEl && !onboardingEl.hidden);
           hideOnboarding();
+          if (status.rate_limit) applyRateLimitHeaders({ headers: { get: function (name) { return status.rate_limit[name]; } } });
           if (wasVisible && options && options.notify) {
             flashSuccess("Provider key detected — you can send messages now.");
           }
         } else if (onboardingEl) {
           onboardingEl.hidden = false;
-          sendBtn.disabled = true;
+          updateSendDisabled();
         }
         return status;
       })
@@ -861,6 +985,7 @@
     updateTimestamps();
     autoGrowComposer();
     inputEl.focus();
+    renderRateLimit();
 
     listEl.addEventListener("click", function (event) {
       var item = event.target.closest(".conversation-item");

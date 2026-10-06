@@ -131,3 +131,54 @@ class TestConsume:
         allowed, retry_after = ratelimit.consume("bucket", max_hits=1, window=60)
         assert allowed is False
         assert 1 <= retry_after <= 60
+
+
+class TestDailyCap:
+    def test_daily_cap_blocks_after_limit(self, app):
+        allowed, retry_after = ratelimit.daily_consume("daily-bucket", max_hits=2)
+        assert allowed is True
+        assert retry_after == 0
+
+        allowed, _ = ratelimit.daily_consume("daily-bucket", max_hits=2)
+        assert allowed is True
+
+        allowed, retry_after = ratelimit.daily_consume("daily-bucket", max_hits=2)
+        assert allowed is False
+        assert retry_after >= 1
+
+        assert ratelimit.daily_count("daily-bucket") == 2
+        assert ratelimit.daily_remaining("daily-bucket", max_hits=2) == 0
+
+    def test_daily_cap_disabled_when_zero(self, app):
+        for _ in range(5):
+            allowed, _ = ratelimit.daily_consume("unlimited-bucket", max_hits=0)
+            assert allowed is True
+
+    def test_daily_cap_counter_persists_across_calls(self, app):
+        ratelimit.daily_consume("persist-bucket", max_hits=10)
+        ratelimit.daily_consume("persist-bucket", max_hits=10)
+        assert ratelimit.daily_count("persist-bucket") == 2
+
+    def test_peek_reports_remaining_without_consuming(self, app):
+        ratelimit.daily_consume("peek-bucket", max_hits=3)
+        remaining, _reset = ratelimit.peek_daily("peek-bucket", daily_cap=3)
+        assert remaining == 2
+        # ``peek`` must not record a hit.
+        assert ratelimit.daily_count("peek-bucket") == 1
+
+
+class TestRateLimitStatusEndpoint:
+    def test_status_requires_login(self, client):
+        assert client.get("/api/rate-limit").status_code == 401
+
+    def test_status_reports_daily_budget(self, client, app, make_user, login):
+        app.config["RATE_LIMIT_CHAT_DAILY"] = 7
+        user = make_user(username="quotauser", email="quota@example.com")
+        login(email="quota@example.com")
+        ratelimit.daily_consume(f"api-chat:message:user:{user.id}", max_hits=7)
+
+        payload = client.get("/api/rate-limit").get_json()
+
+        assert payload["daily_limit"] == 7
+        assert payload["daily_remaining"] == 6
+        assert payload["daily_reset_after"] >= 1
