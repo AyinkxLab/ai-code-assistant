@@ -1,4 +1,4 @@
-import { expect, afterEach, beforeAll } from 'vitest';
+import { afterEach, beforeAll, vi } from "vitest";
 
 // Minimal DOM environment for tests that need to render and query the chat UI.
 // Vitest with the jsdom environment already provides these, but this file
@@ -8,7 +8,7 @@ import { expect, afterEach, beforeAll } from 'vitest';
 const globals = globalThis;
 
 function installMatchMedia() {
-  if (typeof globals.matchMedia === 'function') {
+  if (typeof globals.matchMedia === "function") {
     return;
   }
   globals.matchMedia = (query) => ({
@@ -24,7 +24,7 @@ function installMatchMedia() {
 }
 
 function installResizeObserver() {
-  if (typeof globals.ResizeObserver === 'function') {
+  if (typeof globals.ResizeObserver === "function") {
     return;
   }
   globals.ResizeObserver = class {
@@ -35,7 +35,7 @@ function installResizeObserver() {
 }
 
 function installIntersectionObserver() {
-  if (typeof globals.IntersectionObserver === 'function') {
+  if (typeof globals.IntersectionObserver === "function") {
     return;
   }
   globals.IntersectionObserver = class {
@@ -56,10 +56,8 @@ beforeAll(() => {
 
 afterEach(() => {
   // Keep tests isolated: clear the body and any pending timers/listeners.
-  if (typeof document !== 'undefined') {
-    document.body.innerHTML = '';
+  if (typeof document !== "undefined") {
+    document.body.innerHTML = "";
   }
   vi.clearAllTimers();
 });
-
-export { expect };

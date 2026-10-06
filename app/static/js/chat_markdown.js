@@ -1,8 +1,8 @@
-// AI Code Assistant — DSaS-safe Markdown rendering for chat output.
+// AI Code Assistant — XSS-safe Markdown rendering for chat output.
 //
 // The chat UI renders untrusted model output, so all text is escaped and the
-// generated markup is passed through `sanitizeHtml` before it is returned to the
-// caller for insertion into the DOM. The module is dependency-free and
+// generated markup is passed through `sanitizeHtml` before it is returned to
+// the caller for insertion into the DOM. The module is dependency-free and
 // deliberately DOM-free, so the exact same code runs in the browser and under
 // Node in the unit tests (see tests/test_chat_markdown_sanitize.py).
 //
@@ -108,9 +108,6 @@
   function filterAttributes(tag, rawAttributes, allowed) {
     var parts = [];
     var seen = {};
-    // Note: the character class intentionally excludes the backtick and the
-    // equals sign from the unquoted-value branch so the regex stays well
-    // formed and terminates correctly.
     var attrRe = /([^\s"'<>/=]+)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'`=<>]+)))?/g;
     var match;
     while ((match = attrRe.exec(rawAttributes)) !== null) {
@@ -164,7 +161,7 @@
     return escapeHtml(text)
       .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
       .replace(/\*([^*]+)\*/g, "<em>$1</em>")
-      .replace(/`((?:[^`]+))`/g, '<code class="inline-code">$1</code>')
+      .replace(/`([^`]+)`/g, '<code class="inline-code">$1</code>')
       .replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, function (_match, label, url) {
         if (!isSafeUrl(url)) return label; // render unsafe links as plain text
         return (
@@ -269,7 +266,7 @@
         continue;
       }
 
-      if (/^\s*\-\s+/.test(line) || /^\s*\*\s+/.test(line)) {
+      if (/^\s*-\s+/.test(line) || /^\s*\*\s+/.test(line)) {
         if (listOpen !== "ul") {
           flushList();
           html += "<ul>\n";
