@@ -8,7 +8,7 @@ extensions, and installs error handlers. Import as::
     app = create_app()
 
 The factory pattern keeps the app easy to test (each test can create a fresh
-instance with the ```testing``` configuration).
+instance with the ``testing`` configuration).
 """
 
 import os
@@ -24,7 +24,7 @@ def create_app(config_name: str | None = None) -> Flask:
     """Build and configure the Flask application.
 
     :param config_name: Key into :data:`app.config.config_by_name`.
-        Defaults to the `APP_ENV` environment variable or `development`.
+        Defaults to the ``APP_ENV`` environment variable or ``development``.
     """
     if config_name is None:
         config_name = os.getenv("APP_ENV", "development")
@@ -47,11 +47,6 @@ def create_app(config_name: str | None = None) -> Flask:
     from app.services.llm_cache import configure_cache
 
     configure_cache(app)
-
-    # Per-user rate limiting on AI-powered endpoints.
-    from app.services.rate_limit import configure_rate_limit
-
-    configure_rate_limit(app)
 
     # Register blueprints.
     from app.admin import bp as admin_bp
@@ -84,7 +79,7 @@ def create_app(config_name: str | None = None) -> Flask:
     app.register_blueprint(stellar_bp)
     app.register_blueprint(admin_bp)
 
-    # Make the current time available to every template as `now`.
+    # Make the current time available to every template as ``now``.
     @app.context_processor
     def inject_template_globals():
         return {"now": datetime.now()}

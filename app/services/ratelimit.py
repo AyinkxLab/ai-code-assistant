@@ -125,8 +125,6 @@ def per_user_limit(bucket: str, *, max_config: str, window_config: str):
         def wrapper(*args, **kwargs):
             max_hits = current_app.config.get(max_config) or 0
             window = current_app.config.get(window_config) or 0
-            if not max_hits or not window:
-                return view(*args, **kwargs)
             key = f"{bucket}:user:{current_user.get_id()}"
             allowed, retry_after = consume(key, max_hits=max_hits, window=window)
             if not allowed:
@@ -154,21 +152,45 @@ def client_key(extra: str = "") -> str:
     return f"{extra}:{ip}"
 
 
+def ai_limit(view):
+    """Per-user rate limit for the AI-powered endpoints (#28).
+
+    Reads ``RATE_LIMIT_AI_PER_MINUTE`` (requests) and ``RATE_LIMIT_AI_WINDOW``
+    (seconds) from the app config at request time, and is a no-op when
+    ``RATE_LIMIT_AI_ENABLED`` is false (e.g. the testing config) or when either
+    value is not configured. Over-limit requests receive the same ``429``
+    ``application/json`` body as :func:`per_user_limit`.
+    """
+
+    @functools.wraps(view)
+    def wrapper(*args, **kwargs):
+        if not current_app.config.get("RATE_LIMIT_AI_ENABLED", True):
+            return view(*args, **kwargs)
+        max_hits = current_app.config.get("RATE_LIMIT_AI_PER_MINUTE") or 0
+        window = current_app.config.get("RATE_LIMIT_AI_WINDOW") or 0
+        if not max_hits or not window:
+            return view(*args, **kwargs)
+        allowed, retry_after = consume(
+            f"ai:user:{current_user.get_id()}",
+            max_hits=max_hits,
+            window=window,
+        )
+        if not allowed:
+            response = jsonify(
+                {
+                    "error": "Rate limit exceeded. Please retry later.",
+                    "kind": "rate_limited",
+                }
+            )
+            response.status_code = 429
+            response.headers["Retry-After"] = str(retry_after)
+            return response
+        return view(*args, **kwargs)
+
+    return wrapper
+
+
 def reset() -> None:
     """Clear all limiter state (used by tests)."""
     with _LOCK:
         _ENTRIES.clear()
-
-
-def ai_limit(view):
-    """Per-user rate limit for the AI-powered endpoints.
-
-    Reads ``RATE_LIMIT_AI_PER_MINUTE`` (requests per minute) from the app
-    config at request time. Returns ``None`` when the limit is disabled (e.g.
-    the ``testing`` config), so callers can apply it conditionally.
-    """
-    return per_user_limit(
-        "ai",
-        max_config="RATE_LIMIT_AI_PER_MINUTE",
-        window_config="RATE_LIMIT_AI_WINDOW_SECONDS",
-    )(view)
