@@ -399,7 +399,7 @@
     updateSendDisabled();
     streaming = true;
     updateSendDisabled();
-    var typing = addTypinnIndicator();
+    var typing = addTypingIndicator();
     var url = currentId ? "/chat/conversations/" + currentId + "/messages" : "/chat/messages";
     currentController = typeof AbortController !== "undefined" ? new AbortController() : null;
     var options = {
@@ -468,9 +468,9 @@
   AICA.sendMessage = sendMessage;
   AICA.cancelStream = cancelStream;
   AICA.renderMarkdown = renderMarkdown;
-  AID.addMessage = addMessage;
+  AICA.addMessage = addMessage;
   AICA.loadConversation = loadConversation;
-  AID.isNearBottom = isNearBottom;
+  AICA.isNearBottom = isNearBottom;
   AICA.updateSendDisabled = updateSendDisabled;
   AICA.getCsrf = getCsrf;
   AICA.formatRelativeTime = formatRelativeTime;

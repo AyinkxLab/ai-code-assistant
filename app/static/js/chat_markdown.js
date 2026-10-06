@@ -111,7 +111,7 @@
     // Note: the character class intentionally excludes the backtick and the
     // equals sign from the unquoted-value branch so the regex stays well
     // formed and terminates correctly.
-    var attrRe = /([^\s"''<>/=]+)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'`=<>]+))?/g;
+    var attrRe = /([^\s"'<>/=]+)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'`=<>]+)))?/g;
     var match;
     while ((match = attrRe.exec(rawAttributes)) !== null) {
       var name = match[1].toLowerCase();
@@ -165,7 +165,7 @@
       .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
       .replace(/\*([^*]+)\*/g, "<em>$1</em>")
       .replace(/`((?:[^`]+))`/g, '<code class="inline-code">$1</code>')
-      .replace(/\\[([^\]]+)\\](([^)\s]+)\)/g, function (_match, label, url) {
+      .replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, function (_match, label, url) {
         if (!isSafeUrl(url)) return label; // render unsafe links as plain text
         return (
           '<a href="' +
