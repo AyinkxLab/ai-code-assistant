@@ -77,6 +77,7 @@ from app.models.workspace import generate_slug
 from app.models.workspace_member import (
     MEMBER_ROLES,
     ROLE_OWNER,
+    ROLE_CONTRIBUTOR,
     ROLE_VIEWER,
     STATUS_ACTIVE,
 )
@@ -128,6 +129,62 @@ WORKSPACES_PER_PAGE_MAX = 100
 
 def _get_workspace(workspace_id: int) -> Workspace:
     return Workspace.query.filter_by(id=workspace_id, user_id=current_user.id).first_or_404()
+
+
+def _get_accessible_workspace(workspace_id: int) -> Workspace:
+    """Return a workspace the current user owns or is an active member of.
+
+    Owner-only routes keep using ``_get_workspace``; member-aware read routes
+    use this helper so contributors/viewers can reach workspace projects and
+    reviews without leaking existence to non-members (uniform 404).
+    """
+    workspace = Workspace.query.filter_by(id=workspace_id).first()
+    if workspace is None:
+        from flask import abort
+
+        abort(404)
+    if workspace.user_id == current_user.id:
+        return workspace
+    membership = WorkspaceMember.query.filter_by(
+        workspace_id=workspace_id, user_id=current_user.id, status=STATUS_ACTIVE
+    ).first()
+    if membership is None:
+        from flask import abort
+
+        abort(404)
+    return workspace
+
+
+def _get_accessible_project(project_id: int) -> Project:
+    """Return a project the current user owns or can access via membership."""
+    project = Project.query.filter_by(id=project_id).first()
+    if project is None:
+        from flask import abort
+
+        abort(404)
+    if project.user_id == current_user.id:
+        return project
+    membership = WorkspaceMember.query.filter_by(
+        workspace_id=project.workspace_id, user_id=current_user.id, status=STATUS_ACTIVE
+    ).first()
+    if membership is None:
+        from flask import abort
+
+        abort(404)
+    return project
+
+
+def _can_write_project(project: Project) -> bool:
+    """Return ``True`` when the current user may mutate a project.
+
+    Owners always can; contributors may write; viewers are read-only.
+    """
+    if project.user_id == current_user.id:
+        return True
+    membership = WorkspaceMember.query.filter_by(
+        workspace_id=project.workspace_id, user_id=current_user.id, status=STATUS_ACTIVE
+    ).first()
+    return membership is not None and membership.role == ROLE_CONTRIBUTOR
 
 
 def _get_project(project_id: int) -> Project:

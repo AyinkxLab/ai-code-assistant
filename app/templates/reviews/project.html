@@ -3,18 +3,21 @@
 {% block title %}Project Reviews - {{ config.APP_NAME }}{% endblock %}
 
 {% block content %}
-<div class="github-header" data-project-id="{{ project_id }}">
+<div class="github-header" data-project-id="{{ project_id }}" data-can-write="{{ 'false' if not can_write else 'true' }}">
   <div>
     <h1><a class="repo-breadcrumb" href="{{ url_for('workspaces.index') }}">Workspaces</a> / Project #{{ project_id }} / Reviews</h1>
     <p class="repo-meta">Run AI quality, security, and test reviews against the imported project.</p>
   </div>
+  {% if can_write %}
   <a class="btn btn-ghost" href="{{ url_for('reviews.project_config_page', project_id=project_id) }}">Review settings</a>
+  {% endif %}
 </div>
 
 <div class="metrics-strip" id="metrics-strip">
   <p class="sidebar-empty">Loading quality metrics...</p>
 </div>
 
+{% if can_write %}
 <div class="analyze-panel review-run-panel">
   <h3>Run a review</h3>
   <p class="field-hint">Reviews read your indexed files and return structured findings; they never modify the project.</p>
@@ -25,6 +28,7 @@
   </div>
   <div id="run-status" hidden></div>
 </div>
+{% endif %}
 
 <div id="review-list" class="issue-list"><p class="sidebar-empty">Loading project reviews...</p></div>
 {% endblock %}
