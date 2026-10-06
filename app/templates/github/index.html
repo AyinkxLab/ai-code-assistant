@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 
-{% block title %}GitHub - {{ config.APP_NAME }}{{ endblock %}
+{% block title %}GitHub - {{ config.APP_NAME }}{% endblock %}
 
 {% block content %}
 <div class="github-header">
@@ -75,7 +75,7 @@
         if (!rl || !rl.available || !rl.low) return;
         var remaining = rl.remaining;
         var limit = rl.limit;
-        var message = "Low GitHub API quota: " + remaining + "of " + limit +
+        var message = "Low GitHub API quota: " + remaining + " of " + limit +
           " requests remaining.";
         if (rl.reset) {
           message += " Resets " + new Date(rl.reset * 1000).toLocaleString() + ".";
