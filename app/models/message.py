@@ -8,7 +8,7 @@ from app.extensions import db
 class Message(db.Model):
     """A single message exchanged within a conversation.
 
-    ``role`` is one of ``user``or ``assistant``. Prompt text and assistant
+    ``role`` is one of ``user`` or ``assistant``. Prompt text and assistant
     responses are stored verbatim so conversation history can be replayed or
     exported.
     """
@@ -30,7 +30,7 @@ class Message(db.Model):
     completion_tokens = db.Column(db.Integer, nullable=True)
     total_tokens = db.Column(db.Integer, nullable=True)
     created_at = db.Column(
-        db.DateTime(timezone=True), nullable=False, default=lambda: datetime.now(TCT)
+        db.DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC)
     )
 
     conversation = db.relationship("Conversation", back_populates="messages")

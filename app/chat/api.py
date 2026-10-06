@@ -24,7 +24,7 @@ from flask_login import current_user
 
 from app.chat import routes as chat_routes
 from app.extensions import db
-from app.models import Conversation, Message, TokenUsage
+from app.models import Conversation, Message
 from app.services import ratelimit
 from app.services.llm import LLMProviderError, provider_status
 from app.services.provider_config import ProviderSettingsError, apply_settings, build_provider
@@ -90,12 +90,11 @@ def _usage_totals(conversation: Conversation) -> dict:
     """Sum token usage across the conversation's assistant messages."""
     prompt = completion = total = 0
     for message in conversation.messages:
-        usage = getattr(message, "token_usage", None)
-        if usage is None:
+        if message.total_tokens is None:
             continue
-        prompt += usage.prompt_tokens or 0
-        completion += usage.completion_tokens or 0
-        total += usage.total_tokens or 0
+        prompt += message.prompt_tokens or 0
+        completion += message.completion_tokens or 0
+        total += message.total_tokens or 0
     return {
         "prompt_tokens": prompt,
         "completion_tokens": completion,
@@ -232,12 +231,10 @@ def send_message(conversation_id: int):
 
     assistant_message = Message(role="assistant", content=completion.content)
     usage = getattr(completion, "usage", None)
-    if usage is not None:
-        assistant_message.token_usage = TokenUsage(
-            prompt_tokens=getattr(usage, "prompt_tokens", 0) or 0,
-            completion_tokens=getattr(usage, "completion_tokens", 0) or 0,
-            total_tokens=getattr(usage, "total_tokens", 0) or 0,
-        )
+    if usage is not None and usage.has_usage:
+        assistant_message.prompt_tokens = usage.prompt_tokens or 0
+        assistant_message.completion_tokens = usage.completion_tokens or 0
+        assistant_message.total_tokens = usage.total_tokens or 0
     conversation.messages.append(assistant_message)
     if conversation.title == "New conversation":
         conversation.title = content.strip()[:60] or "New conversation"

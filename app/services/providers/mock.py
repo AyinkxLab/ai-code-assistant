@@ -19,7 +19,7 @@ from app.services.providers.base import (
     message_role,
     prepare_messages,
 )
-from app.services.token_usage import usage_from_response, usage_from_text
+from app.services.token_usage import messages_text, usage_from_text
 
 
 class MockProvider(LLMProvider):
@@ -56,16 +56,15 @@ class MockProvider(LLMProvider):
             time.sleep(self.delay)
         prepared = prepare_messages(messages, supports_vision=self.supports_vision)
         content = self._respond(prepared)
-        response = ProviderResponse(
+        usage = usage_from_text(messages_text(prepared), content)
+        return ProviderResponse(
             content=content,
             model=model or self.models[0],
+            prompt_tokens=usage["prompt_tokens"],
+            completion_tokens=usage["completion_tokens"],
+            total_tokens=usage["total_tokens"],
             latency_seconds=time.perf_counter() - started,
         )
-        usage = usage_from_response(response, prepared)
-        response.prompt_tokens = usage["prompt_tokens"]
-        response.completion_tokens = usage["completion_tokens"]
-        response.total_tokens = usage["total_tokens"]
-        return response
 
     def stream(
         self,

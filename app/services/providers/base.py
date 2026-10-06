@@ -94,11 +94,9 @@ class TokenUsage:
         prompt_tokens: int | None,
         completion_tokens: int | None,
         total_tokens: int | None = None,
-    ) -> "TokenUsage":
+    ) -> TokenUsage:
         """Build usage, deriving ``total_tokens`` when the provider omits it."""
-        if total_tokens is None and (
-            prompt_tokens is not None or completion_tokens is not None
-        ):
+        if total_tokens is None and (prompt_tokens is not None or completion_tokens is not None):
             total_tokens = (prompt_tokens or 0) + (completion_tokens or 0)
         return cls(
             prompt_tokens=prompt_tokens,
@@ -132,21 +130,13 @@ class ProviderResponse:
     model: str | None = None
     prompt_tokens: int | None = None
     completion_tokens: int | None = None
+    total_tokens: int | None = None
     latency_seconds: float | None = None
-
-    @property
-    def total_tokens(self) -> int | None:
-        """Total tokens used, or ``None`` when the provider reports no usage."""
-        if self.prompt_tokens is None and self.completion_tokens is None:
-            return None
-        return (self.prompt_tokens or 0) + (self.completion_tokens or 0)
 
     @property
     def usage(self) -> TokenUsage:
         """Token usage metadata for this completion (issue #2)."""
-        return TokenUsage.from_counts(
-            self.prompt_tokens, self.completion_tokens, self.total_tokens
-        )
+        return TokenUsage.from_counts(self.prompt_tokens, self.completion_tokens, self.total_tokens)
 
     def to_dict(self) -> dict[str, Any]:
         """Serialize the response for logging/telemetry."""
