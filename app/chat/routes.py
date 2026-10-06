@@ -497,17 +497,22 @@ def create_share_link(conversation_id: int):
         conversation = _get_visible_conversation(conversation_id)
         if conversation.user_id != current_user.id:
             return jsonify([])
-        links = ConversationShare.query.filter_by(conversation_id=conversation.id).filter(
-            ConversationShare.token_hash.isnot(None)
-        ).order_by(ConversationShare.created_at.desc()).all()
-        return jsonify([
-            {
-                "id": link.id,
-                "expires_at": link.expires_at.isoformat(),
-                "permission": link.permission,
-            }
-            for link in links
-        ])
+        links = (
+            ConversationShare.query.filter_by(conversation_id=conversation.id)
+            .filter(ConversationShare.token_hash.isnot(None))
+            .order_by(ConversationShare.created_at.desc())
+            .all()
+        )
+        return jsonify(
+            [
+                {
+                    "id": link.id,
+                    "expires_at": link.expires_at.isoformat(),
+                    "permission": link.permission,
+                }
+                for link in links
+            ]
+        )
     conversation = _get_conversation(conversation_id)
     data = request.get_json(silent=True) or {}
     try:
@@ -528,15 +533,18 @@ def create_share_link(conversation_id: int):
     )
     db.session.add(share)
     db.session.commit()
-    return jsonify(
-        {
-            "id": share.id,
-            "url": url_for("chat.view_shared_conversation", token=token, _external=True),
-            "created_by": current_user.id,
-            "expires_at": expires_at.isoformat(),
-            "permission": "read_only",
-        }
-    ), 201
+    return (
+        jsonify(
+            {
+                "id": share.id,
+                "url": url_for("chat.view_shared_conversation", token=token, _external=True),
+                "created_by": current_user.id,
+                "expires_at": expires_at.isoformat(),
+                "permission": "read_only",
+            }
+        ),
+        201,
+    )
 
 
 @bp.route("/conversations/<int:conversation_id>/share-links/<int:share_id>", methods=["DELETE"])
