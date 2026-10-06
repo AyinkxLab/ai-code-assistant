@@ -40,7 +40,6 @@ class Conversation(db.Model):
         "Message",
         back_populates="conversation",
         cascade="all, delete-orphan",
-        passive_deletes=True,
         order_by="Message.created_at",
     )
     shares = db.relationship(

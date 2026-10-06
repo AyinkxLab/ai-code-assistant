@@ -29,7 +29,7 @@ class Message(db.Model):
     provider = db.Column(db.String(50), nullable=True)
     model = db.Column(db.String(100), nullable=True)
     # Token usage recorded for the provider response that produced this message
-    # issue #13). ``None``` for user messages and for historical rows.
+    # issue #13). ``None`` for user messages and for historical rows.
     prompt_tokens = db.Column(db.Integer, nullable=True)
     completion_tokens = db.Column(db.Integer, nullable=True)
     total_tokens = db.Column(db.Integer, nullable=True)
