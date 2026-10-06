@@ -43,7 +43,6 @@ from app.services.github import (
 from app.services.llm import LLMProviderError, provider_status
 from app.services.llm_cache import cached_chat
 from app.services.notifications import notify
-from app.services.providers.retry import RetryingProvider, is_retryable_error
 from app.services.provider_config import (
     DEFAULT_TEMPERATURE,
     ProviderSettingsError,
@@ -52,6 +51,7 @@ from app.services.provider_config import (
     provider_options,
 )
 from app.services.providers.registry import resolve_provider_name
+from app.services.providers.retry import RetryingProvider, is_transient_error
 
 #: Machine-readable code returned when the configured provider has no key.
 PROVIDER_NOT_CONFIGURED_CODE = "provider_not_configured"
@@ -779,7 +779,6 @@ def stream_message(conversation_id: int):
     def generate():
         # Accumulate chunks so a cancelled stream can still keep what it got.
         chunks: list[str] = []
-        interrupted = False
         try:
             provider = RetryingProvider(build_provider(current_user, conversation.provider))
             for chunk in provider.stream(messages, **generation):
@@ -791,11 +790,10 @@ def stream_message(conversation_id: int):
             partial = "".join(chunks)
             persist_assistant(partial, stream_usage(partial))
             raise
-        except (OSError, IOError) as exc:
+        except OSError as exc:
             # The transport dropped (connection reset, broken pipe, timeout).
             # Keep the partial reply and surface a retryable error event so the
             # client can show a retry affordance instead of losing output.
-            interrupted = True
             partial = "".join(chunks)
             persist_assistant(partial, stream_usage(partial))
             reason = None
@@ -808,7 +806,7 @@ def stream_message(conversation_id: int):
             partial = "".join(chunks)
             persist_assistant(partial, stream_usage(partial))
             payload = _stream_interrupted_payload(partial, str(exc))
-            payload["retryable"] = is_retryable_error(exc)
+            payload["retryable"] = is_transient_error(exc)
             yield f"data: {json.dumps(payload)}\n\n"
             return
 
@@ -824,7 +822,7 @@ def stream_message(conversation_id: int):
                 )
             except LLMProviderError as exc:
                 payload = _stream_interrupted_payload("", str(exc))
-                payload["retryable"] = is_retryable_error(exc)
+                payload["retryable"] = is_transient_error(exc)
                 yield f"data: {json.dumps(payload)}\n\n"
                 return
 
