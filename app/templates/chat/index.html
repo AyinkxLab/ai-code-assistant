@@ -1,8 +1,8 @@
-{{ extends "base.html" %}
+{% extends "base.html" %}
 
-{k block title %}Chat - {{ config.APP_NAME }}{{ endblock %}
+{% block title %}Chat - {{ config.APP_NAME }}{% endblock %}
 
-{k block content %}
+{% block content %}
 <div class="chat-layout">
   <aside class="chat-sidebar">
     <div class="sidebar-header">
@@ -12,13 +12,13 @@
     <input id="conversation-search" class="sidebar-search" type="search" placeholder="Search conversations...">
     <ul id="conversation-list" class="conversation-list" aria-label="Conversations">
       {% for conversation in conversations %}
-        <li class="conversation-item{{ 'if loop.first %} active{{ endif %}}"
+        <li class="conversation-item{% if loop.first %} active{% endif %}"
             data-id="{{ conversation.id }}"
             data-title="{{ conversation.title }}"
             tabindex="0"
             role="button"
             aria-label="Open conversation: {{ conversation.title }}"
-            {% if loop.first %}aria-current="true"{{ endif %}>
+            {% if loop.first %}aria-current="true"{% endif %}>
           <span class="conversation-title">{{ conversation.title }}</span>
           <span class="conversation-meta">{{ conversation.message_count }} messages <time class="conversation-time" datetime="{{ conversation.updated_at.isoformat() if conversation.updated_at else '' }}"></time></span>
         </li>
@@ -37,7 +37,7 @@
       </div>
       <div id="project-file-viewer" class="file-viewer" hidden>
         <div class="file-viewer-header">
-          <button id="project-file-back" class="btn btn-ghost btn-sm" type="button">&lrarr; Back</button>
+          <button id="project-file-back" class="btn btn-ghost btn-sm" type="button">&larr; Back</button>
           <button id="project-file-ask" class="btn btn-primary btn-sm" type="button">Ask about this file</button>
         </div>
         <p id="project-file-meta" class="file-viewer-meta"></p>
@@ -150,7 +150,7 @@
 <style>
 .chat-welcome {
   display: flex;
-  flex-direction;
+  flex-direction: column;
   gap: 1.25rem;
   max-width: 720px;
   margin: 0 auto;
@@ -237,7 +237,7 @@
   font-size: 0.85rem;
 }
 </style>
-{{ endblock %}
+{% endblock %}
 
 {% block scripts %}
 <script src="{{ url_for('static', filename='js/chat_markdown.js') }}"></script>

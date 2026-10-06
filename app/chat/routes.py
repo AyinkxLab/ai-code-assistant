@@ -131,7 +131,11 @@ WELCOME_EXAMPLE_PROMPTS = [
     },
     {
         "label": "Explain some code",
-        "prompt": "Explain what this code does, step by step:\n\n
+        "prompt": "Explain what this code does, step by step:\n\n",
+    },
+]
+
+
 def _get_conversation(conversation_id: int) -> Conversation:
     """Return the current user's conversation or abort with 404."""
     conversation = Conversation.query.filter_by(
