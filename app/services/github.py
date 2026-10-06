@@ -173,6 +173,17 @@ def _parse_error_body(response: requests.Response) -> str:
     return f"HTTP {response.status_code}"
 
 
+def compare_refs(client: GitHubClient, full_name: str, base: str, head: str) -> dict:
+    """Compare two refs on GitHub and return the diff summary.
+
+    Convenience wrapper around :meth:`GitHubClient.compare_refs` so callers
+    that already hold a client instance can use either form. ``base`` and
+    ``head`` are plain refs (branch names, tags, or SHAs) and are joined as
+    ``base...head`` for the REST comparison endpoint.
+    """
+    return client.compare_refs(full_name, base, head)
+
+
 class GitHubClient:
     """Authenticated client for the GitHub REST API.
 
@@ -533,13 +544,13 @@ class GitHubClient:
         return self._get(f"/repos/{full_name}/commits/{sha}")
 
     def compare_refs(self, full_name: str, base: str, head: str) -> dict:
-        """Return the GitHub comparison between ``base`` and ``head``.
+        """Return GitHub's comparison of ``base`` against ``head``.
 
-        Uses the repository compare endpoint, so ``base`` and ``head`` may be
-        branch names, tags or commit SHAs.
+        The GitHub compare endpoint returns an envelope containing ``status``,
+        ``ahead_by``/``behind_by``, ``commits``, and the changed ``files``
+        (each with ``additions``/``deletions``/``patch``).
         """
-        name = validate_full_name(full_name)
-        return self._get(f"/repos/{name}/compare/{base}...{head}")
+        return self._get(f"/repos/{full_name}/compare/{base}...{head}")
 
     def _graphql(self, query: str, variables: dict) -> dict:
         """Execute a GraphQL query against the GitHub GraphQL API."""
@@ -833,15 +844,6 @@ def validate_path(path: str) -> str:
     if any(part in ("", ".", "..") for part in parts):
         raise GitHubInvalidError("Invalid path.")
     return "/".join(parts)
-
-
-def compare_refs(client: GitHubClient, full_name: str, base: str, head: str) -> dict:
-    """Compare two refs through ``client``.
-
-    Thin module-level wrapper so callers that already hold a client do not need
-    to know which endpoint backs the comparison.
-    """
-    return client.compare_refs(full_name, base, head)
 
 
 def revoke_github_token(access_token: str) -> None:
