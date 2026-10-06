@@ -27,7 +27,7 @@ from app.models import Conversation, Message
 from app.services import ratelimit
 from app.services.llm import LLMProviderError, provider_status
 from app.services.provider_config import ProviderSettingsError, apply_settings, build_provider
-from app.services.providers.retry import RetryingProvider
+from app.services.providers.retry import CircuitOpenError, RetryExhaustedError, RetryingProvider
 
 bp = Blueprint("chat_api", __name__, url_prefix="/api")
 
@@ -207,9 +207,57 @@ def send_message(conversation_id: int):
     try:
         provider = RetryingProvider(build_provider(current_user, conversation.provider))
         reply = provider.chat(messages, **chat_routes._generation_kwargs(conversation)).content
+    except RetryExhaustedError as exc:
+        conversation.messages.append(
+            Message(
+                role="assistant",
+                content="",
+                status="error",
+                error=str(exc),
+            )
+        )
+        db.session.commit()
+        return _problem(
+            502,
+            "Provider error.",
+            str(exc),
+            code="provider_retry_exhausted",
+            message=conversation.messages[-1].to_dict(),
+        )
+    except CircuitOpenError as exc:
+        conversation.messages.append(
+            Message(
+                role="assistant",
+                content="",
+                status="error",
+                error=str(exc),
+            )
+        )
+        db.session.commit()
+        return _problem(
+            503,
+            "Provider unavailable.",
+            str(exc),
+            code="provider_circuit_open",
+            message=conversation.messages[-1].to_dict(),
+        )
     except LLMProviderError as exc:
-        db.session.rollback()
-        return _problem(502, "Provider error.", str(exc))
+        conversation.messages.append(
+            Message(
+                role="assistant",
+                content="",
+                status="error",
+                error=str(exc),
+            )
+        )
+        db.session.commit()
+        return _problem(
+            502,
+            "Provider error.",
+            str(exc),
+            code="provider_error",
+            message=conversation.messages[-1].to_dict(),
+        )
 
     conversation.messages.append(Message(role="assistant", content=reply))
     if conversation.title == "New conversation":

@@ -17,6 +17,11 @@ Streaming is retried only while the stream is being established. Once the first
 chunk has been yielded the attempt is considered successful: replaying a
 partially-emitted stream would duplicate output for the user. A provider that
 fails before producing any chunk is retried like ``chat()``.
+
+Terminal outcomes are typed so callers can react precisely:
+:class:`RetryExhaustedError` when a transient failure survives the whole retry
+budget, and :class:`CircuitOpenError` when the breaker is tripped and the call is
+skipped without reaching the provider.
 """
 
 from __future__ import annotations
@@ -25,11 +30,12 @@ import os
 import random
 import time
 from collections.abc import Callable, Iterable, Iterator
-from typing import Any
+from typing import Any, NoReturn
 
 from app.services import chat_audit
 from app.services.providers.base import (
     LLMProvider,
+    ProviderCircuitOpenError,
     ProviderError,
     ProviderRateLimitError,
     ProviderResponse,
@@ -45,11 +51,54 @@ TRANSIENT_PROVIDER_ERRORS: tuple[type[ProviderError], ...] = (
 DEFAULT_MAX_RETRIES = 3
 DEFAULT_BASE_DELAY = 0.5
 DEFAULT_MAX_DELAY = 8.0
+DEFAULT_CIRCUIT_THRESHOLD = 5
+DEFAULT_CIRCUIT_COOLDOWN = 30.0
 
 
 def is_transient_error(exc: BaseException) -> bool:
     """Return ``True`` when ``exc`` is a provider error worth retrying."""
     return isinstance(exc, TRANSIENT_PROVIDER_ERRORS)
+
+
+class RetryExhaustedError(ProviderUnavailableError):
+    """A transient provider failure survived the whole retry budget.
+
+    The chat API maps this to ``502 provider_retry_exhausted``, which tells a
+    client "the provider was flaky and we gave up" rather than "the request was
+    wrong". The error that ended the final attempt is kept as :attr:`cause` and
+    ``attempts`` counts the initial call plus every retry that followed it.
+    """
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        provider: str | None = None,
+        attempts: int = 0,
+        cause: BaseException | None = None,
+    ) -> None:
+        super().__init__(message, provider=provider)
+        self.attempts = attempts
+        self.cause = cause
+
+
+class CircuitOpenError(ProviderCircuitOpenError):
+    """The circuit breaker is open, so the provider call is skipped outright.
+
+    Subclasses :class:`~app.services.providers.base.ProviderCircuitOpenError` so
+    callers that only know the base hierarchy still catch it. ``retry_after`` is
+    the number of seconds left before the breaker admits another attempt.
+    """
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        provider: str | None = None,
+        retry_after: float = 0.0,
+    ) -> None:
+        super().__init__(message, provider=provider)
+        self.retry_after = retry_after
 
 
 def _env_int(name: str, default: int) -> int:
@@ -84,6 +133,8 @@ class RetryingProvider(LLMProvider):
         max_delay: float | None = None,
         sleep: Callable[[float], None] = time.sleep,
         jitter: Callable[[], float] = random.random,
+        circuit_threshold: int | None = None,
+        circuit_cooldown: float | None = None,
     ) -> None:
         self.provider = provider
         self.name = provider.name
@@ -97,6 +148,14 @@ class RetryingProvider(LLMProvider):
         self.max_delay = _env_float("LLM_RETRY_MAX_DELAY", DEFAULT_MAX_DELAY)
         if max_delay is not None:
             self.max_delay = max(0.0, max_delay)
+        self.circuit_threshold = _env_int("LLM_CIRCUIT_THRESHOLD", DEFAULT_CIRCUIT_THRESHOLD)
+        if circuit_threshold is not None:
+            self.circuit_threshold = max(0, circuit_threshold)
+        self.circuit_cooldown = _env_float("LLM_CIRCUIT_COOLDOWN", DEFAULT_CIRCUIT_COOLDOWN)
+        if circuit_cooldown is not None:
+            self.circuit_cooldown = max(0.0, circuit_cooldown)
+        self._consecutive_failures = 0
+        self._circuit_opened_at: float | None = None
         self._sleep = sleep
         self._jitter = jitter
 
@@ -105,6 +164,58 @@ class RetryingProvider(LLMProvider):
         exponential = self.base_delay * (2 ** (attempt - 1))
         capped = min(exponential, self.max_delay)
         return capped * self._jitter()
+
+    def _circuit_open(self) -> bool:
+        """Return ``True`` while the circuit breaker is tripped."""
+        if self._circuit_opened_at is None:
+            return False
+        if time.monotonic() - self._circuit_opened_at >= self.circuit_cooldown:
+            self._circuit_opened_at = None
+            self._consecutive_failures = 0
+            return False
+        return True
+
+    def _record_success(self) -> None:
+        self._consecutive_failures = 0
+        self._circuit_opened_at = None
+
+    def _record_failure(self) -> None:
+        self._consecutive_failures += 1
+        if self.circuit_threshold > 0 and self._consecutive_failures >= self.circuit_threshold:
+            self._circuit_opened_at = time.monotonic()
+
+    def _circuit_retry_after(self) -> float:
+        """Seconds left before a tripped breaker admits another attempt."""
+        if self._circuit_opened_at is None:
+            return 0.0
+        elapsed = time.monotonic() - self._circuit_opened_at
+        return max(0.0, self.circuit_cooldown - elapsed)
+
+    def _guard_circuit(self) -> None:
+        if self._circuit_open():
+            raise CircuitOpenError(
+                f"Provider '{self.name}' is temporarily unavailable after "
+                f"repeated failures; retry later.",
+                provider=self.name,
+                retry_after=self._circuit_retry_after(),
+            )
+
+    def _raise_exhausted(self, exc: ProviderError, attempts: int) -> NoReturn:
+        """Raise once the retry budget is spent.
+
+        Transient failures become a :class:`RetryExhaustedError` carrying the
+        final cause; everything else is re-raised unchanged so callers keep
+        failing fast with the specific error (authentication, malformed
+        response, configuration, ...).
+        """
+        if not is_transient_error(exc):
+            raise exc
+        raise RetryExhaustedError(
+            f"Provider '{self.name}' failed after {attempts} attempt(s): {exc}",
+            provider=self.name,
+            attempts=attempts,
+            cause=exc,
+        ) from exc
 
     def _wait(self, attempt: int) -> None:
         delay = self.retry_delay(attempt)
@@ -122,6 +233,7 @@ class RetryingProvider(LLMProvider):
         attempt = 0
         started = time.monotonic()
         while True:
+            self._guard_circuit()
             try:
                 response = self.provider.chat(messages, model=model, params=params)
                 chat_audit.log_event(
@@ -132,6 +244,7 @@ class RetryingProvider(LLMProvider):
                     latency_ms=round((time.monotonic() - started) * 1000, 1),
                     token_count=response.total_tokens,
                 )
+                self._record_success()
                 return response
             except ProviderError as exc:
                 if not is_transient_error(exc) or attempt >= self.max_retries:
@@ -143,7 +256,8 @@ class RetryingProvider(LLMProvider):
                         error=type(exc).__name__,
                         latency_ms=round((time.monotonic() - started) * 1000, 1),
                     )
-                    raise
+                    self._record_failure()
+                    self._raise_exhausted(exc, attempt + 1)
                 attempt += 1
                 self._wait(attempt)
 
@@ -158,6 +272,7 @@ class RetryingProvider(LLMProvider):
         attempt = 0
         started = time.monotonic()
         while True:
+            self._guard_circuit()
             try:
                 iterator = self.provider.stream(messages, model=model, params=params)
                 first = next(iterator)
@@ -171,6 +286,7 @@ class RetryingProvider(LLMProvider):
                     stream=True,
                     latency_ms=round((time.monotonic() - started) * 1000, 1),
                 )
+                self._record_success()
                 return
             except ProviderError as exc:
                 if not is_transient_error(exc) or attempt >= self.max_retries:
@@ -183,7 +299,8 @@ class RetryingProvider(LLMProvider):
                         stream=True,
                         latency_ms=round((time.monotonic() - started) * 1000, 1),
                     )
-                    raise
+                    self._record_failure()
+                    self._raise_exhausted(exc, attempt + 1)
                 attempt += 1
                 self._wait(attempt)
         chat_audit.log_event(
@@ -194,6 +311,7 @@ class RetryingProvider(LLMProvider):
             stream=True,
             latency_ms=round((time.monotonic() - started) * 1000, 1),
         )
+        self._record_success()
         yield first
         yield from iterator
 
@@ -207,9 +325,13 @@ def get_retrying_provider(name: str | None = None) -> RetryingProvider:
 
 __all__ = [
     "DEFAULT_BASE_DELAY",
+    "DEFAULT_CIRCUIT_COOLDOWN",
+    "DEFAULT_CIRCUIT_THRESHOLD",
     "DEFAULT_MAX_DELAY",
     "DEFAULT_MAX_RETRIES",
     "TRANSIENT_PROVIDER_ERRORS",
+    "CircuitOpenError",
+    "RetryExhaustedError",
     "RetryingProvider",
     "get_retrying_provider",
     "is_transient_error",
