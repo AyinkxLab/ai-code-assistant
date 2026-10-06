@@ -48,6 +48,7 @@ developer tooling. This project is built incrementally across phases:
 - [Testing](#testing)
 - [Configuration](#configuration)
 - [CI / CD](#ci--cd)
+- [GitHub integration](#github-integration)
 - [Roadmap](#roadmap)
 - [License](#license)
 
@@ -69,6 +70,9 @@ developer tooling. This project is built incrementally across phases:
   import a Soroban repo, see detection, run analysis, and scaffold a contract.
 - [Architecture](docs/architecture.md) — how the application is layered and
   how the Stellar tooling fits in.
+- [GitHub integration](docs/github.md) — OAuth app setup, environment
+  variables, encrypted-token storage design, API client retry/rate-limit
+  behaviour, and troubleshooting.
 - [Security model](docs/security.md) — threat review and controls for the
   plugin and Stellar architecture.
 - [Security policy](SECURITY.md) — how to report a vulnerability.
@@ -516,6 +520,59 @@ database. The Docker `web` service runs `db upgrade` automatically on start.
 > Tokens are encrypted before storage and used only server-side; they are
 > never exposed in the browser. To disconnect (and remove the stored token),
 > use **Disconnect** on the GitHub dashboard.
+
+## GitHub integration
+
+### Setup
+
+The setup steps mirror [Setting up GitHub OAuth (Phase 4)](#setting-up-github-oauth-phase-4)
+above:
+
+1. Create an OAuth App at <https://github.com/settings/applications/new> with
+   **Homepage URL** `http://localhost:5000` and **Authorization callback URL**
+   `http://localhost:5000/github/callback`.
+2. Set `GITHUB_CLIENT_ID` and `GITHUB_CLIENT_SECRET` in `.env` (see
+   [Configuration](#configuration) for the full list, including
+   `GITHUB_REDIRECT_URI`, `GITHUB_API_URL`, `GITHUB_SCOPES`,
+   `GITHUB_REQUEST_TIMEOUT`, and `GITHUB_MAX_CONTEXT_CHARS`).
+3. Restart the app and open **GitHub** in the navigation bar to connect your
+   account.
+
+### Architecture
+
+- `app/services/github.py` — the GitHub REST API client. It owns request
+  timeouts, the typed error taxonomy (auth, permission, not-found,
+  rate-limit, network), exponential backoff retries on transient failures,
+  and rate-limit awareness.
+- `app/services/crypto.py` — the encrypted-token storage layer. Access
+  tokens are encrypted at rest with Fernet (AES-128 + HMAC-SHA256) using a
+  key derived from `SECRET_KEY`; the plaintext token is never persisted,
+  logged, or sent to the frontend.
+- `app/github/routes.py` — the GitHub blueprint: the OAuth connect/callback
+  flow (with a signed `state` parameter to prevent CSRF), disconnect, and
+  the repository, commit, issue, and pull-request views.
+
+### Security note
+
+Tokens are encrypted before storage and used only server-side; they are
+never exposed in the browser. All GitHub API calls are made on the user's
+behalf with their own token, so GitHub's own permission model decides which
+repositories are accessible. To disconnect (and remove the stored token),
+use **Disconnect** on the GitHub dashboard.
+
+### Troubleshooting
+
+- **Missing scope** — if a repository, issue, or PR call fails with a
+  permission error, the OAuth token is missing a required scope. Confirm
+  `GITHUB_SCOPES` includes `read:user repo`, then disconnect and reconnect
+  the account so GitHub issues a new token.
+- **Rate limits** — the client surfaces rate-limit errors distinctly and
+  backs off on transient failures. If you hit GitHub's rate limit, wait for
+  the window to reset (or authenticate with a token that has a higher
+  limit) before retrying.
+- **Token revoked** — if the token was revoked or expired on GitHub's side,
+  calls fail with an auth error. Disconnect and reconnect the account to
+  store a fresh encrypted token.
 
 ## Testing
 
