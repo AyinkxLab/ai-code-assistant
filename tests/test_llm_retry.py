@@ -16,7 +16,12 @@ from app.services.providers import (
     ProviderUnavailableError,
     get_retrying_provider,
 )
-from app.services.providers.retry import RetryingProvider, is_transient_error
+from app.services.providers.retry import (
+    CircuitOpenError,
+    RetryExhaustedError,
+    RetryingProvider,
+    is_transient_error,
+)
 
 
 class FlakyProvider:
@@ -176,3 +181,48 @@ class TestRetryingProviderContract:
         assert is_transient_error(ProviderRateLimitError("x"))
         assert not is_transient_error(ProviderAuthenticationError("x"))
         assert not is_transient_error(ProviderResponseError("x"))
+
+
+class TestTerminalErrorTypes:
+    """The chat API maps these to ``502 provider_retry_exhausted`` / ``503
+    provider_circuit_open``, so the wrapper has to raise the typed errors."""
+
+    def test_exhausted_transient_failure_is_typed(self):
+        provider = FlakyProvider(failures=5)
+        with pytest.raises(RetryExhaustedError) as excinfo:
+            _wrap(provider, max_retries=1).chat([{"role": "user", "content": "hi"}])
+
+        # Still catchable as the transient error it wrapped, for older callers.
+        assert isinstance(excinfo.value, ProviderUnavailableError)
+        assert excinfo.value.provider == "flaky"
+        assert excinfo.value.attempts == 2
+        assert isinstance(excinfo.value.cause, ProviderUnavailableError)
+        assert provider.chat_calls == 2
+
+    def test_exhausted_stream_is_typed(self):
+        provider = FlakyProvider(failures=5)
+        with pytest.raises(RetryExhaustedError):
+            list(_wrap(provider, max_retries=1).stream([{"role": "user", "content": "hi"}]))
+        assert provider.stream_calls == 2
+
+    def test_non_transient_error_is_never_rewrapped(self):
+        provider = FlakyProvider(failures=1, error=ProviderAuthenticationError)
+        with pytest.raises(ProviderAuthenticationError):
+            _wrap(provider, max_retries=3).chat([{"role": "user", "content": "hi"}])
+        assert provider.chat_calls == 1
+
+    def test_open_circuit_skips_the_provider(self):
+        provider = FlakyProvider(failures=5)
+        retrying = _wrap(provider, max_retries=0, circuit_threshold=1, circuit_cooldown=60.0)
+
+        with pytest.raises(RetryExhaustedError):
+            retrying.chat([{"role": "user", "content": "hi"}])
+        assert provider.chat_calls == 1
+
+        with pytest.raises(CircuitOpenError) as excinfo:
+            retrying.chat([{"role": "user", "content": "hi"}])
+
+        # The breaker short-circuited the call: the provider was never touched.
+        assert provider.chat_calls == 1
+        assert excinfo.value.provider == "flaky"
+        assert excinfo.value.retry_after > 0
