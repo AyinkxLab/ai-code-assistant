@@ -19,6 +19,7 @@ API (JSON)
     /github/api/repos/.../tree              tree of a ref
     /github/api/repos/.../contents          file or directory contents
     /github/api/repos/.../commits           commit history
+    /github/api/repos/.../compare/<b>...<h> diff between two refs
     /github/api/repos/.../issues            issue list
     /github/api/repos/.../issues/<n>        single issue + AI analysis
     /github/api/repos/.../pulls             pull request list
@@ -648,6 +649,38 @@ def api_commit_detail(owner: str, repo: str, sha: str):
                 }
                 for f in commit.get("files", [])
             ],
+        }
+    )
+
+
+# --------------------------------------------------------------------------
+# API: comparisons
+# --------------------------------------------------------------------------
+
+
+@bp.route("/api/repos/<owner>/<repo>/compare/<base>...<head>")
+@bp.route("/api/compare/<owner>/<repo>/<base>...<head>")
+@login_required
+def api_compare(owner: str, repo: str, base: str, head: str):
+    """Return the diff between two refs, with cumulative additions/deletions."""
+    full_name = validate_full_name(f"{owner}/{repo}")
+    try:
+        client = _client()
+        comparison = client.compare_refs(full_name, base, head)
+    except GitHubError as exc:
+        return jsonify(github_error_payload(exc)), 502
+
+    files = comparison.get("files") or []
+    return jsonify(
+        {
+            "status": comparison.get("status"),
+            "ahead_by": comparison.get("ahead_by", 0),
+            "behind_by": comparison.get("behind_by", 0),
+            "total_commits": comparison.get("total_commits", 0),
+            "commits": comparison.get("commits") or [],
+            "files": files,
+            "additions": sum(int(f.get("additions") or 0) for f in files),
+            "deletions": sum(int(f.get("deletions") or 0) for f in files),
         }
     )
 

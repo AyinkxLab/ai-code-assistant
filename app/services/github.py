@@ -532,6 +532,15 @@ class GitHubClient:
     def get_commit(self, full_name: str, sha: str) -> dict:
         return self._get(f"/repos/{full_name}/commits/{sha}")
 
+    def compare_refs(self, full_name: str, base: str, head: str) -> dict:
+        """Return the GitHub comparison between ``base`` and ``head``.
+
+        Uses the repository compare endpoint, so ``base`` and ``head`` may be
+        branch names, tags or commit SHAs.
+        """
+        name = validate_full_name(full_name)
+        return self._get(f"/repos/{name}/compare/{base}...{head}")
+
     def _graphql(self, query: str, variables: dict) -> dict:
         """Execute a GraphQL query against the GitHub GraphQL API."""
         url = f"{self.api_url}/graphql"
@@ -824,6 +833,15 @@ def validate_path(path: str) -> str:
     if any(part in ("", ".", "..") for part in parts):
         raise GitHubInvalidError("Invalid path.")
     return "/".join(parts)
+
+
+def compare_refs(client: GitHubClient, full_name: str, base: str, head: str) -> dict:
+    """Compare two refs through ``client``.
+
+    Thin module-level wrapper so callers that already hold a client do not need
+    to know which endpoint backs the comparison.
+    """
+    return client.compare_refs(full_name, base, head)
 
 
 def revoke_github_token(access_token: str) -> None:

@@ -1,7 +1,8 @@
 """Tests for the GitHub API service layer.
 
 The GitHub client is tested against a fake ``requests.Session`` so no real
-network calls are made. The fake verifies request paths/params and returns scripted responses (success, rate limit, 404, 5xx, network failure).
+network calls are made. The fake verifies request paths/params and returns
+scripted responses (success, rate limit, 404, 5xx, network failure).
 """
 
 import json
@@ -95,7 +96,7 @@ class TestRequestHandling:
         client, session = ok_client
         session.responses = [FakeResponse.from_json(200, {"id": 1})]
         client.get_user()
-        assert session.headers["Authorization"] == "Bearer ghn_test_token"
+        assert session.headers["Authorization"] == "Bearer gho_test_token"
         assert session.headers["X-GitHub-Api-Version"] == "2022-11-28"
 
     def test_not_found_raises_typed_error(self, ok_client):
@@ -205,7 +206,7 @@ class TestPagination:
             '<https://api.github.com/repos/o/r/issues?page=7>; rel="last"'
         )
         links = parse_link_header(header)
-        assert links["next"].endswith(page=3")
+        assert links["next"].endswith("page=3")
         assert links["prev"].endswith("page=1")
         assert links["last"].endswith("page=7")
         assert parse_link_header("") == {}
@@ -302,6 +303,76 @@ class TestPagination:
         ]
         with pytest.raises(GitHubNotFoundError):
             client.list_issues_page("owner/repo")
+
+
+class TestRateLimit:
+    def test_get_rate_limit_normalizes_core(self, ok_client):
+        client, session = ok_client
+        session.responses = [
+            FakeResponse.from_json(
+                200,
+                {
+                    "resources": {
+                        "core": {
+                            "limit": 5000,
+                            "remaining": 12,
+                            "reset": 1_700_000_000,
+                            "used": 4988,
+                        }
+                    },
+                    "rate": {"limit": 5000, "remaining": 12, "reset": 1_700_000_000},
+                },
+            )
+        ]
+        budget = client.get_rate_limit()
+        assert budget == {
+            "limit": 5000,
+            "remaining": 12,
+            "reset": 1_700_000_000,
+            "used": 4988,
+        }
+        assert session.calls[0]["url"].endswith("/rate_limit")
+
+    def test_get_rate_limit_falls_back_to_rate_object(self, ok_client):
+        client, session = ok_client
+        session.responses = [
+            FakeResponse.from_json(
+                200, {"rate": {"limit": 60, "remaining": 60, "reset": 1_700_000_000}}
+            )
+        ]
+        assert client.get_rate_limit() == {
+            "limit": 60,
+            "remaining": 60,
+            "reset": 1_700_000_000,
+            "used": None,
+        }
+
+    def test_get_rate_limit_returns_none_when_missing(self, ok_client):
+        client, session = ok_client
+        session.responses = [FakeResponse.from_json(200, {"resources": {}})]
+        assert client.get_rate_limit() is None
+
+    def test_get_rate_limit_returns_none_on_non_dict(self, ok_client):
+        client, session = ok_client
+        session.responses = [FakeResponse.from_json(200, [])]
+        assert client.get_rate_limit() is None
+
+
+class TestValidation:
+    def test_validate_full_name_accepts_valid(self):
+        assert validate_full_name("owner/repo") == "owner/repo"
+        assert validate_full_name("  Owner_1.2/My-Repo.3  ") == "Owner_1.2/My-Repo.3"
+
+    def test_validate_full_name_rejects_bad(self):
+        for bad in ["", "norepo", "a/b/c", "a b/c", "a/b c", "../evil/repo"]:
+            with pytest.raises(GitHubError):
+                validate_full_name(bad)
+
+    def test_validate_path_rejects_traversal(self):
+        assert validate_path("/foo/bar.txt") == "foo/bar.txt"
+        for bad in ["../secret", "foo/../../etc/passwd", "..", "a/../b"]:
+            with pytest.raises(GitHubError):
+                validate_path(bad)
 
 
 class TestCompareRefs:
