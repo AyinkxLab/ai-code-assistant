@@ -34,12 +34,18 @@ class FakeResponse:
         self._data = data
         self.text = text
         self._lines = lines or []
+        self.closed = False
 
     def json(self):
         return self._data
 
     def iter_lines(self, decode_unicode=False):
         return iter(self._lines)
+
+    def close(self):
+        # ``requests.Response`` closes the streamed body once the consumer is
+        # done; providers call it in a ``finally``, so the double must support it.
+        self.closed = True
 
 
 class FakeProvider(providers.LLMProvider):

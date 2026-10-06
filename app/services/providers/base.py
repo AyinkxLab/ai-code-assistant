@@ -162,6 +162,10 @@ class ProviderResponseError(ProviderError):
     """The provider returned a response in an unexpected shape."""
 
 
+class ProviderStreamError(ProviderError):
+    """A provider's streaming response failed or was interrupted mid-stream."""
+
+
 class LLMProvider(ABC):
     """Abstract base class implemented by every concrete provider."""
 

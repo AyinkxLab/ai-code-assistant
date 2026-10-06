@@ -23,7 +23,6 @@ from app.services.providers.base import (
     ProviderRateLimitError,
     ProviderResponse,
     ProviderResponseError,
-    ProviderStreamError,
     ProviderUnavailableError,
     prepare_messages,
 )

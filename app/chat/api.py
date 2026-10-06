@@ -1,4 +1,3 @@
-
 """Chat JSON API (``/api`` namespace).
 
 Machine-facing REST surface for the chat feature:
@@ -18,8 +17,8 @@ the same model/service layer.
 
 from __future__ import annotations
 
-import json
 import functools
+import json
 import time
 
 from flask import Blueprint, Response, current_app, jsonify, request, stream_with_context
@@ -296,11 +295,15 @@ def stream_message(conversation_id: int):
             stream = provider.stream(messages, **kwargs)
             last_beat = time.monotonic()
             for chunk in stream:
-                if chunk.delta:
-                    chunks.append(chunk.delta)
-                    yield _sse_event("content", {"delta": chunk.delta})
-                if chunk.usage is not None:
-                    usage = chunk.usage
+                delta = chunk if isinstance(chunk, str) else None
+                if delta is None:
+                    delta = getattr(chunk, "delta", None) or getattr(chunk, "content", "") or ""
+                if delta:
+                    chunks.append(delta)
+                    yield _sse_event("content", {"delta": delta})
+                chunk_usage = getattr(chunk, "usage", None)
+                if chunk_usage is not None:
+                    usage = chunk_usage
                 now = time.monotonic()
                 if heartbeat and now - last_beat >= heartbeat:
                     last_beat = now

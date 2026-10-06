@@ -1,30 +1,25 @@
 """Backward-compatible façade over :mod:`app.services.providers` (issue #2).
 
 The provider abstraction now lives in ``app/services/providers/``. This module
-keeps the historical import surface — ``get_provider``, `LLMProviderError`,
+keeps the historical import surface — ``get_provider``, ``LLMProviderError``,
 ``OpenAIProvider``, ``MockProvider`` — so existing call sites and tests continue
-to work unchanged. `LLMProviderError` is an alias of
+to work unchanged. ``LLMProviderError`` is an alias of
 :class:`~app.services.providers.base.ProviderError`, so catching it also catches
 the specific subclasses (configuration, auth, rate limit, unavailable, response).
 
 This module also exposes the streaming façade used by the SSE endpoint:
-```stream_provider``` and the associated `StreamEvent` / `StreamEventType` types.
-It delegates to the provider's optional `stream()` method when available and
-falls back to a single-shot `complete()` call otherwise, so every provider can
-participate in the streaming protocol.
-
-The generator is cancellation-aware: closing it (e.g. on client disconnect)
-stops the underlying provider stream and yields the partial content collected so
-far through the final `content` event.
+:func:`stream_provider` and the associated :class:`StreamEvent` /
+:class:`StreamEventType` types. It delegates to the provider's optional
+``stream()`` method when available and falls back to a single-shot ``complete()``
+call otherwise, so every provider can participate in the streaming protocol.
 """
 
 from __future__ import annotations
 
-import as yncremental as _incremental
 import logging
+from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
-from enum import ENUM
-from typing import AsyncIterator, Awaitable, Callable, Optional, Union
+from enum import StrEnum
 
 from app.services.providers import (
     AnthropicProvider,
@@ -54,7 +49,7 @@ LLMProviderError = ProviderError
 logger = logging.getLogger(__name__)
 
 
-class StreamEventType(str.Enum):
+class StreamEventType(StrEnum):
     """Event types emitted by :func:`stream_provider`."""
 
     MESSAGE_START = "message_start"
@@ -67,7 +62,7 @@ class StreamEventType(str.Enum):
 class StreamEvent:
     """A single event in the provider stream protocol.
 
-    The `data` payload is JSON-serializable and matches the SSE event body
+    The ``data`` payload is JSON-serializable and matches the SSE event body
     expected by the browser client.
     """
 
@@ -78,8 +73,8 @@ class StreamEvent:
         return {"type": self.type.value, "data": self.data}
 
 
-def _normalize_usage(usage: Optional[dict]) -> dict:
-    """Return a stable token-usage dict for the `message_end` event."""
+def _normalize_usage(usage: dict | None) -> dict:
+    """Return a stable token-usage dict for the ``message_end`` event."""
     if not usage:
         return {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
     prompt = int(usage.get("prompt_tokens", 0) or 0)
@@ -96,8 +91,8 @@ def _extract_delta(chunk: object) -> str:
     """Pull a text delta out of a provider stream chunk.
 
     Supports the common shapes used by OpenAI-compatible and Anthropic
-    streaming responses, as well as plain strings and dicts with a `text`
-    or `content` key.
+    streaming responses, as well as plain strings and dicts with a ``text``
+    or ``content`` key.
     """
     if chunk is None:
         return ""
@@ -136,7 +131,7 @@ def _extract_delta(chunk: object) -> str:
     return ""
 
 
-def _extract_usage(chunk: object) -> Optional[dict]:
+def _extract_usage(chunk: object) -> dict | None:
     """Pull a token-usage dict out of a provider stream chunk, if present."""
     if isinstance(chunk, dict):
         usage = chunk.get("usage")
@@ -158,10 +153,14 @@ def _extract_usage(chunk: object) -> Optional[dict]:
 async def _iterate_provider_stream(
     provider: LLMProvider,
     messages: list,
-    model: Optional[str],
+    model: str | None,
     **kwargs,
 ) -> AsyncIterator[object]:
-    """Iterate a provider's native stream if it has one."""
+    """Iterate a provider's native stream if it has one.
+
+    Synchronous generators (the common case for the HTTP-based providers) are
+    forwarded chunk by chunk; an async provider iterator is awaited in turn.
+    """
     stream_fn = getattr(provider, "stream", None)
     if callable(stream_fn):
         iterator = stream_fn(messages, model=model, **kwargs)
@@ -169,7 +168,7 @@ async def _iterate_provider_stream(
             async for chunk in iterator:
                 yield chunk
             return
-        async for chunk in _incremental.awrap(iterator):
+        for chunk in iterator:
             yield chunk
         return
 
@@ -183,21 +182,21 @@ async def _iterate_provider_stream(
 
 
 async def stream_provider(
-    provider: Union[LLMProvider, str, None] = None,
-    messages: Optional[list] = None,
-    model: Optional[str] = None,
+    provider: LLMProvider | str | None = None,
+    messages: list | None = None,
+    model: str | None = None,
     **kwargs,
 ) -> AsyncIterator[StreamEvent]:
-    """Stream a chat completion as `StreamEvent`s.
+    """Stream a chat completion as :class:`StreamEvent` objects.
 
-    Yields `message_start`, one or more `content` deltas, then `message_end`
-with token usage. Any error raised by the provider is surfaced as an
-    `error` event so the SSA endpoint never hangs.
+    Yields ``message_start``, one or more ``content`` deltas, then
+    ``message_end`` with token usage. Any error raised by the provider is
+    surfaced as an ``error`` event so the SSE endpoint never hangs.
 
-    The generator is cancellation-aware. If the consumer closes it
-    (e.g. on client disconnect), the underlying provider stream is closed
-    and the partial content is emitted through a final `content` event before
-    the generator exits, allowing the caller to persist what was received.
+    The generator is cancellation-aware. If the consumer closes it (e.g. on
+    client disconnect), the underlying provider stream is closed and the
+    partial content is emitted through a final ``content`` event before the
+    generator exits, allowing the caller to persist what was received.
     """
     if messages is None:
         messages = []
@@ -205,8 +204,7 @@ with token usage. Any error raised by the provider is surfaced as an
         provider = get_provider(provider)
 
     content_parts: list[str] = []
-    usage: Optional[dict] = None
-    finished = False
+    usage: dict | None = None
     cancelled = False
 
     yield StreamEvent(
@@ -215,18 +213,14 @@ with token usage. Any error raised by the provider is surfaced as an
     )
 
     try:
-        async for chunk in _iterate_provider_stream(
-            provider, messages, model, **kwargs
-        ):
+        async for chunk in _iterate_provider_stream(provider, messages, model, **kwargs):
             delta = _extract_delta(chunk)
             chunk_usage = _extract_usage(chunk)
             if chunk_usage:
                 usage = chunk_usage
             if delta:
                 content_parts.append(delta)
-                yield StreamEvent(
-                    StreamEventType.CONTENT, {"delta": delta}
-                )
+                yield StreamEvent(StreamEventType.CONTENT, {"delta": delta})
     except GeneratorExit:
         # Client disconnected: stop the provider stream and surface the
         # partial content so the caller can persist it.
@@ -246,7 +240,7 @@ with token usage. Any error raised by the provider is surfaced as an
             },
         )
         return
-    except Exception as exc:  # noqa: BLERA01
+    except Exception as exc:
         logger.exception("Provider stream failed")
         yield StreamEvent(
             StreamEventType.ERROR,
@@ -267,23 +261,21 @@ with token usage. Any error raised by the provider is surfaced as an
             "cancelled": cancelled,
         },
     )
-    finished = True
-    del finished
 
 
 def stream_provider_sync(
-    provider: Union[LLMProvider, str, None] = None,
-    messages: Optional[list] = None,
-    model: Optional[str] = None,
+    provider: LLMProvider | str | None = None,
+    messages: list | None = None,
+    model: str | None = None,
     **kwargs,
 ) -> AsyncIterator[StreamEvent]:
-    """%sync-friendly alias for :func:`stream_provider`."""
+    """Alias for :func:`stream_provider` kept for naming compatibility."""
     return stream_provider(provider, messages, model, **kwargs)
 
 
-def is_streaming_supported(provider: Union[LLMProvider, str, None] = None) -> bool:
+def is_streaming_supported(provider: LLMProvider | str | None = None) -> bool:
     """Report whether the given provider has native streaming support."""
-    if is None or isinstance(provider, str):
+    if provider is None or isinstance(provider, str):
         try:
             provider = get_provider(provider)
         except Exception:
