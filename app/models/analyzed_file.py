@@ -24,6 +24,4 @@ class AnalyzedFile(db.Model):
     created_at = db.Column(
         db.DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC)
     )
-    analyses = db.relationship(
-        "FileAnalysis", back_populates="file", cascade="all, delete-orphan"
-    )
+    analyses = db.relationship("FileAnalysis", back_populates="file", cascade="all, delete-orphan")
