@@ -1,1 +1,567 @@
-IyBDb2xsYWJvcmF0aW9uIEFQSSBSZWZlcmVuY2UgKFBhc2UgNykKCgpUaGlzIGRvY3VtZW50IGlzIHRoZSBjb25zb2xpZGF0ZWQgcmVmZXJlbmNlIGZvciB0aGUgKipQaGFzZSA3IOKAlCBUZWFtCkNvbGxhYm9yYXRpb24qKiBlbmRwb2ludHMuIEl0IGNvdmVycyBpbnZpdGF0aW9ucywgbWVtYmVyc2hpcCwgYWN0aXZpdHkvYXVkaXQsCm5vdGlmaWNhdGlvbnMsIGNvbW1lbnRzLCBzZXR0aW5ncywgYW5kIHByZXNlbmNlLgoKRXZlcnkgZW5kcG9pbnQgaXMgc2VydmVkIGJ5IHRoZSBgY29sbGFib3JhdGlvbmAgYmx1ZXByaW50CihgYXBwL2NvbGxhYm9yYXRpb24vcm91dGVzLnB5YCkgdW5sZXNzIG5vdGVkLCBhbmQgcm91dGVzIGF1dGhvcml6YXRpb24gdGhyb3VnaAp0aGUgY2VudHJhbCBjYXBhYmlsaXR5IG1vZHVsZSBgYXBwL3NlcnZpY2VzL3Blcm1pc3Npb25zLnB5YCAoaXNzdWUgIzE0MikuIFRoZQpwZXJtaXNzaW9uIG1hdHJpeCBpcyBkZWZpbmVkIGluIGBDQVBBQklMSVRJRVNgIHRoZXJlIGFuZCByZW5kZXJlZCBpbiB0aGUKW2RldmVsb3BlciBndWlkZV0odGVhbS1jb2xsYWJvcmF0aW9uLm1kKTsgdGhlIHRyYWNraW5nIGlzc3VlIGlzICMxMzYuCgojIyBDb252ZW50aW9ucwoKLSBgYXV0aGA6IGV2ZXJ5IEpTT04gQVBJIHJvdXRlIHJlcXVpcmVzIGEgbG9nZ2VkLWluIHVzZXIgKGBAbG9naW5fcmVxdWlyZWRgKS4KICBVbmF1dGhlbnRpY2F0ZWQgcmVxdWVzdHMgZ2V0IGEgMzAyIHRvIGAvYXV0aC9sb2dpbmAuCi0gKipSb2xlczoqKiBgb3duZXJgID4gYGNvbnRyaWJ1dG9yYCA+IGB2aWV3ZXJgLiBUaGUgd29ya3NwYWNlIGBvd25lcmAgaXMKICBhdXRob3JpdGF0aXZlIHZpYSBgV29ya3NwYWNlLnVzZXJfaWRgOyBldmVyeW9uZSBlbHNlIHJlc29sdmVzIHRocm91Z2ggYW4KICAqYWN0aXZlKiBtZW1iZXJzaGlwIHJvdy4gTm9uLW1lbWJlcnMgcmVzb2x2ZSB0byBubyByb2xlIGFuZCAqKmZhaWwgY2xvc2VkKiouCi0gKipOb3QgZm91bmQgdnMgZm9yYmlkZGVuOioqIHdvcmtzcGFjZSByb3V0ZXMgcmV0dXJuIGA0MDRgIGZvciBub24tbWVtYmVycyBhbmQKICBub24tZXhpc3RlbnQgd29ya3NwYWNlcyBhbGlrZSwgc28gY2FsbGVycyBjYW5ub3QgcHJvYmUgaWRzIChubyBleGlzdGVuY2UKICBvcmFjbGUpLiBDYXBhYmlsaXR5IHZpb2xhdGlvbnMgYnkgYSBrbm93biBtZW1iZXIgcmV0dXJuIGA0MDNgLgotICoqUGFnaW5hdGlvbjoqKiBsaXN0IGVuZHBvaW50cyBhY2NlcHQgYHBhZ2VgICgxLWJhc2VkKSBhbmQgYHBlcl9wYWdlYAogICgx4oCTMTAwLCBkZWZhdWx0IDIwKS4gVGhlIGFjdGl2aXR5IGZlZWQgaW5zdGVhZCB1c2VzIGN1cnNvciBwYWdpbmF0aW9uIHZpYQogIGBiZWZvcmU9PGN1cnNvcj5gLgotICoqRXJyb3JzOioqIEpTT04gYm9kaWVzIGxpa2UgYHsiZXJyb3IiOiAiPG1lc3NhZ2U+In1gIHdpdGggc3RhdHVzIDQwMC80MDMvNDA0LzQwOS80MjkuCi0gKipDU1JGOioqIEhUTUwgcGFnZXMgYXJlIHByb3RlY3RlZCBieSBGbGFzay1XVEY7IEpTT04gQVBJIGNhbGxzIHVzZQogIGBDb250ZW50LVR5cGU6IGFwcGxpY2F0aW9uL2pzb25gLgoKIyMgUGVybWlzc2lvbiBtYXRyaXgKCnwgQ2FwYWJpbGl0eSB8IEFsbG93ZWQgcm9sZXMgfAp8IC0tLS0tLS0tLS0gfCAtLS0tLS0tLS0tLS0tIHwKfCBgdmlld19tZW1iZXJzYCB8IG93bmVyLCBjb250cmlidXRvciwgdmlld2VyIHwKfCBgbGVhdmVfd29ya3NwYWNlYCB8IGNvbnRyaWJ1dG9yLCB2aWV3ZXIgKG93bmVyIHRyYW5zZmVycyBpbnN0ZWFkKSB8CnwgYG1hbmFnZV9tZW1iZXJzYCB8IG93bmVyIHwKfCBgbWFuYWdlX2ludml0YXRpb25zYCB8IG93bmVyIHwKfCBgbWFuYWdlX3NldHRpbmdzYCB8IG93bmVyIHwKfCBgdHJhbnNmZXJfb3duZXJzaGlwYCB8IG93bmVyIHwKfCBgdmlld19hdWRpdGAgfCBvd25lciB8CnwgYGNvbW1lbnRgIHwgb3duZXIsIGNvbnRyaWJ1dG9yLCB2aWV3ZXIgfAp8IGB2aWV3X2FjdGl2aXR5YCB8IG93bmVyLCBjb250cmlidXRvciwgdmlld2VyIHwKfCBgaGVhcnRiZWF0YCB8IG93bmVyLCBjb250cmlidXRvciwgdmlld2VyIHwKClJvbGVzIGFyZSBoaWVyYXJjaGljYWwgZm9yIFVJIHB1cnBvc2VzIGJ1dCBlYWNoIGNhcGFiaWxpdHkgbGlzdHMgaXRzIGV4YWN0CnJvbGVzOyBhbiB1bmtub3duL3R5cG8nZCByb2xlIG5ldmVyIGdyYW50cyBhbiBvd25lciBjYXBhYmlsaXR5LgoKLS0tCgojIyBJbnZpdGF0aW9ucwoKIyMjIENyZWF0ZSBpbnZpdGF0aW9uIOKAlCBQaGFzZSA3CgpgUE9TVCAvY29sbGFib3JhdGlvbi9hcGkvd29ya3NwYWNlcy88d29ya3NwYWNlX2lkPi9pbnZpdGF0aW9uc2Ag4oCUICoqb3duZXIqKgooYG1hbmFnZV9pbnZpdGF0aW9uc2ApCgpSZXF1ZXN0OgoKYGBganNvbgp7ImVtYWlsIjogIm5ld2d1eUBleGFtcGxlLmNvbSIsICJyb2xlIjogInZpZXdlciJ9CmBgYAoKLSBgZW1haWxgIHJlcXVpcmVkLCB2YWxpZGF0ZWQsIGxvd2VyY2FzZWQ7IG1heCAyNTUgY2hhcnMuCi0gYHJvbGVgIG9wdGlvbmFsIChgb3duZXJgIGlzIHJlamVjdGVkIGJ5IHZhbGlkYXRpb247IGBjb250cmlidXRvcmAvYHZpZXdlcmAKICBhbGxvd2VkKTsgZGVmYXVsdHMgdG8gdGhlIHdvcmtzcGFjZSBzZXR0aW5nIGBkZWZhdWx0X21lbWJlcl9yb2xlYC4KLSBGYWlscyBgNDAzYCB3aGVuIHRoZSB3b3Jrc3BhY2UgaGFzIGBpbnZpdGF0aW9uc19lbmFibGVkID0gZmFsc2VgLgotIEZhaWxzIGA0MDBgIGZvciBzZWxmLWludml0ZSAvIGludmFsaWQgcm9sZSAvIGludmFsaWQgZW1haWwuCi0gRmFpbHMgYDQwOWAgd2hlbiB0aGUgZW1haWwgYWxyZWFkeSBiZWxvbmdzIHRvIGFuIGFjdGl2ZSBtZW1iZXIgb3IgaGFzIGEKICBwZW5kaW5nIGludml0YXRpb24uCgpSZXNwb25zZSBgMjAxYCDigJQgdGhlIGludml0YXRpb24gcGx1cyB0aGUgKipvbmUtdGltZSByYXcgdG9rZW4qKiAodGhlIHRva2VuIGlzCnN0b3JlZCBoYXNoZWQgYXMgU0hBLTI1NiBhbmQgZGVsaXZlcmVkIG9ubHkgdmlhIHRoZSBpbnZpdGUgZW1haWwgbGluayk6CgpgYGBqc29uCnsKICAiaWQiOiAxMiwKICAid29ya3NwYWNlX2lkIjogMywKICAiaW52aXRlZF9ieSI6IDEsCiAgImludml0ZXJfdXNlcm5hbWUiOiAiYWxpY2UiLAogICJlbWFpbCI6ICJuZXdndXlAZXhhbXBsZS5jb20iLAogICJyb2xlIjogInZpZXdlciIsCiAgInN0YXR1cyI6ICJwZW5kaW5nIiwKICAiZXhwaXJlc19hdCI6ICIyMDI2LTA4LTIyVDEwOjAwOjAwKzAwOjAwIiwKICAiYWNjZXB0ZWRfYnkiOiBudWxsLAogICJhY2NlcHRlZF9hdCI6IG51bGwsCiAgImNyZWF0ZWRfYXQiOiAiMjAyNi0wOC0xNVQxMDowMDowMCswMDowMCIsCiAgInRva2VuIjogIjNmOWMuLi5lMmExIgp9CmBgYAoKIyMjIExpc3QgaW52aXRhdGlvbnMg4oCUIFBoYXNlIDcKCmBHRVQgL2NvbGxhYm9yYXRpb24vYXBpL3dvcmtzcGFjZXMvPHdvcmtzcGFjZV9pZD4vaW52aXRhdGlvbnNgIOKAlCAqKm93bmVyKioKKGBtYW5hZ2VfaW52aXRhdGlvbnNgKQoKUXVlcnkgcGFyYW1zOiBgc3RhdHVzYCAob3B0aW9uYWwgZmlsdGVyOiBgcGVuZGluZ2AgfCBgYWNjZXB0ZWRgIHwgYGRlY2xpbmVkYCB8CmBjYW5jZWxsZWRgIHwgYGV4cGlyZWRgKSwgYHBhZ2VgLCBgcGVyX3BhZ2VgLgoKUmVzcG9uc2UgYDIwMGA6CgpgYGBqc29uCnsKICAiaXRlbXMiOiBbIHsgImlkIjogMTIsICJ3b3Jrc3BhY2VfaWQiOiAzLCAiaW52aXRlZF9ieSI6IDEsCiAgICAgICAgICAgICAgICJpbnZpdGVyX3VzZXJuYW1lIjogImFsaWNlIiwgImVtYWlsIjogIm5ld2d1eUBleGFtcGxlLmNvbSIsCiAgICAgICAgICAgICAgICJyb2xlIjogInZpZXdlciIsICJzdGF0dXMiOiAicGVuZGluZyIsCiAgICAgICAgICAgICAgICJleHBpcmVzX2F0IjogIjIwMjYtMDgtMjJUMTA6MDA6MDArMDA6MDAiLAogICAgICAgICAgICAgICAiYWNjZXB0ZWRfYnkiOiBudWxsLCAiYWNjZXB0ZWRfYXQiOiBudWxsLAogICAgICAgICAgICAgICAiY3JlYXRlZF9hdCI6ICIyMDI2LTA4LTE1VDEwOjAwOjAwKzAwOjAwIiB9IF0sCiAgInRvdGFsIjogMSwKICAicGFnZSI6IDEsCiAgInBlcl9wYWdlIjogMjAKfQpgYGAKCk5vIHRva2VuIGlzIGV2ZXIgcHJlc2VudCBpbiBsaXN0IHJlc3BvbnNlcy4KCiMjIyBDYW5jZWwgaW52aXRhdGlvbiDigJQgUGhhc2UgNwoKBERFTEVURSAvY29sbGFib3JhdGlvbi9hcGkvd29ya3NwYWNlcy88d29ya3NwYWNlX2lkPi9pbnZpdGF0aW9ucy88aW52aXRlX2lkPmAg4oCUCioqb3duZXIqKiAoYG1hbmFnZV9pbnZpdGF0aW9uc2ApCgotIGA0MDRgIGlmIHRoZSBpbnZpdGF0aW9uIGlzIG5vdCBpbiB0aGlzIHdvcmtzcGFjZS4KLSBgNDA5YCBpZiB0aGUgaW52aXRhdGlvbiBpcyBub3QgYHBlbmRpbmdgLgoKUmVzcG9uc2UgYDIwMGAgd2l0aCB0aGUgdXBkYXRlZCBpbnZpdGF0aW9uIChgc3RhdHVzOiAiY2FuY2VsbGVkImApLgoKIyMjIEludml0YXRpb24gbGFuZGluZyBwYWdlIOKAlCBQaGFzZSA3CgpgR0VUIC9jb2xsYWJvcmF0aW9uL2ludml0YXRpb25zLzx0b2tlbj5gIOKAlCAqKnB1YmxpYyoqIChubyBsb2dpbiByZXF1aXJlZCkKClJlbmRlcnMgYW4gSFRNTCBsYW5kaW5nIHBhZ2UgZGVzY3JpYmluZyB0aGUgaW52aXRlIHN0YXRlIChgcGVuZGluZ2AsIGBleHBpcmVkYCwKYGFjY2VwdGVkYCwgYGRlY2xpbmVkYCwgYGNhbmNlbGxlZGAsIG9yIGBpbnZhbGlkYCkuIElQIHJhdGUtbGltaXRlZC4KCiMjIyBBY2NlcHQgaW52aXRhdGlvbiDigJQgUGhhc2UgNwoKYFB PU1QgL2NvbGxhYm9yYXRpb24vYXBpL2ludml0YXRpb25zLzx0b2tlbj4vYWNjZXB0YCDigJQgKipsb2dnZWQtaW4qKgoKLSBgNDI5YCB1bmRlciBJUCByYXRlIGxpbWl0LgotIGA0MDRgIGZvciB1bmtub3duL2V4cGlyZWQvY2FuY2VsbGVkIHRva2VucyAodW5pZm9ybSDigJQgbm8gZXhpc3RlbmNlIG9yYWNsZSkuCi0gYDQwOWAgZm9yIHByZXZpb3VzbHkgZGVjbGluZWQgaW52aXRhdGlvbnMsIG9yIHdoZW4gYWxyZWFkeSBhY2NlcHRlZCBieSBhCiAgZGlmZmVyZW50IGFjY291bnQuCi0gYDQwM2Agd2hlbiB0aGUgbG9nZ2VkLWluIGVtYWlsIGRvZXMgbm90IG1hdGNoIHRoZSBpbnZpdGF0aW9uJ3MgZW1haWwuCi0gQWNjZXB0aW5nIHJlYWN0aXZhdGVzIGEgcHJldmlvdXNseS1yZW1vdmVkIG1lbWJlcnNoaXAgKHNpbmdsZSByb3csIHVuaXF1ZQogIGAod29ya3NwYWNlX2lkLCB1c2VyX2lkKWAgY29uc3RyYWludCBwcmVzZXJ2ZWQpIGFuZCBpcyBhdG9taWMuCgpSZXNwb25zZSBgMjAxYCB3aXRoIHRoZSBtZW1iZXJzaGlwOgoKYGBganNvbgp7CiAgImlkIjogNywKICAid29ya3NwYWNlX2lkIjogMywKICAidXNlcl9pZCI6IDksCiAgInJvbGUiOiAidmlld2VyIiwKICAic3RhdHVzIjogImFjdGl2ZSIsCiAgInVzZXJuYW1lIjogIm5ld2d1eSIsCiAgImpvaW5lZF9hdCI6ICIyMDI2LTA4LTE1VDEwOjA1OjAwKzAwOjAwIiwKICAicmVtb3ZlZF9hdCI6IG51bGwsCiAgImxhc3RfYWN0aXZlX2F0IjogbnVsbCwKICAiY3JlYXRlZF9hdCI6ICIyMDI2LTA4LTE1VDEwOjA1OjAwKzAwOjAwIgp9CmBgYAoKV2hlbiB0aGUgdXNlciBpcyBhbHJlYWR5IGFuIGFjdGl2ZSBtZW1iZXIgaXQgcmV0dXJucyBgMjAwYCB3aXRoCmBgImlkZW1wb3RlbnQiOiB0cnVlYC4KCiMjIyBEZWNsaW5lIGludml0YXRpb24g4oCUIFBoYXNlIDcKCmBQT1NUIC9jb2xsYWJvcmF0aW9uL2FwaS9pbnZpdGF0aW9ucy88dG9rZW4+L2RlY2xpbmVgIOKAlCAqKmxvZ2dlZC1pbioqCgotIGA0MjlgIHVuZGVyIElQIHJhdGUgbGltaXQ7IGA0MDRgIHdoZW4gdGhlIGludml0YXRpb24gaXMgbm90IHBlbmRpbmcvdmFsaWQuCgpSZXNwb25zZSBgMjAwYDogYHsib2siOiB0cnVlfWAuCgotLS0KCiMjIE1lbWJlcnNoaXAKCiMjIyBNZW1iZXJzIGxpc3Qg4oCUIFBoYXNlIDcgKHJlYWQpIC8gIzEyNiAobWFuYWdlbWVudCkKCmBHRVQgL3dvcmtzcGFjZXMvYXBpL3dvcmtzcGFjZXMvPHdvcmtzcGFjZV9pZD4vbWVtYmVyc2Ag4oCUICoqYW55IG1lbWJlcioqCihgdmlld19tZW1iZXJzYCkKClJlc3BvbnNlIGAyMDBgIOKAlCBhcnJheSBvZiBtZW1iZXJzaGlwcyAoc2VlIEFjY2VwdCByZXNwb25zZSBzaGFwZSkuIE9ubHkKYHN0YXR1czogImFjdGl2ZSJgIG1lbWJlcnMgYXJlIHJldHVybmVkLCBvcmRlcmVkIGJ5IGpvaW4gdGltZS4KCiMjIyBBZGQgbWVtYmVyIOKAlCAjMTI2IChvd25lci1vbmx5KQoKYFB PU1QgL3dvcmtzcGFjZXMvYXBpL3dvcmtzcGFjZXMvPHdvcmtzcGFjZV9pZD4vbWVtYmVyc2Ag4oCUICoqb3duZXIqKgooYG1hbmFnZV9tZW1iZXJzYCkKClJlcXVlc3Q6IGB7InVzZXJuYW1lIjogImJvYiIsICJyb2xlIjogInZpZXdlciJ9YC4KCi0gYDQwMGAgbWlzc2luZyB1c2VybmFtZSAvIGludmFsaWQgcm9sZSAvIG93bmVyIGFscmVhZHkgYSBtZW1iZXIuCi0gYDQwNGAgbm8gc3VjaCB1c2VybmFtZTsgYDQwOWAgYWxyZWFkeSBhbiBhY3RpdmUgbWVtYmVyLgotIFJlYWN0aXZhdGluZyBhIHByZXZpb3VzbHktcmVtb3ZlZCBtZW1iZXIgcHJlc2VydmVzIHRoZSByb3cuCi0gYDQwM2Agd2hlbiB0aGUgY2FsbGVyIGlzIGEga25vd24gbWVtYmVyIHdpdGhvdXQgYG1hbmFnZV9tZW1iZXJzYDsgYDQwNGAKICB3aGVuIHRoZSBjYWxsZXIgaXMgbm90IHBhcnQgb2YgdGhlIHdvcmtzcGFjZSAobm8gZXhpc3RlbmNlIG9yYWNsZSkuCgpSZXNwb25zZSBgMjAxYCB3aXRoIHRoZSBtZW1iZXJzaGlwLgoKIyMjIFVwZGF0ZSBtZW1iZXIgcm9sZSDigJQgIzEyNiAob3duZXItb25seSkKCmBQQVRDSCAvd29ya3NwYWNlcy9hcGkvd29ya3NwYWNlcy88d29ya3NwYWNlX2lkPi9tZW1iZXJzLzx1c2VyX2lkPmAg4oCUICoqb3duZXIqKgooYG1hbmFnZV9tZW1iZXJzYCkKClJlcXVlc3Q6IGB7InJvbGUiOiAiY29udHJpYnV0b3IifWAuIFJlc3BvbnNlIGAyMDBgIHdpdGggdGhlIG1lbWJlcnNoaXAuIEEKcm9sZSBjaGFuZ2UgcmVjb3JkcyBhbiBhY3Rpdml0eSBldmVudCBhbmQgbm90aWZpZXMgdGhlIG1lbWJlci4KCi0gYDQwMGAgd2hlbiB0YXJnZXRpbmcgdGhlIHdvcmtzcGFjZSBvd25lcidzIG93biBtZW1iZXJzaGlwIHJvdy4KLSBgNDAzYCBmb3IgYSBrbm93biBtZW1iZXIgd2l0aG91dCB0aGUgY2FwYWJpbGl0eTsgYDQwNGBgIGZvciBub24tbWVtYmVycy4KLSBgNDA5YCB3aGVuIHRoZSB0YXJnZXQgbWVtYmVyc2hpcCBpcyBub3QgYWN0aXZlIChhbHJlYWR5IHJlbW92ZWQpLgoKIyMjIFJlbW92ZSBtZW1iZXIg4oCUICMxMjYgKG93bmVyLW9ubHkpCgpgREVMRVRFIC93b3Jrc3BhY2VzL2FwaS93b3Jrc3BhY2VzLzx3b3Jrc3BhY2VfaWQ+L21lbWJlcnMvPHVzZXJfaWQ+YCDigJQgKipvd25lcioqCihgbWFuYWdlX21lbWJlcnNgKQoKU29mdC1kZWxldGU6IGBzdGF0dXNgIOKGkiBgcmVtb3ZlZGAsIHBlbmRpbmcgaW52aXRhdGlvbnMgZm9yIHRoYXQgdXNlciBhcmUKY2FuY2VsbGVkLCB0aGUgbWVtYmVyIGlzIG5vdGlmaWVkLCBhbmQgaGlzdG9yeSBpcyBwcmVzZXJ2ZWQuCmA0MDlgIGlmIGFscmVhZHkgcmVtb3ZlZC4gYDQwMGAgd2hlbiB0YXJnZXRpbmcgdGhlIG93bmVyOyBgNDAzYCBmb3IgYSBrbm93bgptZW1iZXIgd2l0aG91dCB0aGUgY2FwYWJpbGl0eTsgYDQwNGBgIGZvciBub24tbWVtYmVycy4gUmVzcG9uc2UgYDIwMGA6CmB7Im9rIjogdHJ1ZX1gLgoKIyMjIExlYXZlIHdvcmtzcGFjZSDigJQgUGhhc2UgNwoKBERFTEVURSAvY29sbGFib3JhdGlvbi9hcGkvd29ya3NwYWNlcy88d29ya3NwYWNlX2lkPi9tZW1iZXJzaGlwYCDigJQgKiphbnkKbWVtYmVyKiogKGBsZWF2ZV93b3Jrc3BhY2VgKQoKLSBgNDAwYCBmb3IgdGhlIG93bmVyIOKAlCB0aGUgb3duZXIgbXVzdCB0cmFuc2ZlciBvd25lcnNoaXAgZmlyc3QuCgpSZXNwb25zZSBgMjAwYDogYHsib2siOiB0cnVlfWAuCgojIyMgVHJhbnNmZXIgb3duZXJzaGlwIOKAlCBQaGFzZSA3CgpgUE9TVCAvY29sbGFib3JhdGlvbi9hcGkvd29ya3NwYWNlcy88d29ya3NwYWNlX2lkPi90cmFuc2ZlcmAg4oCUICoqb3duZXIqKgooYHRyYW5zZmVyX293bmVyc2hpcGApCgpSZXF1ZXN0OiBgeyJ1c2VyX2lkIjogNX1gIChtdXN0IGJlIGFuIGFjdGl2ZSBtZW1iZXIpLgoKQXRvbWljOiB0aGUgdGFyZ2V0IGJlY29tZXMgb3duZXIgKGBXb3Jrc3BhY2UudXNlcl9pZGAgKyBtZW1iZXJzaGlwIHJvbGUpLCB0aGUKcHJldmlvdXMgb3duZXIgYmVjb21lcyBhIGBjb250cmlidXRvcmAgbWVtYmVyLCBhbmQgZXZlcnkgcHJvamVjdCdzCmRlbm9ybWFsaXplZCBgdXNlcl9pZGAgbW92ZXMgdG8gdGhlIG5ldyBvd25lci4gQm90aCBwYXJ0aWVzIGdldCBhCmByb2xlX2NoYW5nZWAgbm90aWZpY2F0aW9uLgoKUmVzcG9uc2UgYDIwMGA6IGB7Im9rIjogdHJ1ZSwgIndvcmtzcGFjZSI6IHsgLi4ud29ya3NwYWNlLnRvX2RpY3QoKSB9fWAuCgotLS0KCiMjIEFjdGl2aXR5ICYgQXVkaXQKCiMjIyBBY3Rpdml0eSBmZWVkIOKAlCBQaGFzZSA3CgpgR0VUIC9jb2xsYWJvcmF0aW9uL2FwaS93b3Jrc3BhY2VzLzx3b3Jrc3BhY2VfaWQ+L2FjdGl2aXR5YCDigJQgKiphbnkgbWVtYmVyKioKKGB2aWV3X2FjdGl2aXR5YCkKCiBRdWVyeSBwYXJhbXM6IGBldmVudF90eXBlYCwgYGFjdG9yYCAodXNlcm5hbWUpLCBgYmVmb3JlYCAob3BhcXVlIGN1cnNvcgpyZXR1cm5lZCBhcyBgbmV4dF9jdXJzb3JgKSwgYHBlcl9wYWdlYCAoMeKAkzEwMCwgZGVmYXVsdCAyMCkuCgpNZW1iZXJzIG5ldmVyIHNlZSB0aGUgYXVkaXQtc2Vuc2l0aXZlIHN1YnNldDsgdGhlIG93bmVyIHNlZXMgZXZlcnl0aGluZy4gVGhlCm1lbWJlciBmZWVkIG5ldmVyIGluY2x1ZGVzIGV2ZW50IGBtZXRhZGF0YWAuCgpSZXNwb25zZSBgMjAwYDoKCmBgYGpzb24KewogICJpdGVtcyI6IFsKICAgIHsgImlkIjogNSwgIndvcmtzcGFjZV9pZCI6IDMsICJhY3Rvcl9pZCI6IDEsICJhY3Rvcl91c2VybmFtZSI6ICJhbGljZSIsCiAgICAgICJldmVudF90eXBlIjogImNvbW1lbnQuYWRkZWQiLCAibGFiZWwiOiAiY29tbWVudGVkIG9uIGEgcHJvamVjdCIsCiAgICAgICJ0YXJnZXRfdHlwZSI6ICJwcm9qZWN0X2NvbW1lbnQiLCAidGFyZ2V0X2lkIjogOCwKICAgICAgImNyZWF0ZWRfYXQiOiAiMjAyNi0wOC0xNVQwOTozMDowMCswMDowMCIgfQogIF0sCiAgIm5leHRfY3Vyc29yIjogIjIwMjYtMDgtMTVUMDk6MzA6MDArMDA6MDB8NSIKfQpgYGAKCmBuZXh0X2N1cnNvcmAgaXMgYG51bGxgIG9uIHRoZSBsYXN0IHBhZ2UuIEFuIGludmFsaWQgY3Vyc29yIHJldHVybnMgYDQwMGAuCgojIyMgQXVkaXQgbG9nIOKAlCBQaGFzZSA3CgpgR0VUIC9jb2xsYWJvcmF0aW9uL2FwaS93b3Jrc3BhY2VzLzx3b3Jrc3BhY2VfaWQ+L2F1ZGl0YCDigJQgKipvd25lcioqCihgdmlld19hdWRpdGApCgpRdWVyeSBwYXJhbXM6IGBldmVudF90eXBlYCwgYGFjdG9yYCwgYHBhZ2VgLCBgcGVyX3BhZ2VgLiBSZXR1cm5zIGV4YWN0bHkgdGhlCmF1ZGl0IGV2ZW50IHN1YnNldCAoYEFVRElUX0VWRU5UX1RZUEVTYCkgYW5kIGluY2x1ZGVzIHRoZSBzYWZlIGBtZXRhZGF0YWAuCgpSZXNwb25zZSBgMjAwYDoKCmBgYGpzb24KewogICJpdGVtcyI6IFsKICAgIHsgImlkIjogNCwgIndvcmtzcGFjZV9pZCI6IDMsICJhY3Rvcl9pZCI6IDEsICJhY3Rvcl91c2VybmFtZSI6ICJhbGljZSIsCiAgICAgICJldmVudF90eXBlIjogImludml0YXRpb24uY3JlYXRlZCIsICJsYWJlbCI6ICJpbnZpdGVkIHNvbWVvbmUiLAogICAgICAidGFyZ2V0X3R5cGUiOiAiaW52aXRhdGlvbiIsICJ0YXJnZXRfaWQiOiAxMiwKICAgICAgImNyZWF0ZWRfYXQiOiAiMjAyNi0wOC0xNVQxMDowMDowMCswMDowMCIsCiAgICAgICJtZXRhZGF0YSI6IHsiZW1haWwiOiAibmV3Z3V5QGV4YW1wbGUuY29tIiwgInJvbGUiOiAidmlld2VyIn0gfQogIF0sCiAgInRvdGFsIjogMSwKICAicGFnZSI6IDEsCiAgInBlcl9wYWdlIjogMjAKfQpgYGAKCkF1ZGl0IHJvd3MgYXJlIGFwcGVuZC1vbmx5IOKAlCB0aGVyZSBpcyBubyB1cGRhdGUvZGVsZXRlIHJvdXRlLgoKLS0tCgojIyBOb3RpZmljYXRpb25zCgpBbGwgbm90aWZpY2F0aW9uIGVuZHBvaW50cyBhcmUgKipzdHJpY3RseSBjdXJyZW50LXVzZXIgc2NvcGVkKio6IGFjY2Vzc2luZwphbm90aGVyIHVzZXIncyBub3RpZmljYXRpb24gcmV0dXJucyBgNDA0YC4KCiMjIyBJbmJveCDigJQgUGhhc2UgNwoKYEdFVCAvY29sbGFib3JhdGlvbi9hcGkvbm90aWZpY2F0aW9uc2Ag4oCUICoqbG9nZ2VkLWluKioKClF1ZXJ5IHBhcmFtczogYHVucmVhZD0xYCAoZmlsdGVyKSwgYHBhZ2VgLCBgcGVyX3BhZ2VgLgoKUmVzcG9uc2UgYDIwMGA6CgpgYGBqc29uCnsKICAiaXRlbXMiOiBbCiAgICB7ICJpZCI6IDIxLCAidHlwZSI6ICJpbnZpdGF0aW9uIiwgImFjdG9yX2lkIjogMSwKICAgICAgImFjdG9yX3VzZXJuYW1lIjogImFsaWNlIiwgIndvcmtzcGFjZV9pZCI6IDMsICJwcm9qZWN0X2lkIjogbnVsbCwKICAgICAgInBheWxvYWQiOiB7InRpdGxlIjogIllvdSd2ZSBiZWVuIGludml0ZWQgdG8gam9pbiBUZWFtIFgiLAogICAgICAgICAgICAgICAgICAid29ya3NwYWNlIjogIlRlYW0gWCIsICJyb2xlIjogInZpZXdlciJ9LAogICAgICAibGluayI6ICIvY29sbGFib3JhdGlvbi9pbnZpdGF0aW9ucy8zZjljLi4uZTJhMSIsCiAgICAgICJpc19yZWFkIjogZmFsc2UsCiAgICAgICJjcmVhdGVkX2F0IjogIjIwMjYtMDgtMTVUMTA6MDA6MDArMDA6MDAiIH0KICBdLAogICJ0b3RhbCI6IDEsCiAgInVucmVhZF9jb3VudCI6IDEsCiAgInBhZ2UiOiAxLAogICJwZXJfcGFnZSI6IDIwCn0KYGBgCgojIyMgVW5yZWFkIGNvdW50IOKAlCBQaGFzZSA3CgpgR0VUIC9jb2xsYWJvcmF0aW9uL2FwaS9ub3RpZmljYXRpb25zL2NvdW50YCDigJQgKipsb2dnZWQtaW4qKgoKUmVzcG9uc2UgYDIwMGA6IGB7InVucmVhZCI6IDF9YCAoZHJpdmVzIHRoZSBoZWFkZXIgYmFkZ2U7IHBvbGxlZCBieSB0aGUgVUkpLgoKIyMjIE1hcmsgcmVhZCDigJQgUGhhc2UgNwoKYFB PU1QgL2NvbGxhYm9yYXRpb24vYXBpL25vdGlmaWNhdGlvbnMvPG5vdGlmaWNhdGlvbl9pZD4vcmVhZGAg4oCUICoqbG9nZ2VkLWluKioKCklkZW1wb3RlbnQuIGA0MDRgIHdoZW4gdGhlIG5vdGlmaWNhdGlvbiBiZWxvbmdzIHRvIGFub3RoZXIgdXNlciBvciBkb2VzIG5vdApleGlzdC4gUmVzcG9uc2UgYDIwMGAgd2l0aCB0aGUgbm90aWZpY2F0aW9uLgoKIyMjIE1hcmsgYWxsIHJlYWQg4oCUIFBoYXNlIDcKCmBQT1NUIC9jb2xsYWJvcmF0aW9uL2FwaS9ub3RpZmljYXRpb25zL3JlYWQtYWxsYCDigJQgKipsb2dnZWQtaW4qKgoKUmVzcG9uc2UgYDIwMGA6IGB7Im9rIjogdHJ1ZX1gLgoKIyMjIEdldCBwcmVmZXJlbmNlcyDigJQgUGhhc2UgNwoKYEdFVCAvY29sbGFib3JhdGlvbi9hcGkvbm90aWZpY2F0aW9ucy9wcmVmZXJlbmNlc2Ag4oCUICoqbG9nZ2VkLWluKioKClJlc3BvbnNlIGAyMDBgIChkZWZhdWx0cyBtYXRlcmlhbGl6ZWQgb24gZmlyc3QgYWNjZXNzKToKCmBgYGpzb24KeyJpbnZpdGF0aW9ucyI6IHRydWUsICJtZW50aW9ucyI6IHRydWUsICJtZW1iZXJzaGlwIjogdHJ1ZSwgImFpX2V2ZW50cyI6IHRydWV9CmBgYAoKIyMjIFVwZGF0ZSBwcmVmZXJlbmNlcyDigJQgUGhhc2UgNwoKYFBVVCAvY29sbGFib3JhdGlvbi9hcGkvbm90aWZpY2F0aW9ucy9wcmVmZXJlbmNlc2Ag4oCUICoqbG9nZ2VkLWluKioKClJlcXVlc3QgKGFueSBzdWJzZXQpOiBgeyJhaV9ldmVudHMiOiBmYWxzZX1gLiBSZXNwb25zZSBgMjAwYCB3aXRoIHRoZSBmdWxsIHNldC4KUHJlZmVyZW5jZXMgZ2F0ZSBkZWxpdmVyeSBwZXIgbm90aWZpY2F0aW9uIHR5cGU7IHVua25vd24gdHlwZXMgYXJlIGlnbm9yZWQuCgotLS0KCiMjIENvbW1lbnRzCgpQcm9qZWN0IGRpc2N1c3Npb24gaXMgYXZhaWxhYmxlIHRvIHRoZSBvd25lciBhbmQgYWN0aXZlIG1lbWJlcnMgb2YgdGhlCnByb2plY3QncyB3b3Jrc3BhY2UgKGByZXNvbHZlX3Byb2plY3RfY29sbGFiYCkuIFNvdXJjZS1jb250ZW50IHJvdXRlcyByZW1haW4Kb3duZXItc2NvcGVkIHVudGlsICMxMjcuCgojIyMgTGlzdCBjb21tZW50cyDigJQgUGhhc2UgNwoKYEdFVCAvY29sbGFib3JhdGlvbi9hcGkvcHJvamVjdHMvPHByb2plY3RfaWQ+L2NvbW1lbnRzYCDigJQgKipvd25lciBvciBhY3RpdmUKbWVtYmVyIG9mIHRoZSB3b3Jrc3BhY2UqKgoKUXVlcnkgcGFyYW1zOiBgcGFnZWAsIGBwZXJfcGFnZWAuIFJlc3BvbnNlIGAyMDBgOgoKYGBganNvbgp7CiAgIml0ZW1zIjogWwogICAgeyAiaWQiOiA4LCAicHJvamVjdF9pZCI6IDQyLCAiYXV0aG9yX2lkIjogMSwgImF1dGhvcl91c2VybmFtZSI6ICJhbGljZSIsCiAgICAgICJib2R5IjogIkxvb2tzIGdvb2QgdG8gbWUhIiwgInBhcmVudF9pZCI6IG51bGwsCiAgICAgICJjcmVhdGVkX2F0IjogIjIwMjYtMDgtMTVUMDk6MzA6MDArMDA6MDAiLAogICAgICAidXBkYXRlZF9hdCI6IG51bGwsICJpc19kZWxldGVkIjogZmFsc2UgfQogIF0sCiAgInRvdGFsIjogMSwKICAicGFnZSI6IDEsCiAgInBlcl9wYWdlIjogMjAKfQpgYGAKCiMjIyBDcmVhdGUgY29tbWVudCDigJQgUGhhc2UgNwoKYFB PU1QgL2NvbGxhYm9yYXRpb24vYXBpL3Byb2plY3RzLzxwcm9qZWN0X2lkPi9jb21tZW50c2Ag4oCUICoqb3duZXIgb3IKYWN0aXZlIG1lbWJlcioqIChgY29tbWVudGApCgpSZXF1ZXN0OiBgeyJib2R5IjogIkxvb2tzIGdvb2QgdG8gbWUhIiwgInBhcmVudF9pZCI6IG51bGx9YC4KCi0gYGJvZHlgIHJlcXVpcmVkLCAx4oCTNTAwMCBjaGFycyBhZnRlciB0cmltbWluZy4KLSBgcGFyZW50X2lkYCBvcHRpb25hbDsgbXVzdCByZWZlciB0byBhIGNvbW1lbnQgb24gdGhlIHNhbWUgcHJvamVjdC4KLSBgNDAwYCBmb3IgZW1wdHkgYm9keSAvIG92ZXItbG9uZyBib2R5IC8gaW52YWxpZCBwYXJlbnQuCi0gYDQwNGAgd2hlbiB0aGUgY2FsbGVyIGlzIG5vdCBhbiBvd25lciBvciBhY3RpdmUgbWVtYmVyLgoKUmVzcG9uc2UgYDIwMWAgd2l0aCB0aGUgY3JlYXRlZCBjb21tZW50IChzYW1lIHNoYXBlIGFzIHRoZSBsaXN0IGl0ZW0pLgoKIyMjIFVwZGF0ZSBjb21tZW50IOKAlCBQaGFzZSA3CgpgUEFUQ0ggL2NvbGxhYm9yYXRpb24vYXBpL3Byb2plY3RzLzxwcm9qZWN0X2lkPi9jb21tZW50cy88Y29tbWVudF9pZD5gIOKAlAoqKmF1dGhvciBvbmx5KioKCi0gYDQwM2Agd2hlbiB0aGUgY2FsbGVyIGlzIG5vdCB0aGUgY29tbWVudCBhdXRob3IuCi0gYDQwNGAgaWYgdGhlIGNvbW1lbnQgaXMgbm90IG9uIHRoaXMgcHJvamVjdCBvciBpcyBkZWxldGVkLgoKUmVxdWVzdDogYHsiYm9keSI6ICJVcGRhdGVkIHRleHQifWAuIFJlc3BvbnNlIGAyMDBgIHdpdGggdGhlIHVwZGF0ZWQgY29tbWVudC4KCiMjIyBEZWxldGUgY29tbWVudCDigJQgUGhhc2UgNwoKBERFTEVURSAvY29sbGFib3JhdGlvbi9hcGkvcHJvamVjdHMvPHByb2plY3RfaWQ+L2NvbW1lbnRzLzxjb21tZW50X2lkPmAg4oCUCioqYXV0aG9yIG9yIHdvcmtzcGFjZSBvd25lcioqCgpTb2Z0LWRlbGV0ZTogYGlzX2RlbGV0ZWRgIOKGkiB0cnVlLCBib2R5IHByZXNlcnZlZCBmb3IgYXVkaXQuIFJlc3BvbnNlIGAyMDBgOgpgeyJvayI6IHRydWV9YC4KCi0tLQoKIyMgU2V0dGluZ3MKCiMjIyBHZXQgd29ya3NwYWNlIHNldHRpbmdzIOKAlCBQaGFzZSA3CgpgR0VUIC9jb2xsYWJvcmF0aW9uL2FwaS93b3Jrc3BhY2VzLzx3b3Jrc3BhY2VfaWQ+L3NldHRpbmdzYCDigJQgKipvd25lcioqCihgbWFuYWdlX3NldHRpbmdzYCkKClJlc3BvbnNlIGAyMDBgOgoKYGBganNvbgp7CiAgIndvcmtzcGFjZV9pZCI6IDMsCiAgImludml0YXRpb25zX2VuYWJsZWQiOiB0cnVlLAogICJkZWZhdWx0X21lbWJlcl9yb2xlIjogInZpZXdlciIsCiAgImFjdGl2aXR5X3Zpc2liaWxpdHkiOiAibWVtYmVycyIsCiAgIm5vdGlmaWNhdGlvbnNfZW5hYmxlZCI6IHRydWUKfQpgYGAKCiMjIyBVcGRhdGUgd29ya3NwYWNlIHNldHRpbmdzIOKAlCBQaGFzZSA3CgpgUEFUQ0ggL2NvbGxhYm9yYXRpb24vYXBpL3dvcmtzcGFjZXMvPHdvcmtzcGFjZV9pZD4vc2V0dGluZ3NgIOKAlCAqKm93bmVyKioKKGBtYW5hZ2Vfc2V0dGluZ3NgKQoKUmVxdWVzdCAoYW55IHN1YnNldCk6CgpgYGBqc29uCnsKICAiaW52aXRhdGlvbnNfZW5hYmxlZCI6IGZhbHNlLAogICJkZWZhdWx0X21lbWJlcl9yb2xlIjogImNvbnRyaWJ1dG9yIiwKICAiYWN0aXZpdHlfdmlzaWJpbGl0eSI6ICJvd25lciIsCiAgIm5vdGlmaWNhdGlvbnNfZW5hYmxlZCI6IHRydWUKfQpgYGAKCi0gYGRlZmF1bHRfbWVtYmVyX3JvbGVgIGFjY2VwdHMgYGNvbnRyaWJ1dG9yYCBvciBgdmlld2VyYCAoYG93bmVyYCBpcyByZWplY3RlZCkuCi0gYGFjdGl2aXR5X3Zpc2liaWxpdHlgIGFjY2VwdHMgYG1lbWJlcnNgIG9yIGBvd25lcmAuCi0gYDQwMGAgZm9yIGFuIHVua25vd24ga2V5IG9yIGFuIGludmFsaWQgdmFsdWUuCgpSZXNwb25zZSBgMjAwYCB3aXRoIHRoZSBmdWxsIHNldHRpbmdzIG9iamVjdC4KCi0tLQoKIyMgUHJlc2VuY2UKCiMjIyBIZWFydGJlYXQg4oCUIFBoYXNlIDcKCmBQT1NUIC9jb2xsYWJvcmF0aW9uL2FwaS93b3Jrc3BhY2VzLzx3b3Jrc3BhY2VfaWQ+L3ByZXNlbmNlL2hlYXJ0YmVhdGAg4oCUCioqYW55IG1lbWJlcioqIChgaGVhcnRiZWF0YCkKClVwc2VydHMgdGhlIGNhbGxlcidzIGBsYXN0X2FjdGl2ZV9hdGAgb24gdGhlaXIgbWVtYmVyc2hpcCByb3cuIFJlc3BvbnNlIGAyMDBgOgpgeyJvayI6IHRydWV9YC4KCiMjIyBXaG8ncyBvbmxpbmUg4oCUIFBoYXNlIDcKCmBHRVQgL2NvbGxhYm9yYXRpb24vYXBpL3dvcmtzcGFjZXMvPHdvcmtzcGFjZV9pZD4vcHJlc2VuY2VgIOKAlCAqKmFueSBtZW1iZXIqKgooYGhlYXJ0YmVhdGApCgpSZXR1cm5zIG1lbWJlcnMgd2hvc2UgYGxhc3RfYWN0aXZlX2F0YCBpcyB3aXRoaW4gdGhlIHByZXNlbmNlIHdpbmRvdy4KClJlc3BvbnNlIGAyMDBgOgoKYGBganNvbgp7CiAgIm9ubGluZSI6IFsKICAgIHsgInVzZXJfaWQiOiAxLCAidXNlcm5hbWUiOiAiYWxpY2UiLAogICAgICAibGFzdF9hY3RpdmVfYXQiOiAiMjAyNi0wOC0xNVQxMDowMDowMCswMDowMCIgfQogIF0sCiAgImNvdW50IjogMQp9CmBgYAoKLS0tCgojIyBTdGF0dXMgY29kZXMKCnwgU3RhdHVzIHwgTWVhbmluZyB8CnwgLS0tLS0tIHwgLS0tLS0tLSB8CnwgMjAwIHwgT0sgKGdldC91cGRhdGUvYWN0aW9uIGFja25vd2xlZGdlZCkgfAp8IDIwMSB8IENyZWF0ZWQgKG5ldyByZXNvdXJjZSkgfAp8IDQwMCB8IFZhbGlkYXRpb24gZXJyb3IgfAp8IDQwMyB8IEtub3duIG1lbWJlciB3aXRob3V0IHRoZSByZXF1aXJlZCBjYXBhYmlsaXR5IHwKfCA0MDQgfCBOb3QgZm91bmQgLyBub24tbWVtYmVyIChubyBleGlzdGVuY2Ugb3JhY2xlKSB8CnwgNDA5IHwgQ29uZmxpY3QgKGR1cGxpY2F0ZSwgd3Jvbmcgc3RhdGUpIHwKfCA0MjkgfCBSYXRlIGxpbWl0ZWQgfAo=
+# Collaboration API Reference (Phase 7)
+
+This document is the consolidated reference for the **Phase 7 — Team
+Collaboration** endpoints. It covers invitations, membership, activity/audit,
+notifications, comments, settings, and presence.
+
+Every endpoint is served by the `collaboration` blueprint
+(`app/collaboration/routes.py`) unless noted, and routes authorization through
+the central capability module `app/services/permissions.py` (issue #142). The
+permission matrix is defined in `CAPABILITIES` there and rendered in the
+[developer guide](team-collaboration.md); the tracking issue is #136.
+
+## Conventions
+
+- **Auth:** every JSON API route requires a logged-in user (`@login_required`).
+  Unauthenticated requests get a 302 to `/auth/login`.
+- **Roles:** `owner` > `contributor` > `viewer`. The workspace `owner` is
+  authoritative via `Workspace.user_id`; everyone else resolves through an
+  *active* membership row. Non-members resolve to no role and **fail closed**.
+- **Not found vs forbidden:** workspace routes return `404` for non-members and
+  non-existent workspaces alike, so callers cannot probe ids (no existence
+  oracle). Capability violations by a known member return `403`.
+- **Pagination:** list endpoints accept `page` (1-based) and `per_page`
+  (1–100, default 20). The activity feed instead uses cursor pagination via
+  `before=<cursor>`.
+- **Errors:** JSON bodies like `{"error": "<message>"}` with status 400/403/404/409/429.
+- **CSRF:** HTML pages are protected by Flask-WTF; JSON API calls use
+  `Content-Type: application/json`.
+
+## Permission matrix
+
+| Capability | Allowed roles |
+| ---------- | ------------- |
+| `view_members` | owner, contributor, viewer |
+| `leave_workspace` | contributor, viewer (owner transfers instead) |
+| `manage_members` | owner |
+| `manage_invitations` | owner |
+| `manage_settings` | owner |
+| `transfer_ownership` | owner |
+| `view_audit` | owner |
+| `comment` | owner, contributor, viewer |
+| `view_activity` | owner, contributor, viewer |
+| `heartbeat` | owner, contributor, viewer |
+
+Roles are hierarchical for UI purposes but each capability lists its exact
+roles; an unknown/typo'd role never grants an owner capability.
+
+---
+
+## Invitations
+
+### Create invitation — Phase 7
+
+`POST /collaboration/api/workspaces/<workspace_id>/invitations` — **owner**
+(`manage_invitations`)
+
+Request:
+
+```json
+{"email": "newguy@example.com", "role": "viewer"}
+```
+
+- `email` required, validated, lowercased; max 255 chars.
+- `role` optional (`owner` is rejected by validation; `contributor`/`viewer`
+  allowed); defaults to the workspace setting `default_member_role`.
+- Fails `403` when the workspace has `invitations_enabled = false`.
+- Fails `400` for self-invite / invalid role / invalid email.
+- Fails `409` when the email already belongs to an active member or has a
+  pending invitation.
+
+Response `201` — the invitation plus the **one-time raw token** (the token is
+stored hashed as SHA-256 and delivered only via the invite email link):
+
+```json
+{
+  "id": 12,
+  "workspace_id": 3,
+  "invited_by": 1,
+  "inviter_username": "alice",
+  "email": "newguy@example.com",
+  "role": "viewer",
+  "status": "pending",
+  "expires_at": "2026-08-22T10:00:00+00:00",
+  "accepted_by": null,
+  "accepted_at": null,
+  "created_at": "2026-08-15T10:00:00+00:00",
+  "token": "3f9c...e2a1"
+}
+```
+
+### List invitations — Phase 7
+
+`GET /collaboration/api/workspaces/<workspace_id>/invitations` — **owner**
+(`manage_invitations`)
+
+Query params: `status` (optional filter: `pending` | `accepted` | `declined` |
+`cancelled` | `expired`), `page`, `per_page`.
+
+Response `200`:
+
+```json
+{
+  "items": [ { "id": 12, "workspace_id": 3, "invited_by": 1,
+               "inviter_username": "alice", "email": "newguy@example.com",
+               "role": "viewer", "status": "pending",
+               "expires_at": "2026-08-22T10:00:00+00:00",
+               "accepted_by": null, "accepted_at": null,
+               "created_at": "2026-08-15T10:00:00+00:00" } ],
+  "total": 1,
+  "page": 1,
+  "per_page": 20
+}
+```
+
+No token is ever present in list responses.
+
+### Cancel invitation — Phase 7
+
+`DELETE /collaboration/api/workspaces/<workspace_id>/invitations/<invite_id>` —
+**owner** (`manage_invitations`)
+
+- `404` if the invitation is not in this workspace.
+- `409` if the invitation is not `pending`.
+
+Response `200` with the updated invitation (`status: "cancelled"`).
+
+### Invitation landing page — Phase 7
+
+`GET /collaboration/invitations/<token>` — **public** (no login required)
+
+Renders an HTML landing page describing the invite state (`pending`, `expired`,
+`accepted`, `declined`, `cancelled`, or `invalid`). IP rate-limited.
+
+### Accept invitation — Phase 7
+
+`POST /collaboration/api/invitations/<token>/accept` — **logged-in**
+
+- `429` under IP rate limit.
+- `404` for unknown/expired/cancelled tokens (uniform — no existence oracle).
+- `409` for previously declined invitations, or when already accepted by a
+  different account.
+- `403` when the logged-in email does not match the invitation's email.
+- Accepting reactivates a previously-removed membership (single row, unique
+  `(workspace_id, user_id)` constraint preserved) and is atomic.
+
+Response `201` with the membership:
+
+```json
+{
+  "id": 7,
+  "workspace_id": 3,
+  "user_id": 9,
+  "role": "viewer",
+  "status": "active",
+  "username": "newguy",
+  "joined_at": "2026-08-15T10:05:00+00:00",
+  "removed_at": null,
+  "last_active_at": null,
+  "created_at": "2026-08-15T10:05:00+00:00"
+}
+```
+
+When the user is already an active member it returns `200` with
+`"idempotent": true`.
+
+### Decline invitation — Phase 7
+
+`POST /collaboration/api/invitations/<token>/decline` — **logged-in**
+
+- `429` under IP rate limit; `404` when the invitation is not pending/valid.
+
+Response `200`: `{"ok": true}`.
+
+---
+
+## Membership
+
+### Members list — Phase 7 (read) / #126 (management)
+
+`GET /workspaces/api/workspaces/<workspace_id>/members` — **any member**
+(`view_members`)
+
+Response `200` — array of memberships (see Accept response shape). Only
+`status: "active"` members are returned, ordered by join time.
+
+### Add member — #126 (owner-only)
+
+`POST /workspaces/api/workspaces/<workspace_id>/members` — **owner**
+(`manage_members`)
+
+Request: `{"username": "bob", "role": "viewer"}`.
+
+- `400` missing username / invalid role / owner already a member.
+- `404` no such username; `409` already an active member.
+- Reactivating a previously-removed member preserves the row.
+- `403` when the caller is a known member without `manage_members`; `404`
+  when the caller is not part of the workspace (no existence oracle).
+
+Response `201` with the membership.
+
+### Update member role — #126 (owner-only)
+
+`PATCH /workspaces/api/workspaces/<workspace_id>/members/<user_id>` — **owner**
+(`manage_members`)
+
+Request: `{"role": "contributor"}`. Response `200` with the membership. A
+role change records an activity event and notifies the member.
+
+- `400` when targeting the workspace owner's own membership row.
+- `403` for a known member without the capability; `404` for non-members.
+- `409` when the target membership is not active (already removed).
+
+### Remove member — #126 (owner-only)
+
+`DELETE /workspaces/api/workspaces/<workspace_id>/members/<user_id>` — **owner**
+(`manage_members`)
+
+Soft-delete: `status` → `removed`, pending invitations for that user are
+cancelled, the member is notified, and history is preserved.
+`409` if already removed. `400` when targeting the owner; `403` for a known
+member without the capability; `404` for non-members. Response `200`:
+`{"ok": true}`.
+
+### Leave workspace — Phase 7
+
+`DELETE /collaboration/api/workspaces/<workspace_id>/membership` — **any
+member** (`leave_workspace`)
+
+- `400` for the owner — the owner must transfer ownership first.
+
+Response `200`: `{"ok": true}`.
+
+### Transfer ownership — Phase 7
+
+`POST /collaboration/api/workspaces/<workspace_id>/transfer` — **owner**
+(`transfer_ownership`)
+
+Request: `{"user_id": 5}` (must be an active member).
+
+Atomic: the target becomes owner (`Workspace.user_id` + membership role), the
+previous owner becomes a `contributor` member, and every project's
+denormalized `user_id` moves to the new owner. Both parties get a
+`role_change` notification.
+
+Response `200`: `{"ok": true, "workspace": { ...workspace.to_dict() }}`.
+
+---
+
+## Activity & Audit
+
+### Activity feed — Phase 7
+
+`GET /collaboration/api/workspaces/<workspace_id>/activity` — **any member**
+(`view_activity`)
+
+Query params: `event_type`, `actor` (username), `before` (opaque cursor
+returned as `next_cursor`), `per_page` (1–100, default 20).
+
+Members never see the audit-sensitive subset; the owner sees everything. The
+member feed never includes event `metadata`.
+
+Response `200`:
+
+```json
+{
+  "items": [
+    { "id": 5, "workspace_id": 3, "actor_id": 1, "actor_username": "alice",
+      "event_type": "comment.added", "label": "commented on a project",
+      "target_type": "project_comment", "target_id": 8,
+      "created_at": "2026-08-15T09:30:00+00:00" }
+  ],
+  "next_cursor": "2026-08-15T09:30:00+00:00|5"
+}
+```
+
+`next_cursor` is `null` on the last page. An invalid cursor returns `400`.
+
+### Audit log — Phase 7
+
+`GET /collaboration/api/workspaces/<workspace_id>/audit` — **owner**
+(`view_audit`)
+
+Query params: `event_type`, `actor`, `page`, `per_page`. Returns exactly the
+audit event subset (`AUDIT_EVENT_TYPES`) and includes the safe `metadata`.
+
+Response `200`:
+
+```json
+{
+  "items": [
+    { "id": 4, "workspace_id": 3, "actor_id": 1, "actor_username": "alice",
+      "event_type": "invitation.created", "label": "invited someone",
+      "target_type": "invitation", "target_id": 12,
+      "created_at": "2026-08-15T10:00:00+00:00",
+      "metadata": {"email": "newguy@example.com", "role": "viewer"} }
+  ],
+  "total": 1,
+  "page": 1,
+  "per_page": 20
+}
+```
+
+Audit rows are append-only — there is no update/delete route.
+
+---
+
+## Notifications
+
+All notification endpoints are **strictly current-user scoped**: accessing
+another user's notification returns `404`.
+
+### Inbox — Phase 7
+
+`GET /collaboration/api/notifications` — **logged-in**
+
+Query params: `unread=1` (filter), `page`, `per_page`.
+
+Response `200`:
+
+```json
+{
+  "items": [
+    { "id": 21, "type": "invitation", "actor_id": 1,
+      "actor_username": "alice", "workspace_id": 3, "project_id": null,
+      "payload": {"title": "You've been invited to join Team X",
+                  "workspace": "Team X", "role": "viewer"},
+      "link": "/collaboration/invitations/3f9c...e2a1",
+      "is_read": false,
+      "created_at": "2026-08-15T10:00:00+00:00" }
+  ],
+  "total": 1,
+  "unread_count": 1,
+  "page": 1,
+  "per_page": 20
+}
+```
+
+### Unread count — Phase 7
+
+`GET /collaboration/api/notifications/count` — **logged-in**
+
+Response `200`: `{"unread": 1}` (drives the header badge; polled by the UI).
+
+### Mark read — Phase 7
+
+`POST /collaboration/api/notifications/<notification_id>/read` — **logged-in**
+
+Idempotent. `404` when the notification belongs to another user or does not
+exist. Response `200` with the notification.
+
+### Mark all read — Phase 7
+
+`POST /collaboration/api/notifications/read-all` — **logged-in**
+
+Response `200`: `{"ok": true}`.
+
+### Get preferences — Phase 7
+
+`GET /collaboration/api/notifications/preferences` — **logged-in**
+
+Response `200` (defaults materialized on first access):
+
+```json
+{"invitations": true, "mentions": true, "membership": true, "ai_events": true}
+```
+
+### Update preferences — Phase 7
+
+`PUT /collaboration/api/notifications/preferences` — **logged-in**
+
+Request (any subset): `{"ai_events": false}`. Response `200` with the full set.
+Preferences gate delivery per notification type; unknown types are ignored.
+
+---
+
+## Comments
+
+Project discussion is available to the owner and active members of the
+project's workspace (`resolve_project_collab`). Source-content routes remain
+owner-scoped until #127.
+
+### List comments — Phase 7
+
+`GET /collaboration/api/projects/<project_id>/comments` — **owner or active
+member of the workspace**
+
+Query params: `page`, `per_page`. Response `200` with `items` (oldest first),
+`total`, `page`, `per_page`.
+
+### Create comment — Phase 7
+
+`POST /collaboration/api/projects/<project_id>/comments` — **owner or active
+member** (`comment`)
+
+Request:
+
+```json
+{"content": "Great work on the search module. @bob please review.",
+ "parent_id": null}
+```
+
+- `content` required (stripped), max `COMMENT_MAX_LENGTH` chars.
+- `parent_id` (optional) must reference a comment in the same project.
+- `@username` mentions notify the mentioned active members (never the author).
+- A `comment.added` activity event is recorded.
+
+Response `201` with the comment:
+
+```json
+{
+  "id": 8,
+  "project_id": 45,
+  "author_id": 1,
+  "author_username": "alice",
+  "parent_id": null,
+  "content": "Great work on the search module. @bob please review.",
+  "created_at": "2026-08-15T09:30:00+00:00",
+  "updated_at": null
+}
+```
+
+### Delete comment — Phase 7
+
+`DELETE /collaboration/api/projects/<project_id>/comments/<comment_id>` —
+**the author or the workspace owner**
+
+- `403` for anyone else; `404` if the comment is not in this project.
+
+Response `200`: `{"ok": true}`.
+
+---
+
+## Inline review comments (#52)
+
+Inline review threads attach to a specific assistant message in a project chat,
+optionally anchored to a fenced code block (0-based `block_index`) and/or a
+`line_start`/`line_end` range within the message. Anchors store only positions —
+never raw source content. Threads allow one level of replies and support a
+resolve/unresolve toggle. All routes use `resolve_project_collab` (owner or
+active member), and content is scoped to the message's project.
+
+Permissions: any member with the `comment` capability may create comments and
+replies; a thread root may be **resolved** by its author or the workspace owner;
+a comment may be **deleted** by its author or the workspace owner.
+
+### List threads for a message — #52
+
+`GET /workspaces/api/projects/<project_id>/messages/<message_id>/review-comments`
+— **owner or active member**
+
+Response `200`: `{"message_id": 12, "items": [<thread>, ...]}` where each thread
+is a comment object plus a `replies` array (oldest first).
+
+### Create thread / reply — #52
+
+`POST /workspaces/api/projects/<project_id>/messages/<message_id>/review-comments`
+— **owner or active member** (`comment`)
+
+Request:
+
+```json
+{"body": "This block drops the error. @bob please confirm.",
+ "block_index": 0, "line_start": 3, "line_end": 5,
+ "parent_id": null}
+```
+
+- `body` required (stripped), max `REVIEW_COMMENT_MAX_LENGTH` chars.
+- The message must be an assistant message (`400` otherwise).
+- `block_index` must reference an existing fenced block in the message; line
+  bounds must be positive and ordered (`400` otherwise).
+- `parent_id` (optional) must be a root comment on the same message; replies are
+  one level deep only.
+- `@username` mentions notify the mentioned active members (never the author).
+
+Response `201` with the comment (see ``ReviewComment.to_dict`` fields:
+`id`, `project_id`, `message_id`, `author_id`, `author_username`, `parent_id`,
+`body`, `block_index`, `line_start`, `line_end`, `resolved`, `resolved_by`,
+`resolved_by_username`, `resolved_at`, `created_at`).
+
+### Resolve / unresolve — #52
+
+`PATCH /workspaces/api/projects/<project_id>/messages/<message_id>/review-comments/<comment_id>`
+— **thread author or workspace owner**
+
+Request: `{"resolved": true}`. Only a thread root can be resolved (`400` for a
+reply); anyone else gets `403`. Resolving records `resolved_by`/`resolved_at`.
+
+### Delete comment — #52
+
+`DELETE /workspaces/api/projects/<project_id>/messages/<message_id>/review-comments/<comment_id>`
+— **the author or the workspace owner** (`403` otherwise; deleting a root
+cascades to its replies)
+
+Response `200`: `{"ok": true}`.
+
+### Review summary — #52
+
+`GET /workspaces/api/projects/<project_id>/review-summary` — **owner or active
+member**
+
+Response `200`: `{"open": 2, "resolved": 1, "total": 3, "threads": [...]}` where
+each thread carries its anchor, author, `resolved` state, and `reply_count`. This
+drives the review summary panel on the chat tab.
+
+---
+
+## Collaboration settings
+
+### Get settings — Phase 7
+
+`GET /collaboration/api/workspaces/<workspace_id>/settings` — **any member**
+
+Response `200`:
+
+```json
+{"workspace_id": 3, "invitations_enabled": true,
+ "default_member_role": "viewer",
+ "created_at": "2026-08-01T09:00:00+00:00", "updated_at": null}
+```
+
+### Update settings — Phase 7
+
+`PUT /collaboration/api/workspaces/<workspace_id>/settings` — **owner**
+(`manage_settings`)
+
+Request (any subset): `{"invitations_enabled": false,
+"default_member_role": "contributor"}`.
+
+- `400` if `default_member_role` is not `viewer` or `contributor`.
+
+Response `200` with the full settings row. A `settings.changed` audit event is
+recorded. `invitations_enabled = false` blocks new invitation creation
+(`403`).
+
+---
+
+## Presence
+
+### Heartbeat — Phase 7
+
+`POST /collaboration/api/workspaces/<workspace_id>/heartbeat` — **any member**
+(`heartbeat`)
+
+Updates the member's `last_seen_at`. Per-user rate limited (`429` on excess).
+Response `200`: `{"ok": true}`.
+
+---
+
+## HTML pages
+
+| Path | Role | Description |
+| ---- | ---- | ----------- |
+| `GET /collaboration/notifications` | logged-in | Notification inbox UI |
+| `GET /collaboration/<workspace_id>/members` | member | Team/member management UI (owner manages, members read + leave) |
+| `GET /collaboration/<workspace_id>/audit` | owner | Owner-only audit UI |
+| `GET /collaboration/invitations/<token>` | public | Invitation landing page |
+
+---
+
+## Route-map verification
+
+Every route above exists in the app; the checklist is maintained alongside the
+issue (#160). Verify with:
+
+```bash
+flask --app wsgi routes | findstr /i "collaboration"
+```

@@ -53,13 +53,13 @@ developer tooling. This project is built incrementally across phases:
 
 ## Documentation
 
-- [Chat feature guide](docs/chat.md) — how the chat works, enabling
+- [Chat feature guide](CONTRIBUTING.md#chat-feature-developer-guide) — how the chat works, enabling
   providers, adding an API key, and using the chat.
-- [Chat API reference](docs/api-chat.md) — chat endpoints (methods,
+- [Chat API reference](CONTRIBUTING.md#api-reference) — chat endpoints (methods,
   payloads, SSE event schema) with request/response examples.
-- [Adding a new LLM provider](docs/adding-a-provider.md) — step-by-step
+- [Adding a new LLM provider](docs/providers.md) — step-by-step
   guide tied to the provider abstraction layer.
-- [Developer workflow](docs/developer-workflow.md) — running migrations,
+- [Developer workflow](CONTRIBUTING.md) — running migrations,
   tests, and the JS test runner.
 - [Reviews & quality tooling](docs/reviews.md) — the Reviews pages, the
   `REVIEW_*` settings, the finding vocabulary, and the review API.
