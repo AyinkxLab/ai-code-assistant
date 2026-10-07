@@ -11,10 +11,25 @@
       / {{ project.name }}
     </h1>
     <p class="repo-meta">
-      {{ project.source }}{% if project.source_url %} · <span id="project-source-url">{{ project.source_url }}</span>{% endif %}
+      <span id="project-source-type" class="project-source">{{ project.source }}</span>
+      {% if project.source_url %}
+        · {% if project.source_url.startswith('http://') or project.source_url.startswith('https://') %}
+            <a id="project-source-url" href="{{ project.source_url }}" target="_blank" rel="noopener noreferrer">{{ project.source_url }}</a>
+          {% else %}
+            <span id="project-source-url">{{ project.source_url }}</span>
+          {% endif %}
+      {% endif %}
+      {% if project.default_branch %} · <span id="project-default-branch">branch: {{ project.default_branch }}</span>{% endif %}
       · <span id="project-status" class="project-status project-status-{{ project.status }}">{{ project.status }}</span>
+      {% if project.indexed_at %} · <span id="project-indexed-at" title="{{ project.indexed_at.isoformat() }}">Indexed <time datetime="{{ project.indexed_at.isoformat() }}">{{ project.indexed_at.strftime('%Y-%m-%d %H:%M UTC') }}</time></span>{% endif %}
       {% if project.status == 'ready' %} · {{ project.file_count }} files{% endif %}
     </p>
+    {% if project.status == 'failed' %}
+    <div id="project-import-error" class="flash flash-error" style="margin-top: 8px;">
+      <strong>Import failed:</strong> {{ project.error_message or "An unexpected error occurred during import." }}
+      <span class="field-hint" style="display: inline; margin-left: 6px;">Hint: Check your repository URL, branch name, or archive contents, then click Refresh or re-import the project.</span>
+    </div>
+    {% endif %}
   </div>
   <div class="repo-toolbar">
     {% if project.status != 'indexing' %}
