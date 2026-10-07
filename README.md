@@ -8,7 +8,7 @@ developer tooling. This project is built incrementally across phases:
   PostgreSQL-backed models, Dockerized deployment, CI pipelines, and a test
   suite.
 - **Phase 2** — Authentication & User Management: registration, login,
-  logout, password hashing, and account management.
+  logout, password hashing, and account management. **(complete)**
 - **Phase 3** — AI Core Features: chat interface with streaming responses,
   prompt library, AI code generation and analysis tools, file upload, and
   conversation management.
@@ -32,7 +32,7 @@ developer tooling. This project is built incrementally across phases:
   services, contract/account inspection, evidence-based project detection, and
   Stellar-aware AI analysis).
 
-> **Status:** Phases 1–7 implemented. Phase 8 foundation implemented; the
+> **Status:** Phases 1–7 implemented (Phase 2 complete). Phase 8 foundation implemented; the
 > plugin/Stellar surface area is intentionally small and the remaining work is
 > tracked as contributor issues under the **Phase 8 - Plugins & Extensions**
 > milestone.
@@ -53,6 +53,14 @@ developer tooling. This project is built incrementally across phases:
 
 ## Documentation
 
+- [Chat feature guide](CONTRIBUTING.md#chat-feature-developer-guide) — how the chat works, enabling
+  providers, adding an API key, and using the chat.
+- [Chat API reference](CONTRIBUTING.md#api-reference) — chat endpoints (methods,
+  payloads, SSE event schema) with request/response examples.
+- [Adding a new LLM provider](docs/providers.md) — step-by-step
+  guide tied to the provider abstraction layer.
+- [Developer workflow](CONTRIBUTING.md) — running migrations,
+  tests, and the JS test runner.
 - [Reviews & quality tooling](docs/reviews.md) — the Reviews pages, the
   `REVIEW_*` settings, the finding vocabulary, and the review API.
 - [Team collaboration guide](docs/team-collaboration.md) — feature guide,
