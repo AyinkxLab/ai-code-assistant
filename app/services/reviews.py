@@ -1,3 +1,4 @@
+
 """AI review service.
 
 Builds bounded, injection-resistant prompts and parses the model's structured
@@ -53,6 +54,7 @@ SUMMARY_KEYS = (
     "files_affected",
 )
 
+
 _JSON_SCHEMA = """
 Respond with ONLY a single JSON object, with no markdown fences and no prose
 outside the object, in exactly this shape:
@@ -66,6 +68,7 @@ outside the object, in exactly this shape:
     "performance_concerns": ["bullets"],
     "files_affected": ["paths"]
   },
+  "action_items": ["copyable, imperative next steps"],
   "findings": [
     {
       "file": "path/to/file",
@@ -79,6 +82,8 @@ outside the object, in exactly this shape:
   ]
 }
 Use empty arrays for sections with no content. findings may be empty.
+action_items must be short, imperative, and ready to paste into a GitHub
+review comment (one action per item).
 """
 
 
@@ -666,4 +671,97 @@ def render_review_markdown(review) -> str:
             lines.append(f"**Recommendation:** {finding.recommendation}")
             lines.append("")
 
+    return "\n".join(lines).rstrip() + "\n"
+
+
+# --------------------------------------------------------------------------
+# Action items (copyable to GitHub review comments)
+# --------------------------------------------------------------------------
+
+_ACTION_ITEM_KEYS = ("action_items", "action-items", "actionItems")
+
+
+def _action_items_from_summary(summary: dict) -> list[str]:
+    """Return the summary's action items, tolerating key spelling variants."""
+    for key in _ACTION_ITEM_KEYS:
+        items = _as_string_list(summary.get(key))
+        if items:
+            return items
+    return []
+
+
+def derive_action_items(review) -> list[dict]:
+    """Derive structured, copyable action items from a review.
+
+    Confirmed defects (findings with ``confidence == "confirmed"``) are kept
+    distinct from suggestions so the UI can render them as separate groups.
+    Each item carries a ready-to-paste Markdown ``text`` for GitHub review
+    comments plus the fields the copy button needs.
+    """
+    items: list[dict] = []
+    seen: set[str] = set()
+
+    for finding in review.findings:
+        location = finding.file or "n/a"
+        if finding.line:
+            location = f"{location}:{finding.line}"
+        confirmed = (finding.confidence or "").strip().lower() == "confirmed"
+        kind = "confirmed" if confirmed else "suggestion"
+        body = (finding.recommendation or finding.explanation or "").strip()
+        if not body:
+            continue
+        text = f"- [{finding.severity.upper()}] {location}: {body}"
+        if text in seen:
+            continue
+        seen.add(text)
+        items.append(
+            {
+                "kind": kind,
+                "severity": finding.severity,
+                "category": finding.category,
+                "file": finding.file,
+                "line": finding.line,
+                "confidence": finding.confidence,
+                "text": text,
+                "finding_id": finding.id,
+            }
+        )
+
+    for text in _action_items_from_summary(review.summary_dict):
+        entry = f"- {text}"
+        if entry in seen:
+            continue
+        seen.add(entry)
+        items.append(
+            {
+                "kind": "suggestion",
+                "severity": None,
+                "category": None,
+                "file": None,
+                "line": None,
+                "confidence": None,
+                "text": entry,
+                "finding_id": None,
+            }
+        )
+
+    return items
+
+
+def action_items_markdown(review) -> str:
+    """Render a review's action items as a paste-ready Markdown checklist."""
+    items = derive_action_items(review)
+    if not items:
+        return ""
+    lines = ["## Action items", ""]
+    confirmed = [item for item in items if item["kind"] == "confirmed"]
+    suggestions = [item for item in items if item["kind"] != "confirmed"]
+    if confirmed:
+        lines += ["### Confirmed defects", ""]
+        lines += [f"- [ ] {item['text'].lstrip('- ').strip()}" for item in confirmed]
+        lines.append("")
+    if suggestions:
+        lines += ["### Suggestions", ""]
+        lines += [f"- [ ] {item['text'].lstrip('- ').strip()}" for item in suggestions]
+        lines.append("")
     return "\n".join(lines).rstrip() + "\n"
