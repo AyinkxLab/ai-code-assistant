@@ -22,6 +22,8 @@
   var chatLoaded = false;
   var activeSessionId = null;
   var pendingAttachments = [];
+  var treeFocused = false;
+  var focusedTreeItem = null;
 
   function getCsrf() {
     var meta = document.querySelector('meta[name="csrf-token"]');
@@ -178,6 +180,7 @@
       li.querySelector(".tree-dir-label").addEventListener("click", function () {
         toggleDir(li, childPath);
       });
+      li.__treePath = childPath;
       containerUl.appendChild(li);
     });
     data.files.forEach(function (file) {
@@ -195,6 +198,7 @@
           renderChatAttachments();
         }
       });
+      li.__treePath = file.path;
       containerUl.appendChild(li);
     });
     if (!data.directories.length && !data.files.length) {
@@ -250,6 +254,130 @@
     }
   }
 
+  // ------------------------------------------------------- keyboard nav
+
+  function treeItems() {
+    return Array.prototype.slice.call(treeEl.querySelectorAll("li.tree-dir, li.tree-file"));
+  }
+
+  function visibleTreeItems() {
+    return treeItems().filter(function (li) {
+      var parent = li.parentElement;
+      while (parent && parent !== treeEl) {
+        if (parent.hidden) return false;
+        parent = parent.parentElement;
+      }
+      return true;
+    });
+  }
+
+  function setFocusedItem(li) {
+    if (focusedTreeItem) focusedTreeItem.classList.remove("tree-focused");
+    focusedTreeItem = li || null;
+    if (focusedTreeItem) {
+      focusedTreeItem.classList.add("tree-focused");
+      focusedTreeItem.scrollIntoView({ block: "nearest" });
+    }
+  }
+
+  function focusFirstTreeItem() {
+    var items = visibleTreeItems();
+    if (items.length) setFocusedItem(items[0]);
+  }
+
+  function moveTreeFocus(delta) {
+    var items = visibleTreeItems();
+    if (!items.length) return;
+    var index = focusedTreeItem ? items.indexOf(focusedTreeItem) : -1;
+    if (index === -1) {
+      setFocusedItem(items[delta > 0 ? 0 : items.length - 1]);
+      return;
+    }
+    var next = index + delta;
+    if (next < 0) next = 0;
+    if (next >= items.length) next = items.length - 1;
+    setFocusedItem(items[next]);
+  }
+
+  function openFocusedItem() {
+    if (!focusedTreeItem) return;
+    if (focusedTreeItem.classList.contains("tree-dir")) {
+      var children = focusedTreeItem.querySelector(".tree-children");
+      if (children.hidden) {
+        toggleDir(focusedTreeItem, focusedTreeItem.__treePath);
+      } else {
+        var items = visibleTreeItems();
+        var index = items.indexOf(focusedTreeItem);
+        if (index !== -1 && items[index + 1] && items[index + 1].parentElement === children) {
+          setFocusedItem(items[index + 1]);
+        }
+      }
+    } else {
+      loadFile(focusedTreeItem.__treePath);
+      if (pendingAttachments.indexOf(focusedTreeItem.__treePath) === -1) {
+        pendingAttachments.push(focusedTreeItem.__treePath);
+        renderChatAttachments();
+      }
+    }
+  }
+
+  function collapseFocusedItem() {
+    if (!focusedTreeItem) return;
+    if (focusedTreeItem.classList.contains("tree-dir")) {
+      var children = focusedTreeItem.querySelector(".tree-children");
+      if (!children.hidden) {
+        toggleDir(focusedTreeItem, focusedTreeItem.__treePath);
+        return;
+      }
+    }
+    var parentLi = focusedTreeItem.parentElement
+      ? focusedTreeItem.parentElement.closest("li.tree-dir")
+      : null;
+    if (parentLi) setFocusedItem(parentLi);
+  }
+
+  function goUpTree() {
+    if (focusedTreeItem) {
+      var parentLi = focusedTreeItem.parentElement
+        ? focusedTreeItem.parentElement.closest("li.tree-dir")
+        : null;
+      if (parentLi) {
+        setFocusedItem(parentLi);
+        return;
+      }
+    }
+    if (currentPath) {
+      var parts = currentPath.split("/").filter(Boolean);
+      parts.pop();
+      navigateToDir(parts.join("/"));
+      focusFirstTreeItem();
+    }
+  }
+
+  function onTreeKeydown(event) {
+    if (!treeFocused) return;
+    var key = event.key;
+    if (key === "ArrowDown") {
+      event.preventDefault();
+      moveTreeFocus(1);
+    } else if (key === "ArrowUp") {
+      event.preventDefault();
+      moveTreeFocus(-1);
+    } else if (key === "ArrowRight") {
+      event.preventDefault();
+      openFocusedItem();
+    } else if (key === "ArrowLeft") {
+      event.preventDefault();
+      collapseFocusedItem();
+    } else if (key === "Enter") {
+      event.preventDefault();
+      openFocusedItem();
+    } else if (key === "Escape") {
+      event.preventDefault();
+      goUpTree();
+    }
+  }
+
   // ------------------------------------------------------------ breadcrumbs
 
   function renderBreadcrumbs(path) {
@@ -277,6 +405,7 @@
   function setCurrentPath(path) {
     currentPath = path || "";
     renderBreadcrumbs(currentPath);
+    syncFocusToPath(currentPath);
   }
 
   function navigateToDir(path) {
@@ -287,6 +416,7 @@
     loadDir(path || "", ul);
     setCurrentPath(path || "");
     switchTab("files");
+    focusFirstTreeItem();
   }
 
   // ----------------------------------------------------------------- file
@@ -294,6 +424,7 @@
   function loadFile(path) {
     switchTab("files");
     setCurrentPath(path);
+    syncFocusToPath(path);
     viewerEl.innerHTML = '<p class="sidebar-empty">Loading file...</p>';
     api("/workspaces/api/projects/" + PROJECT_ID + "/file?path=" + encodeURIComponent(path))
       .then(function (data) {
@@ -322,6 +453,17 @@
       .catch(function (error) {
         viewerEl.innerHTML = '<p class="sidebar-empty">' + escapeHtml(error.message) + "</p>";
       });
+  }
+
+  function syncFocusToPath(path) {
+    if (!path) return;
+    var items = treeItems();
+    for (var i = 0; i < items.length; i++) {
+      if (items[i].__treePath === path) {
+        setFocusedItem(items[i]);
+        return;
+      }
+    }
   }
 
   // ---------------------------------------------------------------- search
@@ -1187,6 +1329,19 @@
     loadDir("", rootUl);
     renderBreadcrumbs("");
 
+    treeEl.setAttribute("tabindex", "0");
+    treeEl.addEventListener("focus", function () {
+      treeFocused = true;
+      if (!focusedTreeItem) focusFirstTreeItem();
+    });
+    treeEl.addEventListener("blur", function () {
+      treeFocused = false;
+    });
+    treeEl.addEventListener("mousedown", function () {
+      treeFocused = true;
+    });
+    treeEl.addEventListener("keydown", onTreeKeydown);
+
     if (breadcrumbsEl) {
       breadcrumbsEl.addEventListener("click", function (event) {
         var crumb = event.target.closest(".file-crumb");
@@ -1201,6 +1356,7 @@
       ul.className = "tree-children";
       treeEl.appendChild(ul);
       loadDir("", ul);
+      setFocusedItem(null);
     });
 
     document.querySelectorAll("#project-tabs .repo-tab").forEach(function (tab) {

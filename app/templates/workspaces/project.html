@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 
-{% block title %}{{ project.name }} - {{ config.APP_NAME }}{% endblock %}
+{% block title %{{ project.name }} - {{ config.APP_NAME }}{% endblock %}
 
 {% block content %}
 <div class="github-header">
@@ -48,14 +48,14 @@
       <h2>Files</h2>
       <button id="refresh-tree" class="btn btn-ghost btn-sm" type="button" title="Reload tree">↻</button>
     </div>
-    <div id="project-tree" class="project-tree"><p class="sidebar-empty">Loading files...</p></div>
+    <div id="project-tree" class="project-tree" role="tree" tabindex="0" aria-label="Project files"><p class="sidebar-empty">Loading files...</p></div>
   </aside>
 
   <section class="project-main">
     <div class="repo-tabs" id="project-tabs">
       <button class="repo-tab active" data-tab="files" type="button">Files</button>
       <button class="repo-tab" data-tab="search" type="button">Search</button>
-      <button class="repo-tab" data-tab="chat" type="button">AI Chat</button>
+      <button class="repo-tab" data-tab="chat" type="button">I Chat</button>
       <button class="repo-tab" data-tab="analysis" type="button">Analysis</button>
       <button class="repo-tab" data-tab="stats" type="button">Stats</button>
       <button class="repo-tab" data-tab="reviews" type="button">Reviews</button>
@@ -89,7 +89,7 @@
     <div id="tab-chat" class="project-tab" hidden>
       <div id="review-summary" class="review-summary collab-panel">
         <h3>Review threads</h3>
-        <p class="sidebar-empty">Loading review threads…</p>
+        <p class="sidebar-empty">Loading review threads&#x2026;</p>
       </div>
       <div class="project-chat-layout">
         <aside class="chat-sessions" aria-label="Chat sessions">
@@ -150,7 +150,7 @@
 
     <div id="tab-stellar" class="project-tab" hidden>
       <div id="stellar-detection-output" class="analysis-output">
-        <p class="sidebar-empty">Loading Stellar/Soroban detection…</p>
+        <p class="sidebar-empty">Loading Stellar/Soroban detection&#x2026;</p>
       </div>
 
       <section id="stellar-live-panel" class="prompt-editor stellar-live-panel">
@@ -164,7 +164,7 @@
         <div class="repo-toolbar">
           <button id="stellar-network-refresh" class="btn btn-ghost btn-sm" type="button">Refresh network status</button>
         </div>
-        <div id="stellar-network-output"><p class="sidebar-empty">Loading network status…</p></div>
+        <div id="stellar-network-output"><p class="sidebar-empty">Loading network status&#x2026;</p></div>
 
         <div class="repo-toolbar">
           <input id="stellar-account-input" class="sidebar-search" type="text" placeholder="G… account address">
@@ -206,4 +206,12 @@
 {% block scripts %}
 <script src="{{ url_for('static', filename='js/stellar_tools.js') }}"></script>
 <script src="{{ url_for('static', filename='js/project.js') }}"></script>
+<script>
+  // Re-attach keyboard navigation after the tree renders/refreshes.
+  document.addEventListener("DOMContentLoaded", function () {
+    if (window.fileExplorerNavigation && typeof window.fileExplorerNavigation.init === "function") {
+      window.fileExplorerNavigation.init();
+    }
+  });
+</script>
 {% endblock %}
