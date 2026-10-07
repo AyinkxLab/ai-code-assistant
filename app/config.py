@@ -160,6 +160,11 @@ class Config:
     PROJECT_MAX_FILE_CHARS = int(os.getenv("PROJECT_MAX_FILE_CHARS", "200000"))
     PROJECT_MAX_CONTEXT_CHARS = int(os.getenv("PROJECT_MAX_CONTEXT_CHARS", "40000"))
     PROJECT_SEARCH_MAX_RESULTS = int(os.getenv("PROJECT_SEARCH_MAX_RESULTS", "100"))
+    # Full-text search index (issue #199). When enabled and the storage
+    # engine supports it, content search uses the dedicated FTS index
+    # (SQLite FTS5 / PostgreSQL tsvector) instead of a LIKE scan. Set to
+    # "0" to force the LIKE fallback even when FTS is available.
+    PROJECT_SEARCH_FTS_ENABLED = os.getenv("PROJECT_SEARCH_FTS_ENABLED", "1") == "1"
     PROJECT_GITHUB_MAX_FILES = int(os.getenv("PROJECT_GITHUB_MAX_FILES", "1000"))
     PROJECT_SKIP_DIRS = os.getenv(
         "PROJECT_SKIP_DIRS",
@@ -281,6 +286,7 @@ class TestingConfig(Config):
     WTF_CSRF_ENABLED = False
     SQLALCHEMY_DATABASE_URI = os.getenv("TEST_DATABASE_URL", "sqlite:///:memory:")
     # Run import jobs inline so tests can assert final status deterministically.
+    PROJECT_SEARCH_FTS_ENABLED = False
     IMPORT_JOBS_ASYNC = False
     # No per-user AI rate limiting in tests: assertions must not depend on the
     # number of requests a test happens to make.
