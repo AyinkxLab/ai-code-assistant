@@ -85,6 +85,14 @@ class Config:
     LLM_RETRY_BASE_DELAY = float(os.getenv("LLM_RETRY_BASE_DELAY", "0.5"))
     LLM_RETRY_MAX_DELAY = float(os.getenv("LLM_RETRY_MAX_DELAY", "8.0"))
 
+    # LLM failover (issue #39): an ordered chain of providers tried in turn when
+    # a provider still fails after its retries. ``LLM_PROVIDER_CHAIN`` is a
+    # comma-separated list; ``LLM_ROUTING_RULES`` maps an optional route key to
+    # its own chain, e.g. "vision=openai,anthropic;cheap=mock". Both are empty by
+    # default, which preserves the single-provider behaviour exactly.
+    LLM_PROVIDER_CHAIN = os.getenv("LLM_PROVIDER_CHAIN", "")
+    LLM_ROUTING_RULES = os.getenv("LLM_ROUTING_RULES", "")
+
     # Chat image attachments (issue #49): only png/jpeg/webp are accepted and
     # each image and the number per message are bounded.
     CHAT_IMAGE_MAX_BYTES = int(os.getenv("CHAT_IMAGE_MAX_BYTES", str(5 * 1024 * 1024)))

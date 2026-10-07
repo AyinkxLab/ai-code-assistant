@@ -47,13 +47,47 @@ from app.services.provider_config import (
     ProviderSettingsError,
     apply_settings,
     build_provider,
+    provider_chain_status,
     provider_options,
 )
+from app.services.providers.failover import build_failover_chain
 from app.services.providers.registry import resolve_provider_name
 from app.services.providers.retry import RetryingProvider
 
 #: Machine-readable code returned when the configured provider has no key.
 PROVIDER_NOT_CONFIGURED_CODE = "provider_not_configured"
+
+
+def build_provider_chain(
+    user,
+    primary: str | None = None,
+    *,
+    route: str | None = None,
+):
+    """Build the ordered failover chain for a request (issue #39).
+
+    The chain is resolved from the conversation's provider plus the configured
+    fallbacks/routing rules, then filtered to the providers that are actually
+    usable for this user (an environment or stored key, or a keyless provider).
+    Every entry gets its own retry layer, so retries stay inside one provider and
+    only an exhausted provider hands over to the next. When nothing is usable the
+    primary is kept so the existing configuration error is surfaced unchanged.
+    """
+    status = provider_chain_status(user, primary=primary, route=route)
+    names = status["configured_providers"] or status["chain"][:1]
+    return build_failover_chain(
+        names,
+        build=lambda name: build_provider(user, name),
+        wrap=RetryingProvider,
+    )
+
+
+def _request_route(data: dict) -> str | None:
+    """Read the optional routing-rule key from a request body (issue #39)."""
+    route = data.get("route")
+    if not route:
+        return None
+    return str(route).strip().lower()[:50] or None
 
 
 def _provider_not_configured_payload(status: dict) -> dict:
@@ -654,7 +688,8 @@ def send_message(conversation_id: int):
     if not content:
         content = "(image attached)"
 
-    status = provider_status(current_user)
+    route = _request_route(data)
+    status = provider_chain_status(current_user, primary=conversation.provider, route=route)
     if not status["configured"]:
         return jsonify(_provider_not_configured_payload(status)), 503
 
@@ -676,7 +711,7 @@ def send_message(conversation_id: int):
     messages = _conversation_messages(conversation, context_messages)
 
     try:
-        provider = RetryingProvider(build_provider(current_user, conversation.provider))
+        provider = build_provider_chain(current_user, conversation.provider, route=route)
         generation = _generation_kwargs(conversation)
         response = cached_chat(
             current_user,
@@ -716,7 +751,8 @@ def stream_message(conversation_id: int):
     if not content:
         content = "(image attached)"
 
-    status = provider_status(current_user)
+    route = _request_route(data)
+    status = provider_chain_status(current_user, primary=conversation.provider, route=route)
     if not status["configured"]:
         return jsonify(_provider_not_configured_payload(status)), 503
 
@@ -759,7 +795,7 @@ def stream_message(conversation_id: int):
         # Accumulate chunks so a cancelled stream can still keep what it got.
         chunks: list[str] = []
         try:
-            provider = RetryingProvider(build_provider(current_user, conversation.provider))
+            provider = build_provider_chain(current_user, conversation.provider, route=route)
             for chunk in provider.stream(messages, **generation):
                 chunks.append(chunk)
                 yield f"data: {json.dumps({'type': 'token', 'content': chunk})}\n\n"
@@ -781,7 +817,7 @@ def stream_message(conversation_id: int):
         if message is None:
             # The provider streamed no text; fall back to a single completion.
             try:
-                provider = RetryingProvider(build_provider(current_user, conversation.provider))
+                provider = build_provider_chain(current_user, conversation.provider, route=route)
                 response = provider.chat(messages, **generation)
                 message = persist_assistant(
                     response.content, token_usage.usage_from_response(response, messages)

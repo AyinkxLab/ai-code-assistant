@@ -30,9 +30,12 @@ from typing import Any
 from app.services import chat_audit
 from app.services.providers.base import (
     LLMProvider,
+    ProviderAuthenticationError,
+    ProviderConfigurationError,
     ProviderError,
     ProviderRateLimitError,
     ProviderResponse,
+    ProviderResponseError,
     ProviderUnavailableError,
 )
 
@@ -46,10 +49,47 @@ DEFAULT_MAX_RETRIES = 3
 DEFAULT_BASE_DELAY = 0.5
 DEFAULT_MAX_DELAY = 8.0
 
+#: Diagnostics labels produced by :func:`classify_error`. Transient categories
+#: (``rate_limit``, ``unavailable``) describe transport/429/5xx failures that are
+#: safe to retry and to fail over; the remaining categories are terminal
+#: request/identity failures that must fail fast instead of silently moving to
+#: another provider (issue #39).
+ERROR_CATEGORY_RATE_LIMIT = "rate_limit"
+ERROR_CATEGORY_UNAVAILABLE = "unavailable"
+ERROR_CATEGORY_AUTHENTICATION = "authentication"
+ERROR_CATEGORY_CONFIGURATION = "configuration"
+ERROR_CATEGORY_RESPONSE = "response"
+ERROR_CATEGORY_PROVIDER = "provider"
+ERROR_CATEGORY_UNKNOWN = "unknown"
+
 
 def is_transient_error(exc: BaseException) -> bool:
     """Return ``True`` when ``exc`` is a provider error worth retrying."""
     return isinstance(exc, TRANSIENT_PROVIDER_ERRORS)
+
+
+def classify_error(exc: BaseException) -> str:
+    """Return a stable diagnostic category for a provider failure.
+
+    Transient categories (``rate_limit``, ``unavailable``) are the only ones a
+    failover chain may skip past; authentication, configuration/validation and
+    malformed-response errors are terminal for the request. The classification
+    is deliberately narrower than :func:`is_transient_error` so logs and tests
+    can tell *why* a chain stopped.
+    """
+    if isinstance(exc, ProviderRateLimitError):
+        return ERROR_CATEGORY_RATE_LIMIT
+    if isinstance(exc, ProviderUnavailableError):
+        return ERROR_CATEGORY_UNAVAILABLE
+    if isinstance(exc, ProviderAuthenticationError):
+        return ERROR_CATEGORY_AUTHENTICATION
+    if isinstance(exc, ProviderConfigurationError):
+        return ERROR_CATEGORY_CONFIGURATION
+    if isinstance(exc, ProviderResponseError):
+        return ERROR_CATEGORY_RESPONSE
+    if isinstance(exc, ProviderError):
+        return ERROR_CATEGORY_PROVIDER
+    return ERROR_CATEGORY_UNKNOWN
 
 
 def _env_int(name: str, default: int) -> int:
@@ -209,8 +249,16 @@ __all__ = [
     "DEFAULT_BASE_DELAY",
     "DEFAULT_MAX_DELAY",
     "DEFAULT_MAX_RETRIES",
+    "ERROR_CATEGORY_AUTHENTICATION",
+    "ERROR_CATEGORY_CONFIGURATION",
+    "ERROR_CATEGORY_PROVIDER",
+    "ERROR_CATEGORY_RATE_LIMIT",
+    "ERROR_CATEGORY_RESPONSE",
+    "ERROR_CATEGORY_UNAVAILABLE",
+    "ERROR_CATEGORY_UNKNOWN",
     "TRANSIENT_PROVIDER_ERRORS",
     "RetryingProvider",
+    "classify_error",
     "get_retrying_provider",
     "is_transient_error",
 ]

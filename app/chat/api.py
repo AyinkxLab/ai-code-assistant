@@ -25,11 +25,28 @@ from app.chat import routes as chat_routes
 from app.extensions import db
 from app.models import Conversation, Message
 from app.services import ratelimit
-from app.services.llm import LLMProviderError, provider_status
-from app.services.provider_config import ProviderSettingsError, apply_settings, build_provider
+from app.services.llm import LLMProviderError
+from app.services.provider_config import (
+    ProviderSettingsError,
+    apply_settings,
+    build_provider,
+    provider_chain_status,
+)
+from app.services.providers.failover import build_failover_chain
 from app.services.providers.retry import RetryingProvider
 
 bp = Blueprint("chat_api", __name__, url_prefix="/api")
+
+
+def _provider_chain(user, primary: str | None, *, route: str | None = None):
+    """Build the ordered, usable failover chain for an API request (issue #39)."""
+    status = provider_chain_status(user, primary=primary, route=route)
+    names = status["configured_providers"] or status["chain"][:1]
+    return build_failover_chain(
+        names,
+        build=lambda name: build_provider(user, name),
+        wrap=RetryingProvider,
+    )
 
 
 def _problem(status: int, title: str, detail: str | None = None, **extra):
@@ -174,7 +191,8 @@ def send_message(conversation_id: int):
     if not content:
         content = "(image attached)"
 
-    status = provider_status(current_user)
+    route = chat_routes._request_route(data)
+    status = provider_chain_status(current_user, primary=conversation.provider, route=route)
     if not status["configured"]:
         return _problem(
             503,
@@ -205,7 +223,7 @@ def send_message(conversation_id: int):
 
     messages = chat_routes._conversation_messages(conversation, context_messages)
     try:
-        provider = RetryingProvider(build_provider(current_user, conversation.provider))
+        provider = _provider_chain(current_user, conversation.provider, route=route)
         reply = provider.chat(messages, **chat_routes._generation_kwargs(conversation)).content
     except LLMProviderError as exc:
         db.session.rollback()
