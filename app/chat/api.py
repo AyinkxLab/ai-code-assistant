@@ -180,6 +180,7 @@ def delete_conversation(conversation_id: int):
 
 @bp.route("/conversations/<int:conversation_id>/messages", methods=["POST"])
 @_login_required
+@ratelimit.ai_limit
 @_rate_limit("message")
 def send_message(conversation_id: int):
     """Persist the user message and return the assistant's reply."""
