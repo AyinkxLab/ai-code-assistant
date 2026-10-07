@@ -173,6 +173,17 @@ def _parse_error_body(response: requests.Response) -> str:
     return f"HTTP {response.status_code}"
 
 
+def compare_refs(client: GitHubClient, full_name: str, base: str, head: str) -> dict:
+    """Compare two refs on GitHub and return the diff summary.
+
+    Convenience wrapper around :meth:`GitHubClient.compare_refs` so callers
+    that already hold a client instance can use either form. ``base`` and
+    ``head`` are plain refs (branch names, tags, or SHAs) and are joined as
+    ``base...head`` for the REST comparison endpoint.
+    """
+    return client.compare_refs(full_name, base, head)
+
+
 class GitHubClient:
     """Authenticated client for the GitHub REST API.
 
@@ -531,6 +542,15 @@ class GitHubClient:
 
     def get_commit(self, full_name: str, sha: str) -> dict:
         return self._get(f"/repos/{full_name}/commits/{sha}")
+
+    def compare_refs(self, full_name: str, base: str, head: str) -> dict:
+        """Return GitHub's comparison of ``base`` against ``head``.
+
+        The GitHub compare endpoint returns an envelope containing ``status``,
+        ``ahead_by``/``behind_by``, ``commits``, and the changed ``files``
+        (each with ``additions``/``deletions``/``patch``).
+        """
+        return self._get(f"/repos/{full_name}/compare/{base}...{head}")
 
     def _graphql(self, query: str, variables: dict) -> dict:
         """Execute a GraphQL query against the GitHub GraphQL API."""

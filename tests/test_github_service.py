@@ -19,6 +19,7 @@ from app.services.github import (
     GitHubPage,
     GitHubPermissionError,
     GitHubRateLimitError,
+    compare_refs,
     parse_link_header,
     validate_full_name,
     validate_path,
@@ -372,3 +373,93 @@ class TestValidation:
         for bad in ["../secret", "foo/../../etc/passwd", "..", "a/../b"]:
             with pytest.raises(GitHubError):
                 validate_path(bad)
+
+
+class TestCompareRefs:
+    def test_compare_refs_uses_github_compare_endpoint(self, ok_client):
+        client, session = ok_client
+        session.responses = [
+            FakeResponse.from_json(
+                200,
+                {
+                    "status": "ahead",
+                    "ahead_by": 2,
+                    "behind_by": 0,
+                    "total_commits": 2,
+                    "files": [
+                        {
+                            "filename": "app/x.py",
+                            "status": "modified",
+                            "additions": 3,
+                            "deletions": 1,
+                            "changes": 4,
+                        }
+                    ],
+                },
+            )
+        ]
+        result = client.compare_refs("owner/repo", "main", "feature")
+        assert result["files"][0]["filename"] == "app/x.py"
+        assert session.calls[0]["method"] == "GET"
+        assert session.calls[0]["url"].endswith("/repos/owner/repo/compare/main...feature")
+
+    def test_compare_refs_accepts_dot_dot_dot_refs_and_returns_summary(self, ok_client):
+        client, session = ok_client
+        session.responses = [
+            FakeResponse.from_json(
+                200,
+                {
+                    "status": "diverged",
+                    "ahead_by": 1,
+                    "behind_by": 1,
+                    "total_commits": 2,
+                    "files": [
+                        {
+                            "filename": "README.md",
+                            "status": "added",
+                            "additions": 5,
+                            "deletions": 0,
+                            "changes": 5,
+                        },
+                        {
+                            "filename": "app/y.py",
+                            "status": "removed",
+                            "additions": 0,
+                            "deletions": 7,
+                            "changes": 7,
+                        },
+                    ],
+                },
+            )
+        ]
+        result = client.compare_refs("owner/repo", "v1.0.0", "main")
+        assert result["status"] == "diverged"
+        assert len(result["files"]) == 2
+        assert session.calls[0]["url"].endswith("/repos/owner/repo/compare/v1.0.0...main")
+
+    def test_compare_refs_free_function_delegates_to_client(self, ok_client):
+        client, session = ok_client
+        session.responses = [
+            FakeResponse.from_json(
+                200,
+                {
+                    "status": "ahead",
+                    "ahead_by": 1,
+                    "behind_by": 0,
+                    "total_commits": 1,
+                    "files": [],
+                },
+            )
+        ]
+        result = compare_refs(client, "owner/repo", "main", "feature")
+        assert result["status"] == "ahead"
+        assert session.calls[0]["url"].endswith("/repos/owner/repo/compare/main...feature")
+
+    def test_compare_refs_raises_on_not_found(self, ok_client):
+        client, session = ok_client
+        session.responses = [
+            FakeResponse(404, data={"message": "Not Found"}),
+            FakeResponse(404, data={"message": "Not Found"}),
+        ]
+        with pytest.raises(GitHubNotFoundError):
+            client.compare_refs("owner/repo", "main", "missing")

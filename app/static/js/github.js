@@ -59,7 +59,7 @@
       if (!text) return "";
       var html = this.escapeHtml(text);
       html = html.replace(/(^|\s)(https?:\/\/[^\s<]+)/g, '$1<a href="$2" target="_blank" rel="noopener">$2</a>');
-      html = html.replace(/\r?\n/g, "<br>");
+      html = html.replace(/\r?\n/g, "<br >");
       return html;
     },
 
@@ -150,7 +150,7 @@
       var html = this.escapeHtml(analysis);
       html = html.replace(/\[CONFIRMED\]/g, '<span class="tag tag-confirmed">[CONFIRMED]</span>');
       html = html.replace(/\[SUGGESTION\]/g, '<span class="tag tag-suggestion">[SUGGESTION]</span>');
-      html = html.replace(/\r?\n/g, "<br>");
+      html = html.replace(/\r?\n/g, "<br >");
       pre.innerHTML = html;
       container.appendChild(pre);
     },
@@ -170,6 +170,83 @@
         return '<span class="' + cls + '">' + this.escapeHtml(line) + "</span>";
       }, this).join("");
       return '<div class="code-view diff">' + html + "</div>";
+    },
+
+    // Compare two refs (such as branches or tags) via the GitHub API
+    // comparison endpoint. Returns the {files, additions, deletions, ...}
+    // envelope for the given `base...head` refs.
+    compareRefs: function (owner, repo, base, head) {
+      var url = "/github/api/repos/" + encodeURIComponent(owner) + "/" +
+        encodeURIComponent(repo) + "/compare/" +
+        encodeURIComponent(base) + "..." + encodeURIComponent(head);
+      return this.api(url);
+    },
+
+    // Render the file-level diff for a comparison between two refs.
+    // `info` is the object returned by the GitHub compare endpoint:
+    // {status, award_head/status, commits, files: [{filename, status,
+    // additions, deletions, patch, ...}], ...}.
+    renderComparison: function (container, info) {
+      if (!container) return;
+      container.innerHTML = "";
+      info = info || {};
+      var files = info.files || [];
+      var additions = info.additions == null ? 0 : info.additions;
+      var deletions = info.deletions == null ? 0 : info.deletions;
+
+      var summary = document.createElement("div");
+      summary.className = "compare-summary";
+      var count = files.length;
+      summary.textContent = count + " file" + (count === 1 ? "" : "s") + " changed, " +
+        additions + " additions, " + deletions + " deletions";
+      container.appendChild(summary);
+
+      if (!count) {
+        var empty = document.createElement("div");
+        empty.className = "field-hint";
+        empty.textContent = "No changes between these refs.";
+        container.appendChild(empty);
+        return;
+      }
+
+      var list = document.createElement("div");
+      list.className = "compare-files";
+      files.forEach(function (file) {
+        var item = document.createElement("div");
+        item.className = "compare-file";
+
+        var header = document.createElement("div");
+        header.className = "compare-file-header";
+
+        var name = document.createElement("span");
+        name.className = "compare-filename";
+        name.textContent = file.filename || file.previous_filename || "";
+        header.appendChild(name);
+
+        if (file.status) {
+          var status = document.createElement("span");
+          status.className = "tag compare-status compare-status-" + file.status;
+          status.textContent = file.status;
+          header.appendChild(status);
+        }
+
+        var counts = document.createElement("span");
+        counts.className = "compare-counts";
+        var add = file.additions == null ? 0 : file.additions;
+        var del = file.deletions == null ? 0 : file.deletions;
+        counts.innerHTML = '<span class="diff-added">+' + this.escapeHtml(add) +
+          '</span> <span class="diff-removed">-' + this.escapeHtml(del) + "</span>";
+        header.appendChild(counts);
+
+        item.appendChild(header);
+
+        var patch = document.createElement("div");
+        patch.innerHTML = this.renderPatch(file.patch);
+        item.appendChild(patch);
+
+        list.appendChild(item);
+      }, this);
+      container.appendChild(list);
     },
   };
 })();
