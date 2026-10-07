@@ -321,14 +321,39 @@ def _run_project_review(data: dict):
 
 
 def _save_result(review: Review, result: dict, config: dict) -> None:
-    """Persist a completed (or failed) review together with its findings."""
-    review.summary = json.dumps(result.get("summary") or {})
-    review.config = json.dumps(config)
-    findings = [
-        ReviewFinding(review_id=review.id, **finding) for finding in result.get("findings") or []
-    ]
-    review.findings_count = len(findings)
-    db.session.add_all(findings)
+    """Persist a completed (or failed) review together with its findings.
+
+    Defense in depth: ``result`` is re-validated before anything is written,
+    so even a caller-supplied dict cannot invent files, findings, coverage
+    numbers, or metrics. Unvalidated entries are rejected, not coerced.
+    """
+    if not isinstance(result, dict):
+        result = {}
+    summary = result.get("summary")
+    if not isinstance(summary, dict):
+        summary = {}
+    cap = None
+    if isinstance(config, dict):
+        cap = config.get("max_findings")
+    validated = reviews_service.validate_review_result(
+        {
+            "summary": summary,
+            "findings": result.get("findings"),
+            "known_files": result.get("known_files"),
+        },
+        kind=review.kind,
+        known_files=result.get("known_files"),
+        max_findings=cap,
+    )
+    findings = validated["findings"]
+    review.summary = json.dumps(validated["summary"])
+    try:
+        review.config = json.dumps(config)
+    except (TypeError, ValueError):
+        review.config = "{}"
+    rows = [ReviewFinding(review_id=review.id, **finding) for finding in findings]
+    review.findings_count = len(rows)
+    db.session.add_all(rows)
     error = result.get("error")
     if error:
         review.status = STATUS_FAILED

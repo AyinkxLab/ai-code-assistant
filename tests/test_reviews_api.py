@@ -21,7 +21,7 @@ JSON_REPLY = json.dumps(
                 "file": "app/main.py",
                 "line": 2,
                 "severity": "high",
-                "category": "bug",
+                "category": "complexity",
                 "explanation": "Unchecked input.",
                 "recommendation": "Validate it.",
                 "confidence": "confirmed",
@@ -94,7 +94,7 @@ def _pr_dict():
 def _pr_files():
     return [
         {
-            "filename": "app.py",
+            "filename": "app/main.py",
             "patch": "@@\n+def f()",
             "status": "modified",
             "additions": 2,
@@ -135,6 +135,69 @@ class TestProjectReviews:
         review = db.session.get(Review, payload["id"])
         assert review.summary_dict["overall_assessment"] == "Looks fine."
         assert ReviewFinding.query.filter_by(review_id=review.id).count() == 1
+
+    def test_invented_files_and_coverage_are_rejected_not_persisted(
+        self, client, make_user, login, monkeypatch
+    ):
+        user = make_user()
+        login()
+        project = _make_project(user)
+        invented = json.dumps(
+            {
+                "summary": {
+                    "overall_assessment": "Coverage is 99%.",
+                    "files_affected": ["app/main.py", "not/real.py"],
+                    "testing_recommendations": ["Raise coverage to 90 percent."],
+                },
+                "findings": [
+                    {
+                        "file": "not/real.py",
+                        "line": 1,
+                        "severity": "high",
+                        "category": "complexity",
+                        "explanation": "Invented file.",
+                        "confidence": "confirmed",
+                    },
+                    {
+                        "file": "app/main.py",
+                        "line": 2,
+                        "severity": "high",
+                        "category": "complexity",
+                        "explanation": "Coverage dropped to 12%.",
+                        "confidence": "confirmed",
+                    },
+                    {
+                        "file": "app/main.py",
+                        "line": 3,
+                        "severity": "medium",
+                        "category": "complexity",
+                        "explanation": "Nested conditionals.",
+                        "confidence": "confirmed",
+                    },
+                ],
+            }
+        )
+        monkeypatch.setattr("app.services.reviews.get_provider", lambda: FakeProvider(invented))
+        response = client.post(
+            "/reviews/api/reviews",
+            json={"source": "project", "project_id": project.id, "kind": "quality"},
+        )
+        assert response.status_code == 201
+        payload = response.get_json()
+        assert payload["findings_count"] == 1
+        review = db.session.get(Review, payload["id"])
+        assert review.summary_dict["overall_assessment"] == ""
+        assert review.summary_dict["files_affected"] == ["app/main.py"]
+        assert review.summary_dict["testing_recommendations"] == []
+        rows = ReviewFinding.query.filter_by(review_id=review.id).all()
+        assert len(rows) == 1
+        assert rows[0].file == "app/main.py"
+        assert rows[0].line == 3
+        assert "12%" not in (rows[0].explanation or "")
+
+        metrics = client.get("/reviews/api/metrics").get_json()
+        assert metrics["findings"]["total"] == 1
+        assert "not/real.py" not in metrics["findings"]["by_file"]
 
     def test_run_project_review_not_ready(self, client, make_user, login):
         user = make_user()
@@ -645,7 +708,7 @@ class TestExportReview:
                     file="app/main.py",
                     line=2,
                     severity="high",
-                    category="bug",
+                    category="readability",
                     explanation="Unchecked input.",
                     recommendation="Validate it.",
                     confidence="confirmed",
@@ -696,7 +759,7 @@ class TestExportReview:
         assert "## Summary" in text
         assert "Looks fine." in text
         assert "## Findings" in text
-        assert "[HIGH] bug - app/main.py:2" in text
+        assert "[HIGH] readability - app/main.py:2" in text
         assert "[CONFIRMED]" in text
         assert "**Recommendation:** Validate it." in text
 
@@ -762,7 +825,20 @@ class TestReviewRetry:
 
         def fake_review_project(proj, kind, config):
             captured["config"] = config
-            return {"summary": {"overall_assessment": "retried"}, "findings": [], "raw": ""}
+            return {
+                "summary": {"overall_assessment": "retried"},
+                "findings": [
+                    {
+                        "file": "app/main.py",
+                        "line": 1,
+                        "severity": "low",
+                        "category": "maintainability",
+                        "explanation": "Retry note.",
+                        "confidence": "suggestion",
+                    }
+                ],
+                "raw": "",
+            }
 
         monkeypatch.setattr(
             "app.reviews.routes.reviews_service.review_project", fake_review_project

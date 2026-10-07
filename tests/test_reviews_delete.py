@@ -18,7 +18,7 @@ JSON_REPLY = json.dumps(
             {
                 "file": "app/main.py",
                 "severity": "high",
-                "category": "bug",
+                "category": "maintainability",
                 "explanation": "e",
                 "confidence": "confirmed",
             }
