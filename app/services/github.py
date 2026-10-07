@@ -671,6 +671,9 @@ class GitHubClient:
         full_name: str,
         *,
         state: str = "open",
+        labels: str | None = None,
+        assignee: str | None = None,
+        search: str | None = None,
         page: int = 1,
         per_page: int = PAGE_SIZE_DEFAULT,
     ) -> GitHubPage:
@@ -680,9 +683,16 @@ class GitHubClient:
         filtered; the returned navigation metadata still reflects GitHub's own
         paging links for the endpoint.
         """
+        params: dict = {"state": state}
+        if labels:
+            params["labels"] = labels
+        if assignee:
+            params["assignee"] = assignee
+        if search:
+            params["q"] = search
         result = self._get_page(
             f"/repos/{full_name}/issues",
-            params={"state": state},
+            params=params,
             page=page,
             per_page=per_page,
         )
