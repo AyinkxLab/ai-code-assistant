@@ -152,6 +152,44 @@ def client_key(extra: str = "") -> str:
     return f"{extra}:{ip}"
 
 
+def ai_limit(view):
+    """Per-user rate limit for the AI-powered endpoints (#28).
+
+    Reads ``RATE_LIMIT_AI_PER_MINUTE`` (requests) and ``RATE_LIMIT_AI_WINDOW``
+    (seconds) from the app config at request time, and is a no-op when
+    ``RATE_LIMIT_AI_ENABLED`` is false (e.g. the testing config) or when either
+    value is not configured. Over-limit requests receive the same ``429``
+    ``application/json`` body as :func:`per_user_limit`.
+    """
+
+    @functools.wraps(view)
+    def wrapper(*args, **kwargs):
+        if not current_app.config.get("RATE_LIMIT_AI_ENABLED", True):
+            return view(*args, **kwargs)
+        max_hits = current_app.config.get("RATE_LIMIT_AI_PER_MINUTE") or 0
+        window = current_app.config.get("RATE_LIMIT_AI_WINDOW") or 0
+        if not max_hits or not window:
+            return view(*args, **kwargs)
+        allowed, retry_after = consume(
+            f"ai:user:{current_user.get_id()}",
+            max_hits=max_hits,
+            window=window,
+        )
+        if not allowed:
+            response = jsonify(
+                {
+                    "error": "Rate limit exceeded. Please retry later.",
+                    "kind": "rate_limited",
+                }
+            )
+            response.status_code = 429
+            response.headers["Retry-After"] = str(retry_after)
+            return response
+        return view(*args, **kwargs)
+
+    return wrapper
+
+
 def reset() -> None:
     """Clear all limiter state (used by tests)."""
     with _LOCK:

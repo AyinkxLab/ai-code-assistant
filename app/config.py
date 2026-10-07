@@ -224,6 +224,12 @@ class Config:
     # tight per-user limit of its own.
     RATE_LIMIT_EXPORT_MAX = int(os.getenv("RATE_LIMIT_EXPORT_MAX", "10"))
     RATE_LIMIT_EXPORT_WINDOW = int(os.getenv("RATE_LIMIT_EXPORT_WINDOW", "3600"))
+    # Per-user rate limit for AI-powered endpoints (#28): project chat,
+    # conversation streaming, and the code tools. Applies per authenticated user
+    # (not per IP) and can be switched off entirely (the testing config does).
+    RATE_LIMIT_AI_PER_MINUTE = int(os.getenv("RATE_LIMIT_AI_PER_MINUTE", "60"))
+    RATE_LIMIT_AI_WINDOW = int(os.getenv("RATE_LIMIT_AI_WINDOW", "60"))
+    RATE_LIMIT_AI_ENABLED = True
     # Optional SMTP for invitation email delivery. When unset, invitations are
     # delivered as in-app notifications only and the app never crashes on mail.
     SMTP_HOST = os.getenv("SMTP_HOST", "")
@@ -276,6 +282,9 @@ class TestingConfig(Config):
     SQLALCHEMY_DATABASE_URI = os.getenv("TEST_DATABASE_URL", "sqlite:///:memory:")
     # Run import jobs inline so tests can assert final status deterministically.
     IMPORT_JOBS_ASYNC = False
+    # No per-user AI rate limiting in tests: assertions must not depend on the
+    # number of requests a test happens to make.
+    RATE_LIMIT_AI_ENABLED = False
     # In-memory SQLite needs a single shared connection, and ``check_same_thread``
     # is a SQLite-only connect arg. A PostgreSQL test database (issue #20) must
     # not receive either, or the driver rejects the DSN outright.

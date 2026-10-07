@@ -18,6 +18,7 @@ the same model/service layer.
 from __future__ import annotations
 
 import functools
+import json
 
 from flask import Blueprint, current_app, jsonify, request
 from flask_login import current_user
@@ -25,7 +26,7 @@ from flask_login import current_user
 from app.chat import routes as chat_routes
 from app.extensions import db
 from app.models import Conversation, Message
-from app.services import ratelimit
+from app.services import ratelimit, streaming
 from app.services.llm import LLMProviderError, provider_status
 from app.services.provider_config import ProviderSettingsError, apply_settings, build_provider
 from app.services.providers.retry import RetryingProvider
@@ -43,6 +44,27 @@ def _problem(status: int, title: str, detail: str | None = None, **extra):
     response.status_code = status
     response.mimetype = "application/problem+json"
     return response
+
+
+def _sse_event(event: str, data: dict) -> str:
+    """Encode a single Server-Sent Event frame."""
+    return f"event: {event}\ndata: {json.dumps(data)}\n\n"
+
+
+def _stream_reply(conversation: Conversation, reply: str):
+    """Yield SSE frames for an assistant reply, ending with ``message_end``.
+
+    The stream is chunked so the client can render a streaming cursor while
+    the assistant is generating. A terminal ``message_end`` event always
+    carries the persisted message so a dropped connection can be recovered.
+    """
+    yield _sse_event("message_start", {"conversation_id": conversation.id})
+    for chunk in streaming.chunk_text(reply):
+        yield _sse_event("message_delta", {"delta": chunk})
+    yield _sse_event(
+        "message_end",
+        {"assistant_message": conversation.messages[-1].to_dict()},
+    )
 
 
 def _login_required(view):
@@ -176,6 +198,7 @@ def delete_conversation(conversation_id: int):
 
 @bp.route("/conversations/<int:conversation_id>/messages", methods=["POST"])
 @_login_required
+@ratelimit.ai_limit
 @_rate_limit("message")
 def send_message(conversation_id: int):
     """Persist the user message and return the assistant's reply."""
@@ -239,6 +262,14 @@ def send_message(conversation_id: int):
     if conversation.title == "New conversation":
         conversation.title = content.strip()[:60] or "New conversation"
     db.session.commit()
+    if request.accept_mimetypes.best == "text/event-stream":
+        response = current_app.response_class(
+            _stream_reply(conversation, completion.content),
+            mimetype="text/event-stream",
+        )
+        response.headers["Cache-Control"] = "no-cache"
+        response.headers["X-Accel-Buffering"] = "no"
+        return response
     payload = {"assistant_message": conversation.messages[-1].to_dict()}
     payload["usage"] = _usage_totals(conversation)
     return jsonify(payload), 201

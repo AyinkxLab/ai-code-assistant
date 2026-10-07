@@ -10,9 +10,22 @@
   </div>
 </div>
 
+<div class="repo-lookup">
+  <form id="repo-lookup-form" class="repo-lookup-form" autocomplete="off">
+    <input id="repo-lookup-input" class="sidebar-search" type="text" name="repo"
+           placeholder="Owner/name (e.g. owner/repo)"
+           value="{{ owner }}/{{ repo }}"
+           pattern="[A-Za-z0-9-_.]+/[A-Za-z0-9-_.]+"
+           required>
+    <button class="btn btn-primary" type="submit">Open</button>
+  </form>
+  <div id="repo-lookup-error" class="repo-lookup-error" hidden></div>
+</div>
+
 <div class="repo-tabs">
   <button class="repo-tab active" data-tab="tree">Files</button>
   <button class="repo-tab" data-tab="commits">Commits</button>
+  <button class="repo-tab" data-tab="compare">Compare</button>
   <button class="repo-tab" data-tab="issues">Issues</button>
   <button class="repo-tab" data-tab="pulls">Pull Requests</button>
   <button class="repo-tab" data-tab="analyze">AI Analysis</button>
@@ -30,6 +43,17 @@
 
 <div id="tab-commits" class="repo-tab-panel" hidden>
   <div id="commit-list" class="commit-list"></div>
+</div>
+
+<div id="tab-compare" class="repo-tab-panel" hidden>
+  <div class="repo-toolbar compare-toolbar">
+    <input id="compare-base" class="sidebar-search" type="text" placeholder="Base ref (e.g. main)" autocomplete="off">
+    <span class="compare-separator">...</span>
+    <input id="compare-head" class="sidebar-search" type="text" placeholder="Head ref (e.g. feature)" autocomplete="off">
+    <button id="compare-submit" class="btn btn-primary" type="button">Compare</button>
+  </div>
+  <div id="compare-summary" class="compare-summary"></div>
+  <div id="compare-files" class="compare-files"></div>
 </div>
 
 <div id="tab-issues" class="repo-tab-panel" hidden>

@@ -137,6 +137,7 @@ class GitHubInvalidError(GitHubError):
 ERROR_MESSAGES = {
     "not_connected": "Connect your GitHub account to use this feature.",
     "auth": "Your GitHub connection is no longer valid. Reconnect your account.",
+    "cancelled": "GitHub connection was cancelled. You can retry whenever you're ready.",
     "permission": "GitHub denied access to this resource.",
     "not_found": "The requested GitHub resource was not found.",
     "rate_limit": "GitHub API rate limit reached. Please try again later.",
@@ -144,6 +145,20 @@ ERROR_MESSAGES = {
     "validation": "The GitHub request was invalid.",
     "github_error": "The GitHub request failed. Please try again.",
 }
+
+
+def is_access_denied(error: str | None) -> bool:
+    """Return ``True`` when GitHub reports the user denied the OAuth consent.
+
+    GitHub sends ``error=access_denied`` on the callback when the user clicks
+    "Cancel" on the consent screen. That is a user cancellation, not a
+    failure, so callers should treat it as such (issue: OAuth denial page).
+    """
+    return (error or "").strip().lower() == "access_denied"
+
+
+class GitHubCancelledError(GitHubError):
+    kind = "cancelled"
 
 
 def github_error_message(exc: GitHubError) -> str:
@@ -171,6 +186,17 @@ def _parse_error_body(response: requests.Response) -> str:
         if isinstance(message, str):
             return message
     return f"HTTP {response.status_code}"
+
+
+def compare_refs(client: GitHubClient, full_name: str, base: str, head: str) -> dict:
+    """Compare two refs on GitHub and return the diff summary.
+
+    Convenience wrapper around :meth:`GitHubClient.compare_refs` so callers
+    that already hold a client instance can use either form. ``base`` and
+    ``head`` are plain refs (branch names, tags, or SHAs) and are joined as
+    ``base...head`` for the REST comparison endpoint.
+    """
+    return client.compare_refs(full_name, base, head)
 
 
 class GitHubClient:
@@ -397,6 +423,23 @@ class GitHubClient:
     def get_repository(self, full_name: str) -> dict:
         return self._get(f"/repos/{full_name}")
 
+    def get_public_repository(self, full_name: str) -> dict:
+        """Fetch a repository by ``owner/name`` respecting GitHub permissions.
+
+        Works for any public repository and for private repositories the
+        authenticated user can access. GitHub returns 404 for repositories the
+        token cannot see (including private ones), which is translated into a
+        clear permission error so the caller can tell the user access was
+        denied rather than the repo not existing.
+        """
+        name = validate_full_name(full_name)
+        try:
+            return self._get(f"/repos/{name}")
+        except GitHubNotFoundError as exc:
+            raise GitHubPermissionError(
+                "GitHub denied access to this resource.", detail=str(exc)
+            ) from exc
+
     def list_branches(self, full_name: str) -> list[dict]:
         return self._get_paginated(f"/repos/{full_name}/branches")
 
@@ -531,6 +574,15 @@ class GitHubClient:
 
     def get_commit(self, full_name: str, sha: str) -> dict:
         return self._get(f"/repos/{full_name}/commits/{sha}")
+
+    def compare_refs(self, full_name: str, base: str, head: str) -> dict:
+        """Return GitHub's comparison of ``base`` against ``head``.
+
+        The GitHub compare endpoint returns an envelope containing ``status``,
+        ``ahead_by``/``behind_by``, ``commits``, and the changed ``files``
+        (each with ``additions``/``deletions``/``patch``).
+        """
+        return self._get(f"/repos/{full_name}/compare/{base}...{head}")
 
     def _graphql(self, query: str, variables: dict) -> dict:
         """Execute a GraphQL query against the GitHub GraphQL API."""
@@ -810,6 +862,25 @@ def validate_full_name(full_name: str) -> str:
     if not _FULL_NAME_RE.match(name) or name.count("/") != 1:
         raise GitHubInvalidError("Invalid repository name.")
     return name
+
+
+def lookup_repository(user, full_name: str) -> dict:
+    """Look up an arbitrary public repository by ``owner/name`` (issue #78).
+
+    Returns the normalized repository payload. Access is decided entirely by
+    GitHub's own permission model: the user's token is used for the request, so
+    private repositories the user cannot see come back as a permission error and
+    the token never grants access beyond what GitHub already allows.
+    """
+    name = validate_full_name(full_name)
+    client = get_github_client(user)
+    try:
+        repo = client.get_repository(name)
+    except GitHubNotFoundError as exc:
+        raise GitHubPermissionError(
+            "GitHub denied access to this resource.", detail=str(exc)
+        ) from exc
+    return repo_payload(repo)
 
 
 def validate_path(path: str) -> str:

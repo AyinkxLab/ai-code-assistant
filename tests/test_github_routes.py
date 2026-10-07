@@ -754,3 +754,59 @@ class TestSecurity:
 def _last_session_state(client):
     with client.session_transaction() as sess:
         return sess.get("github_oauth_state")
+
+
+class TestCompareRoute:
+    def test_compare_requires_login(self, client):
+        response = client.get("/github/api/compare/ow/repo/main...feature")
+        assert response.status_code == 302
+
+    def test_compare_returns_file_diff(self, client, app, monkeypatch):
+        _logged_in_client(client)
+        _create_account(app)
+        compare_payload = {
+            "status": "ahead",
+            "ahead_by": 2,
+            "behind_by": 0,
+            "total_commits": 2,
+            "commits": [
+                {"sha": "abc123", "commit": {"message": "Add feature"}},
+                {"sha": "def456", "commit": {"message": "Fix bug"}},
+            ],
+            "files": [
+                {
+                    "filename": "app/py.py",
+                    "status": "modified",
+                    "additions": 10,
+                    "deletions": 2,
+                    "changes": 12,
+                    "patch": "@@ -1,+1 @@\n+old\n-new",
+                },
+                {
+                    "filename": "README.md",
+                    "status": "added",
+                    "additions": 5,
+                    "deletions": 0,
+                    "changes": 5,
+                    "patch": "@@ -0,0 +1,5 @@\n+hello",
+                },
+            ],
+        }
+        monkeypatch.setattr(
+            "app.services.github.requests.Session",
+            lambda: _make_fake_session(
+                [
+                    ("GET", "/repos/ow/repo/compare/main...feature", 200, compare_payload),
+                ]
+            ),
+        )
+        response = client.get("/github/api/compare/ow/repo/main...feature")
+        assert response.status_code == 200
+        data = response.get_json()
+        assert data["status"] == "ahead"
+        assert data["ahead_by"] == 2
+        assert len(data["files"]) == 2
+        filenames = {f["filename"] for f in data["files"]}
+        assert filenames == {"app/py.py", "README.md"}
+        assert data["additions"] == 15
+        assert data["deletions"] == 2

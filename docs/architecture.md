@@ -3,6 +3,11 @@
 This document describes the high-level architecture of the AI Code Assistant,
 with a focus on how the Stellar/Soroban developer tooling fits in.
 
+For the chat feature (providers, API reference, SSE event schema, and how to
+add a new LLM provider) see [the chat developer guide](../CONTRIBUTING.md#chat-feature-developer-guide). For the day-to-day
+developer workflow (migrations, tests, JS test runner) see
+[CONTRIBUTING.md](../CONTRIBUTING.md).
+
 ## Overview
 
 The AI Code Assistant is a developer-focused AI code intelligence platform. It
@@ -36,12 +41,25 @@ delegated to the service layer (`app/services/permissions.py`); routes never
 re-implement security. The `stellar` blueprint exposes read-only Stellar
 developer APIs and the `/stellar` page.
 
+The `chat` blueprint (`app/chat/`) exposes the chat endpoints: creating and
+listing conversations, posting messages, and streaming assistant replies over
+Server-Sent Events. It delegates provider selection and completion to the LLM
+service and authorization to the permissions service. See
+[the chat developer guide](../CONTRIBUTING.md#chat-feature-developer-guide) for the endpoint and SSE reference.
+
 ### 2. Service layer
 
 Services implement the real logic:
 
 - **LLM** (`llm.py`) — provider-agnostic completions with an offline mock
   provider by default.
+
+  Providers are registered behind a common abstraction: each provider
+  implements the same completion interface and is selected by configuration
+  (provider name + API key from environment). Adding a provider means adding a
+  module that satisfies the interface and registering it — no changes to the
+  chat blueprint are required. The step-by-step guide lives in
+  [the chat developer guide](../CONTRIBUTING.md#adding-a-new-llm-provider).
 - **GitHub** (`github.py`) — OAuth, repository/commit/issue/PR data, typed
   errors, retries, bounded context.
 - **Importing** (`importing.py`) — safe archive/GitHub import with
@@ -184,3 +202,8 @@ See [docs/security.md](security.md) for the full threat review. Highlights:
   (no real network access); the encoders are verified against authoritative
   Stellar fixtures.
 - `ruff check .` and `black --check .` must stay green (CI enforces this).
+
+The developer workflow — running Alembic migrations, the pytest suite, and the
+JavaScript test runner — is documented in
+[CONTRIBUTING.md](../CONTRIBUTING.md). The roadmap reflects Phase 2 (chat)
+as complete in [the roadmap](../README.md#roadmap).

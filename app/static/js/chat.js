@@ -170,6 +170,46 @@
     return el;
   }
 
+  // Blinking cursor appended to the in-progress assistant bubble while tokens
+  // stream in, so the user sees the reply is still being generated.
+  function addStreamingCursor(container) {
+    if (!container) return null;
+    var cursor = document.createElement("span");
+    cursor.className = "streaming-cursor";
+    cursor.setAttribute("aria-hidden", "true");
+    cursor.textContent = "\u258c";
+    container.appendChild(cursor);
+    return cursor;
+  }
+
+  function removeStreamingCursor(container) {
+    if (!container) return;
+    var cursor = container.querySelector(".streaming-cursor");
+    if (cursor && cursor.parentNode) cursor.parentNode.removeChild(cursor);
+  }
+
+  // Mark the sidebar entry for the active conversation with a subtle status
+  // while its reply is streaming, and clear it when generation ends.
+  function setConversationStatus(id, status) {
+    if (!listEl || id === null || id === undefined) return;
+    var item = listEl.querySelector('.conversation-item[data-id="' + id + '"]');
+    if (!item) return;
+    var meta = item.querySelector(".conversation-meta");
+    if (!meta) return;
+    var badge = meta.querySelector(".conversation-status");
+    if (status) {
+      if (!badge) {
+        badge = document.createElement("span");
+        badge.className = "conversation-status";
+        badge.setAttribute("aria-label", "Generating response");
+        meta.appendChild(badge);
+      }
+      badge.textContent = "\u2026";
+    } else if (badge && badge.parentNode) {
+      badge.parentNode.removeChild(badge);
+    }
+  }
+
   function isNearBottom() {
     if (!messagesEl) return true;
     return (
@@ -400,6 +440,17 @@
     }
   }
 
+  // Disable composer controls while a reply is being generated so a second
+  // submission cannot start a duplicate stream.
+  function setControlsDisabled(disabled) {
+    if (inputEl) inputEl.disabled = disabled;
+    if (attachBtn) attachBtn.disabled = disabled;
+    if (providerEl) providerEl.disabled = disabled;
+    if (modelEl) modelEl.disabled = disabled;
+    if (tempEl) tempEl.disabled = disabled;
+    if (systemEl) systemEl.disabled = disabled;
+  }
+
   function stopStream() {
     if (!streaming || !currentController) return;
     // Stay in-flight until the abort resolves so a fast double-click cannot
@@ -511,6 +562,8 @@
     cancelRequested = false;
     currentController = new AbortController();
     setComposerState("streaming");
+    setControlsDisabled(true);
+    setConversationStatus(currentId, true);
     addMessage("user", content || "(image attached)", attachments);
 
     var typing = addTypingIndicator();
@@ -551,6 +604,7 @@
       streamBody.className = "message-body";
       typing.appendChild(streamBody);
       streamBody.textContent = "";
+      var streamingCursor = addStreamingCursor(streamBody);
 
       var reader = response.body.getReader();
       var decoder = new TextDecoder();
@@ -575,6 +629,7 @@
           if (payload.type === "token") {
             fullText += payload.content;
             streamBody.innerHTML = renderMarkdown(fullText);
+            addStreamingCursor(streamBody);
             maybeScrollToBottom();
           } else if (payload.type === "error") {
             flashError(payload.error);
@@ -612,8 +667,10 @@
         flashInfo(cancelRequested ? "Generation stopped." : "Stream aborted.");
       } else {
         flashError(error.message);
+        showStreamRetry(error);
       }
     } finally {
+      removeStreamingCursor(typing);
       typing.classList.remove("typing", "streaming");
       var finalBody = typing.querySelector(".message-body");
       if (finalBody && finalBody.textContent) {
@@ -627,9 +684,34 @@
       cancelRequested = false;
       streaming = false;
       setComposerState("idle");
+      setControlsDisabled(false);
+      setConversationStatus(currentId, false);
       sendBtn.disabled = !!(onboardingEl && !onboardingEl.hidden);
       inputEl.focus();
     }
+  }
+
+  // Visible retry affordance when the SSE stream drops, so the user is not
+  // left with a silently truncated reply.
+  function showStreamRetry(error) {
+    var el = document.createElement("div");
+    el.className = "flash flash-error stream-retry";
+    el.appendChild(
+      document.createTextNode(
+        (error && error.message) || "The response stream was interrupted."
+      )
+    );
+    el.appendChild(document.createTextNode(" "));
+    var retry = document.createElement("button");
+    retry.type = "button";
+    retry.className = "btn btn-ghost btn-sm";
+    retry.textContent = "Retry";
+    retry.addEventListener("click", function () {
+      if (el.parentNode) el.parentNode.removeChild(el);
+      startStream();
+    });
+    el.appendChild(retry);
+    messagesEl.prepend(el);
   }
 
   function addListItem(conversation) {
@@ -1036,4 +1118,15 @@
       }
     });
   });
+
+  // Test seam: expose the pure client helpers so the frontend unit tests can
+  // exercise them under jsdom without a browser. This is deliberately small and
+  // additive - it does not change any runtime behaviour.
+  window.AICA = {
+    escapeHtml: escapeHtml,
+    formatRelativeTime: formatRelativeTime,
+    renderMarkdown: renderMarkdown,
+    isNearBottom: isNearBottom,
+    getCsrf: getCsrf,
+  };
 })();

@@ -14,7 +14,9 @@ match the repository's conventions.
 - [Docker setup](#docker-setup)
 - [Database setup and migrations](#database-setup-and-migrations)
 - [Running the application](#running-the-application)
+- [Chat feature developer guide](#chat-feature-developer-guide)
 - [Running tests](#running-tests)
+- [Running the JavaScript test runner](#running-the-javascript-test-runner)
 - [Running ruff](#running-ruff)
 - [Running black](#running-black)
 - [Git workflow](#git-workflow)
@@ -150,6 +152,193 @@ python run.py
 
 Open <http://localhost:5000> in your browser.
 
+## Chat feature developer guide
+
+The chat feature is the core of Phase 2. It is built around an LLM abstraction
+layer so the rest of the application never talks to a provider SDK directly.
+
+### How it fits together
+
+| Layer             | Location                          | Responsibility                                                  |
+| ----------------- | -------------------------------- | ------------------------------------------------------------------------ |
+| Provider abstraction | `app/services/llm/base.py`           | `LLMProvider` protocol + `LLMMessage`/`LLMChunk` dataclasses.           |
+| Mock provider     | `app/services/llm/mock.py`           | Offline deterministic streaming for tests and dev.                   |
+| OpenAI provider   | `app/services/llm/openai.py`          | Streams chat completions from the OpenAI API.                       |
+| Provider registry | `app/services/llm/__init__.py`       | `_PROVIDERS` map + `get_provider()` factory.                         |
+| Chat service      | `app/services/chat.py`              | Orchestrates provider calls, persists messages, yields SSE events.  |
+| Chat API          | `app/api/chat.py`                  | Flask blueprint exposing `/api/chat`.                             |
+| Chat UI           | `app/static/js/chat.js`           | Fetch + `EventSource` consumer of the SSE stream.                   |
+
+### Enabling a provider
+
+The default provider is `mock`, which requires no network access and produces
+deterministic output. To use a real provider:
+
+1. Copy the environment template if you have not already:
+
+   ```bash
+   cp .env.example .env
+   ```
+
+2. Set the provider name and its credentials in `.env`:
+
+   ```dotenv
+   LLM_PROVIDER=openai
+   OPENAI_API_KEY=sk-...
+   LLM_MODEL=gpt-4o-mini
+   ```
+
+   `LLM_MODEL` is optional; when unset the provider uses its default model.
+
+3. Restart the development server. The provider is resolved at request time
+   through `get_provider()`, so no code change is needed.
+
+4. Verify the active provider with `GET /api/chat/provider`.
+
+If `LLM_PROVIDER` is unknown or the credentials are missing, the factory
+raises a configuration error and the endpoint returns a `400` json error rather
+than failing silently.
+
+### API reference
+
+All endpoints require an authenticated session and are prefixed with
+`/api/chat`. Requests and responses are JSON unless noted otherwise.
+
+#### `GET /api/chat/provider`
+
+Returns the active provider and model.
+
+```json
+{ "provider": "mock", "model": "mock-1" }
+```
+
+#### `GET /api/chat/conversations`
+
+Lists the current user's conversations, most recent first.
+
+```json
+[
+  {
+    "id": 12,
+    "title": "Refactor auth middleware",
+    "created_at": "2024-05-01T10:00:00Z",
+    "updated_at": "2024-05-01T10:05:00Z"
+  }
+]
+```
+
+#### `POST /api/chat/conversations`
+
+Creates a conversation.
+
+Request:
+
+```json
+{ "title": "Refactor auth middleware" }
+```
+
+Response (`201`):
+
+```json
+{
+  "id": 12,
+  "title": "Refactor auth middleware",
+  "created_at": "2024-05-01T10:00:00Z",
+  "updated_at": "2024-05-01T10:00:00Z"
+}
+```
+
+#### `GET /api/chat/conversations/<id>`
+
+Returns a single conversation with its messages in order.
+
+```json
+{
+  "id": 12,
+  "title": "Refactor auth middleware",
+  "messages": [
+    { "id": 1, "role": "user", "content": "Explain this function.", "created_at": "2024-05-01T10:00:00Z" },
+    { "id": 2, "role": "assistant", "content": "It validates the token...", "created_at": "2024-05-01T10:00:05Z" }
+  ]
+}
+```
+
+#### `DELETE /api/chat/conversations/<id>`
+
+Deletes a conversation and its messages. Responds `204` with no body.
+
+#### `POST /api/chat/conversations/<id>/messages`
+
+Sends a user message and streams the assistant reply as SSE.
+
+Request:
+
+```json
+{ "message": "Explain this function." }
+```
+
+Response: `text/event-stream` (SSE). See the event schema below.
+
+#### SSE event schema
+
+Every frame is a named event with a JSON `data` payload. The stream always
+ends with either `done` or `error`.
+
+| Event     | Payload fields                                                              |
+| ---------- | ------------------------------------------------------------------------------ |
+| `start`    | `{ "message_id": 3, "conversation_id": 12 }` — the persisted user message.            |
+| `delta`    | `{ "content": "token chunk" }` — incremental assistant text.                    |
+| `done`     | `{ "message_id": 4, "content": "full reply" }` — final persisted reply.     |
+| `error`    | `{ "code": "provider_error", "message": "..." }` — stream failure.         |
+
+Sample stream:
+
+```text
+event: start
+data: {"message_id": 3, "conversation_id": 12}
+
+event: delta
+data: {"content": "This function "}
+
+event: delta
+data: {"content": "validates the token."}
+
+event: done
+data: {"message_id": 4, "content": "This function validates the token."}
+
+```
+
+### Adding a new LLM provider
+
+Providers are pluggable. To add one:
+
+1. Create `app/services/llm/<name>.py` and subclass or implement the
+   `LLMProvider` protocol from `app/services/llm/base.py`. The protocol requires:
+
+   - `name` -- a stable identifier used in config and responses.
+   - `model` -- the default model name.
+   - `stream(messages, **kwargs)` -- a generator yielding `LLMChunk` objects.
+
+2. Register it in `app/services/llm/__init__.py` by adding an entry to the
+   `_PROVIDERS` map:
+
+   ```python
+   _PROVIDERS = {
+       "mock": MockProvider,
+       "openai": OpenAIProvider,
+       "<name>": MyProvider,
+   }
+   ```
+
+3. Add any credentials to `.env.example` and document them here and in
+   the README. Read them in your provider's constructor via `app.config`.
+
+4. Add tests under `tests/services/llm/` covering the stream generator
+   with a mocked HTTP client. Do not hit the network in tests.
+
+5. Update the `GET /api/chat/provider` documentation and any provider
+   list in the README.
+
 ## Running tests
 
 The suite runs against an in-memory SQLite database, so it is fast and
@@ -170,6 +359,26 @@ Notes:
   Postgres instead of the in-memory SQLite default.
 - `APP_ENV=testing` is set by CI; the testing config disables CSRF and uses an
   in-memory database.
+
+## Running the JavaScript test runner
+
+The frontend is vanilla JavaScript with no bundler. Unit tests for the
+browser modules live in `tests/js`/` and run on Node with the built-in
+test runner:
+
+```bash
+# Run all JavaScript tests
+node --test tests/js
+
+# Run a single file
+node --test tests/js/chat.test.js
+
+```
+
+The runner executes any `*.test.js` file and reports TAP (or spec) output.
+Keep modules pure and export the functions you want to test so they can be
+imported without a DOM. The JavaScript suite is run in CI alongside the Python
+suite.
 
 ## Running ruff
 
