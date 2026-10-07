@@ -28,6 +28,12 @@ from app.config import Config
 from app.extensions import db
 from app.models import GithubAccount
 from app.services.crypto import decrypt_secret
+from app.services.github_cache import (
+    CachedSession,
+    GitHubResponseCache,
+    auth_fingerprint,
+    get_cache,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -205,6 +211,9 @@ class GitHubClient:
     Provides bounded retry behaviour: transient failures (network errors and
     HTTP 5xx) are retried with exponential backoff, and rate-limit responses
     (429 or 403 with exhausted quota) pause until the documented reset time.
+
+    ``GET`` responses are also revalidated with GitHub's ``ETag`` via a bounded
+    in-memory cache (issue #76); see :mod:`app.services.github_cache`.
     """
 
     def __init__(
@@ -214,10 +223,12 @@ class GitHubClient:
         api_url: str | None = None,
         timeout: int | None = None,
         max_retries: int = 3,
+        cache: GitHubResponseCache | None = None,
     ) -> None:
         self.api_url = (api_url or Config.GITHUB_API_URL).rstrip("/")
         self.timeout = timeout or Config.GITHUB_REQUEST_TIMEOUT
         self.max_retries = max_retries
+        self.access_token = access_token
         self.session = requests.Session()
         self.session.headers.update(
             {
@@ -226,6 +237,15 @@ class GitHubClient:
                 "X-GitHub-Api-Version": API_VERSION,
             }
         )
+        # Revalidate GETs with If-None-Match so listings, trees, and READMEs are
+        # not re-downloaded on every page load (issue #76). Keying on a
+        # fingerprint of this token keeps one account's cached responses from ever
+        # being replayed for another.
+        self.response_cache = cache if cache is not None else get_cache()
+        if self.response_cache.enabled:
+            self.session = CachedSession(
+                self.session, self.response_cache, auth_fingerprint(access_token)
+            )
 
     # -- Core request machinery --------------------------------------------
 
@@ -899,6 +919,11 @@ def validate_path(path: str) -> str:
 
 def revoke_github_token(access_token: str) -> None:
     """Best-effort revocation of a GitHub OAuth token."""
+    # Drop any responses cached under this token first, so a disconnected
+    # account's private repository data does not linger in process memory (#76).
+    # Done unconditionally: the local account is being disconnected regardless of
+    # whether the upstream DELETE succeeds.
+    get_cache().invalidate_auth(auth_fingerprint(access_token))
     try:
         response = requests.delete(
             GITHUB_REVOKE_URL.format(client_id=_github_config("GITHUB_CLIENT_ID")),

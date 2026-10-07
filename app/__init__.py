@@ -48,6 +48,11 @@ def create_app(config_name: str | None = None) -> Flask:
 
     configure_cache(app)
 
+    # Per-account GitHub GET response cache with ETag revalidation (issue #76).
+    from app.services.github_cache import configure_github_cache
+
+    configure_github_cache(app)
+
     # Register blueprints.
     from app.admin import bp as admin_bp
     from app.auth import bp as auth_bp

@@ -150,6 +150,20 @@ class Config:
     # warning on the GitHub dashboard (issue #77).
     GITHUB_LOW_QUOTA_THRESHOLD = int(os.getenv("GITHUB_LOW_QUOTA_THRESHOLD", "100"))
 
+    # GitHub GET responses are revalidated with their stored ETag
+    # (If-None-Match) instead of being re-downloaded; a 304 replays the cached
+    # body and preserves rate-limit quota (issue #76). Set
+    # GITHUB_RESPONSE_CACHE_ENABLED="0" to disable. Entries expire after
+    # GITHUB_RESPONSE_CACHE_TTL seconds, the store keeps at most
+    # GITHUB_RESPONSE_CACHE_MAX_ENTRIES entries (LRU), and a single body larger
+    # than GITHUB_RESPONSE_CACHE_MAX_BODY_BYTES is not cached at all.
+    GITHUB_RESPONSE_CACHE_ENABLED = os.getenv("GITHUB_RESPONSE_CACHE_ENABLED", "1") == "1"
+    GITHUB_RESPONSE_CACHE_TTL = int(os.getenv("GITHUB_RESPONSE_CACHE_TTL", "300"))
+    GITHUB_RESPONSE_CACHE_MAX_ENTRIES = int(os.getenv("GITHUB_RESPONSE_CACHE_MAX_ENTRIES", "256"))
+    GITHUB_RESPONSE_CACHE_MAX_BODY_BYTES = int(
+        os.getenv("GITHUB_RESPONSE_CACHE_MAX_BODY_BYTES", str(512 * 1024))
+    )
+
     # Project workspaces (Phase 5): limits that protect the server from being
     # overwhelmed by large or malicious project imports. Archives are validated
     # during extraction (path traversal, symlinks, size and file-count caps) and
