@@ -32,7 +32,7 @@ from app.models import (
 )
 from app.models.message_attachment import ALLOWED_IMAGE_TYPES
 from app.models.project import STATUS_READY
-from app.services import audit, token_usage
+from app.services import audit, chat_export, token_usage
 from app.services.github import (
     GitHubError,
     GitHubNotConnectedError,
@@ -409,6 +409,20 @@ def export_conversation(conversation_id: int):
     return Response(
         json.dumps(payload, indent=2),
         mimetype="application/json",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@bp.route("/conversations/<int:conversation_id>/export.md")
+@login_required
+def export_conversation_markdown(conversation_id: int):
+    """Export a conversation as a downloadable Markdown document (issue #46)."""
+    conversation = _get_conversation(conversation_id)
+    body = chat_export.render_conversation_markdown(conversation)
+    filename = f"conversation-{conversation.id}.md"
+    return Response(
+        body,
+        mimetype="text/markdown",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
 
