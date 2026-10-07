@@ -12,13 +12,19 @@ translate into a 400 response.
 
 from __future__ import annotations
 
+import os
 from typing import Any
 
 from app.extensions import db
 from app.models import ApiKey, Conversation
 from app.services.api_keys import decrypt_for_use
 from app.services.providers.base import LLMProvider, ProviderError
-from app.services.providers.registry import available_providers, get_provider
+from app.services.providers.registry import (
+    available_providers,
+    get_provider,
+    provider_status,
+    resolve_provider_name,
+)
 
 #: Upper bound for a conversation's system-prompt override.
 MAX_SYSTEM_PROMPT_CHARS = 4000
@@ -30,9 +36,110 @@ TEMPERATURE_MAX = 2.0
 #: Temperature used by the UI when a conversation has no explicit value.
 DEFAULT_TEMPERATURE = 0.7
 
+#: Env var holding the default ordered failover chain (comma-separated).
+PROVIDER_CHAIN_ENV = "LLM_PROVIDER_CHAIN"
+
+#: Env var holding optional routing rules, ``route=provider,provider;...``.
+ROUTING_RULES_ENV = "LLM_ROUTING_RULES"
+
 
 class ProviderSettingsError(ValueError):
     """Raised when requested generation settings are invalid or unavailable."""
+
+
+def _split_provider_names(raw: str | None) -> tuple[str, ...]:
+    """Parse a comma-separated provider list into ordered, de-blanked names."""
+    return tuple(part.strip().lower() for part in (raw or "").split(",") if part.strip())
+
+
+def routing_rules(raw: str | None = None) -> dict[str, tuple[str, ...]]:
+    """Parse ``LLM_ROUTING_RULES`` into ``{route: (provider, ...)}`` (issue #39).
+
+    The value is a semicolon-separated list of ``route=provider,provider``
+    entries, e.g. ``vision=openai,anthropic;cheap=mock``. Blank entries and
+    entries without providers are ignored, so a malformed rule degrades to the
+    default chain rather than breaking startup.
+    """
+    value = os.getenv(ROUTING_RULES_ENV, "") if raw is None else raw
+    rules: dict[str, tuple[str, ...]] = {}
+    for chunk in (value or "").split(";"):
+        chunk = chunk.strip()
+        if not chunk or "=" not in chunk:
+            continue
+        route, _, providers = chunk.partition("=")
+        route = route.strip().lower()
+        names = _split_provider_names(providers)
+        if route and names:
+            rules[route] = names
+    return rules
+
+
+def default_provider_chain(name: str | None = None) -> tuple[str, ...]:
+    """The configured ordered chain, or the single selected provider.
+
+    ``LLM_PROVIDER_CHAIN`` wins when set; otherwise the chain is exactly the
+    provider resolved from ``name``/``LLM_PROVIDER`` so a single-provider setup
+    behaves precisely as it did before failover existed.
+    """
+    configured = _split_provider_names(os.getenv(PROVIDER_CHAIN_ENV))
+    if configured:
+        return configured
+    return (resolve_provider_name(name),)
+
+
+def resolve_provider_chain(
+    *,
+    route: str | None = None,
+    primary: str | None = None,
+    rules: dict[str, tuple[str, ...]] | None = None,
+) -> tuple[str, ...]:
+    """Return the ordered provider chain for a request (issue #39).
+
+    The conversation's explicitly selected provider (``primary``) is always
+    tried first, then the fallbacks: the routing rule matching ``route`` when
+    one is configured, otherwise the default chain. Duplicates are collapsed so
+    a provider is never attempted twice in one request.
+    """
+    resolved_rules = routing_rules() if rules is None else rules
+    chain: list[str] = []
+    route_key = (route or "").strip().lower()
+    if route_key and route_key in resolved_rules:
+        chain.extend(resolved_rules[route_key])
+    else:
+        chain.extend(default_provider_chain(primary))
+
+    ordered: list[str] = []
+    if primary and primary.strip():
+        ordered.append(primary.strip().lower())
+    for name in chain:
+        if name not in ordered:
+            ordered.append(name)
+    return tuple(ordered)
+
+
+def provider_chain_status(
+    user,
+    *,
+    primary: str | None = None,
+    route: str | None = None,
+) -> dict[str, Any]:
+    """Report provider readiness across the chain (issue #39).
+
+    The request is serviceable when *any* provider in the chain is configured,
+    so pre-flight checks do not block a request that a configured fallback could
+    serve. The returned dict keeps the :func:`provider_status` shape for the
+    selected provider and adds ``chain``/``configured_providers`` for
+    diagnostics.
+    """
+    names = resolve_provider_chain(route=route, primary=primary)
+    statuses = [provider_status(user, name) for name in names]
+    ready = [status for status in statuses if status.get("configured")]
+    chosen = ready[0] if ready else statuses[0]
+    return {
+        **chosen,
+        "chain": list(names),
+        "configured_providers": [status.get("provider") for status in ready],
+    }
 
 
 def provider_options(user) -> list[dict[str, Any]]:

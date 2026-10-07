@@ -23,6 +23,12 @@ from app.services.providers.base import (
     ProviderUnavailableError,
     UnknownProviderError,
 )
+from app.services.providers.failover import (
+    FailoverProvider,
+    ProviderAttempt,
+    ProviderFailoverError,
+    build_failover_chain,
+)
 from app.services.providers.mock import MockProvider
 from app.services.providers.openai import OpenAIProvider
 from app.services.providers.registry import (
@@ -35,6 +41,7 @@ from app.services.providers.registry import (
 )
 from app.services.providers.retry import (
     RetryingProvider,
+    classify_error,
     get_retrying_provider,
     is_transient_error,
 )
@@ -45,12 +52,15 @@ register_provider(MockProvider.name, MockProvider)
 
 __all__ = [
     "AnthropicProvider",
+    "FailoverProvider",
     "LLMProvider",
     "MockProvider",
     "OpenAIProvider",
+    "ProviderAttempt",
     "ProviderAuthenticationError",
     "ProviderConfigurationError",
     "ProviderError",
+    "ProviderFailoverError",
     "ProviderRateLimitError",
     "ProviderResponse",
     "ProviderResponseError",
@@ -58,6 +68,8 @@ __all__ = [
     "RetryingProvider",
     "UnknownProviderError",
     "available_providers",
+    "build_failover_chain",
+    "classify_error",
     "get_provider",
     "get_retrying_provider",
     "is_transient_error",
