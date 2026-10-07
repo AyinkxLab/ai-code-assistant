@@ -626,6 +626,9 @@ class TestApiEndpoints:
                     "additions": 10,
                     "deletions": 2,
                     "changed_files": 1,
+                    "mergeable": True,
+                    "mergeable_state": "clean",
+                    "head": {"ref": "feature", "sha": "abc123"},
                 },
             ),
             (
@@ -634,11 +637,36 @@ class TestApiEndpoints:
                 200,
                 [{"filename": "app/x.py", "status": "modified", "patch": "diff"}],
             ),
+            (
+                "GET",
+                "/commits/abc123/check-runs",
+                200,
+                {
+                    "check_runs": [
+                        {
+                            "name": "pytest",
+                            "status": "completed",
+                            "conclusion": "success",
+                            "details_url": "https://example.test/check",
+                        }
+                    ]
+                },
+            ),
+            (
+                "GET",
+                "/commits/abc123/status",
+                200,
+                {"state": "success", "statuses": [{"context": "ci/build", "state": "success"}]},
+            ),
         ]
         self._script_client(client, app, script, monkeypatch)
         data = client.get("/github/api/repos/owner/repo/pulls/5").get_json()
         assert data["number"] == 5
         assert data["files"][0]["filename"] == "app/x.py"
+        assert data["mergeable_state"] == "clean"
+        assert data["checks"]["available"] is True
+        assert data["checks"]["runs"][0]["name"] == "pytest"
+        assert data["checks"]["status"]["state"] == "success"
 
     def test_issues_page_envelope_exposes_navigation(self, client, app, monkeypatch):
         from app.services.github import GitHubPage
