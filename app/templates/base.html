@@ -4,10 +4,10 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="csrf-token" content="{{ csrf_token() }}">
-  <title>{% block title %}{{ config.APP_NAME }}{% endblock %}</title>
+  <title>{% block title \}{{ config.APP_NAME }}{% endblock %}</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;720&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
 <link rel="stylesheet" href="{{ url_for('static', filename='css/highlight-dark.css') }}">
 </head>
@@ -15,7 +15,7 @@
   <header class="site-header">
     <div class="container header-inner">
       <a class="brand" href="{{ url_for('main.index') }}">
-        <span class="brand-mark">&gt;_</span>
+        <span class="brand-mark">&gt_;</span>
         <span class="brand-name">{{ config.APP_NAME }}</span>
       </a>
       <nav class="nav">
@@ -29,6 +29,7 @@
           <a class="nav-link" href="{{ url_for('plugins.index') }}">Plugins</a>
           <a class="nav-link" href="{{ url_for('stellar.index') }}">Stellar</a>
           <a class="nav-link" href="{{ url_for('reviews.index') }}">Reviews</a>
+          <a class="nav-link" href="{{ url_for('usage.index') }}">Usage</a>
           <a class="nav-link notification-link" href="{{ url_for('collaboration.notifications_page') }}">
             <span class="notification-icon" aria-hidden="true">
               <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
