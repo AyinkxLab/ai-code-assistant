@@ -1036,4 +1036,15 @@
       }
     });
   });
+
+  // Test seam: expose the pure client helpers so the frontend unit tests can
+  // exercise them under jsdom without a browser. This is deliberately small and
+  // additive - it does not change any runtime behaviour.
+  window.AICA = {
+    escapeHtml: escapeHtml,
+    formatRelativeTime: formatRelativeTime,
+    renderMarkdown: renderMarkdown,
+    isNearBottom: isNearBottom,
+    getCsrf: getCsrf,
+  };
 })();
