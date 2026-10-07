@@ -1,6 +1,7 @@
 """Chat routes: UI page, conversation CRUD, sharing, and SSE streaming."""
 
 import base64
+import errno
 import hashlib
 import json
 import secrets
@@ -50,7 +51,7 @@ from app.services.provider_config import (
     provider_options,
 )
 from app.services.providers.registry import resolve_provider_name
-from app.services.providers.retry import RetryingProvider
+from app.services.providers.retry import RetryingProvider, is_transient_error
 
 #: Machine-readable code returned when the configured provider has no key.
 PROVIDER_NOT_CONFIGURED_CODE = "provider_not_configured"
@@ -70,6 +71,26 @@ def _provider_not_configured_payload(status: dict) -> dict:
         "code": PROVIDER_NOT_CONFIGURED_CODE,
         "provider": status.get("provider"),
         "reason": status.get("reason"),
+    }
+
+
+#: Machine-readable code returned when a stream drops and the client should
+#: offer a retry (issue: streaming indicator and typing feedback).
+STREAM_INTERRUPTED_CODE = "stream_interrupted"
+
+
+def _stream_interrupted_payload(reply: str, reason: str | None = None) -> dict:
+    """Build the payload sent when an SSE stream drops mid-generation.
+
+    The partial reply is included so the client can keep what was generated
+    and offer a visible retry affordance instead of silently losing output.
+    """
+    return {
+        "type": "error",
+        "code": STREAM_INTERRUPTED_CODE,
+        "error": reason or "The response stream was interrupted. Retry to continue.",
+        "partial": reply,
+        "retryable": True,
     }
 
 
@@ -783,11 +804,24 @@ def stream_message(conversation_id: int):
             partial = "".join(chunks)
             persist_assistant(partial, stream_usage(partial))
             raise
+        except OSError as exc:
+            # The transport dropped (connection reset, broken pipe, timeout).
+            # Keep the partial reply and surface a retryable error event so the
+            # client can show a retry affordance instead of losing output.
+            partial = "".join(chunks)
+            persist_assistant(partial, stream_usage(partial))
+            reason = None
+            if getattr(exc, "errno", None) in (errno.ECONNRESET, errno.EPIPE):
+                reason = "The connection was interrupted. Retry to continue."
+            yield f"data: {json.dumps(_stream_interrupted_payload(partial, reason))}\n\n"
+            return
         except LLMProviderError as exc:
             # A provider failure mid-stream: keep the partial text too.
             partial = "".join(chunks)
             persist_assistant(partial, stream_usage(partial))
-            yield f"data: {json.dumps({'type': 'error', 'error': str(exc)})}\n\n"
+            payload = _stream_interrupted_payload(partial, str(exc))
+            payload["retryable"] = is_transient_error(exc)
+            yield f"data: {json.dumps(payload)}\n\n"
             return
 
         reply = "".join(chunks)
@@ -801,7 +835,9 @@ def stream_message(conversation_id: int):
                     response.content, token_usage.usage_from_response(response, messages)
                 )
             except LLMProviderError as exc:
-                yield f"data: {json.dumps({'type': 'error', 'error': str(exc)})}\n\n"
+                payload = _stream_interrupted_payload("", str(exc))
+                payload["retryable"] = is_transient_error(exc)
+                yield f"data: {json.dumps(payload)}\n\n"
                 return
 
         payload = {"type": "done", "message": message.to_dict() if message else None}
