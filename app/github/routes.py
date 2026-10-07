@@ -39,7 +39,7 @@ from flask_login import current_user, login_required
 
 from app.extensions import db
 from app.github import bp
-from app.models import GithubAccount
+from app.models import GithubAccount, ReviewHistory
 from app.services import analysis, ratelimit
 from app.services.github import (
     GITHUB_AUTHORIZE_URL,
@@ -872,6 +872,62 @@ def api_pull_detail(owner: str, repo: str, number: int):
             payload, files, repo_files=_stellar_repo_context(client, full_name)
         )
     return jsonify(payload)
+
+
+@bp.route("/api/repos/<owner>/<repo>/pulls/<int:number>/review", methods=["POST"])
+@login_required
+def api_pull_review(owner: str, repo: str, number: int):
+    """Run an AI review for an open pull request and store it in review history.
+
+    Read-only with respect to GitHub: the review never merges, closes,
+    approves, comments on, or otherwise modifies the pull request. The result
+    is persisted locally so it appears in the user's review history.
+    """
+    full_name = validate_full_name(f"{owner}/{repo}")
+    try:
+        client = _client()
+        pr = client.get_pull_request(full_name, number)
+        files = client.list_pull_request_files(full_name, number)
+    except GitHubError as exc:
+        return jsonify(github_error_payload(exc)), 404
+
+    if (pr.get("state") or "").lower() != "open":
+        return jsonify({"error": "Only open pull requests can be reviewed."}), 409
+
+    payload = pull_request_payload(pr)
+    payload["files"] = [
+        {
+            "filename": f.get("filename"),
+            "status": f.get("status"),
+            "additions": f.get("additions"),
+            "deletions": f.get("deletions"),
+            "patch": f.get("patch"),
+        }
+        for f in files
+    ]
+    result = analysis.analyze_pull_request(
+        payload, files, repo_files=_stellar_repo_context(client, full_name)
+    )
+
+    record = ReviewHistory(
+        user_id=current_user.id,
+        owner=owner,
+        repo=repo,
+        number=number,
+        title=payload.get("title"),
+        result=result,
+    )
+    db.session.add(record)
+    db.session.commit()
+
+    return jsonify({"review": record.to_dict() if hasattr(record, "to_dict") else {
+        "id": record.id,
+        "owner": owner,
+        "repo": repo,
+        "number": number,
+        "title": payload.get("title"),
+        "result": result,
+    }})
 
 
 # --------------------------------------------------------------------------

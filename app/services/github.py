@@ -734,6 +734,25 @@ class GitHubClient:
     def list_pull_request_comments(self, full_name: str, number: int) -> list[dict]:
         return self._get(f"/repos/{full_name}/pulls/{number}/comments", params={"per_page": 100})
 
+    def get_pull_request_diff(self, full_name: str, number: int) -> str:
+        """Return the unified diff for a pull request (read-only).
+
+        Uses the ``.diff`` media type so the whole patch arrives in one
+        response. The result is capped at ``Config.GITHUB_MAX_CONTEXT_CHARS``
+        characters so a very large PR cannot push an unbounded amount of text
+        into a review prompt.
+        """
+        response = self.session.get(
+            f"{self.api_url}/repos/{full_name}/pulls/{number}",
+            headers={"Accept": "application/vnd.github.diff"},
+            timeout=self.timeout,
+        )
+        if response.status_code >= 400:
+            # Re-issue through _request so failures become typed errors.
+            self._request("GET", f"/repos/{full_name}/pulls/{number}")
+        text = response.text or ""
+        return text[: Config.GITHUB_MAX_CONTEXT_CHARS]
+
     # -- README -------------------------------------------------------------
 
     def get_readme(self, full_name: str, ref: str | None = None) -> str | None:
@@ -853,6 +872,24 @@ def pull_request_payload(pr: dict) -> dict:
         "changed_files": pr.get("changed_files"),
         "html_url": pr.get("html_url"),
         "diff_url": pr.get("diff_url"),
+    }
+
+
+def pull_request_file_payload(file: dict) -> dict:
+    """Normalize a pull request file entry for review context.
+
+    Only read-only fields are exposed: the filename, change counts, status, and
+    patch. No write/merge/approve metadata is included, so a review built from
+    this payload can never mutate the pull request.
+    """
+    return {
+        "filename": file.get("filename"),
+        "status": file.get("status"),
+        "additions": file.get("additions"),
+        "deletions": file.get("deletions"),
+        "changes": file.get("changes"),
+        "patch": file.get("patch"),
+        "previous_filename": file.get("previous_filename"),
     }
 
 
@@ -980,6 +1017,69 @@ def get_github_client(user=None) -> GitHubClient:
         db.session.commit()
         token = refreshed["access_token"]
     return GitHubClient(token)
+
+
+# -- AI pull request review (read-only) --------------------------------------
+
+
+#: Maximum number of changed files included in a single review prompt.
+REVIEW_MAX_FILES = 50
+
+
+def build_pull_request_review_context(
+    user,
+    full_name: str,
+    number: int,
+    *,
+    max_files: int = REVIEW_MAX_FILES,
+) -> dict:
+    """Collect read-only context for an AI review of a pull request.
+
+    Returns ``{"pull_request", "files", "diff", "notices"}`` where every field
+    is derived from GET requests only. This function never calls a mutating
+    GitHub endpoint, so running a review can never merge, close, approve, or
+    otherwise modify the pull request. Callers are expected to hand the result
+    to the AI review pipeline and persist the outcome in review history.
+
+    Raises :class:`GitHubNotConnectedError` when ``user`` has no GitHub
+    connection, and :class:`GitHubNotFoundError` when the pull request is not
+    visible to the caller's account.
+    """
+    full_name = validate_full_name(full_name)
+    if not isinstance(number, int) or number <= 0:
+        raise GitHubInvalidError("Invalid pull request number.")
+
+    client = get_github_client(user)
+    pull = client.get_pull_request(full_name, number)
+    if pull.get("merged_at") or pull.get("state") != "open":
+        # Reviews are only meaningful for open pull requests.
+        raise GitHubInvalidError("Only open pull requests can be reviewed.")
+
+    notices: list[str] = []
+    try:
+        raw_files = client.list_pull_request_files(full_name, number)
+    except GitHubError as exc:
+        raw_files = []
+        notices.append(github_error_message(exc))
+
+    files = [pull_request_file_payload(f) for f in raw_files[:max_files]]
+    if len(raw_files) > max_files:
+        notices.append(
+            f"Only the first {max_files} of {len(raw_files)} changed files were included."
+        )
+
+    try:
+        diff = client.get_pull_request_diff(full_name, number)
+    except GitHubError as exc:
+        diff = ""
+        notices.append(github_error_message(exc))
+
+    return {
+        "pull_request": pull_request_payload(pull),
+        "files": files,
+        "diff": diff,
+        "notices": notices,
+    }
 
 
 # -- Chat context references (issue #74) -------------------------------------
