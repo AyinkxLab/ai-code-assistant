@@ -4,8 +4,25 @@
 (function () {
   "use strict";
 
+  var CONNECT_URL = "/github/connect";
+
+  // Map a raw GitHub code to a user-facing message. Never echo the
+  // upstream payload back to the user; only well-known codes are translated.
+  function friendlyError(code) {
+    switch (code) {
+      case "access_denied":
+        return "You cancelled the GitHub connection. No access was granted.";
+      case "bad_verification_code":
+        return "The connection request expired. Please try connecting again.";
+      case "oauth_error":
+        return "GitHub could not complete the connection. Please try again.";
+      default:
+        return "GitHub connection failed. Please try again.";
+    }
+  }
+
   window.GitHub = {
-    CSRF_TOKEN: null,
+    CSRF_TOK: null,
 
     getCsrf: function () {
       if (this.CSRF_TOKEN !== null) return this.CSRF_TOKEN;
@@ -30,7 +47,7 @@
             var error = new Error(data && data.error ? data.error : "Request failed (" + response.status + ").");
             error.kind = data && data.kind;
             if (error.kind === "auth" || error.kind === "not_connected") {
-              window.location.assign("/github/connect");
+              window.location.assign(CONNECT_URL);
             }
             throw error;
           }
@@ -54,7 +71,7 @@
       });
     },
 
-    // Escape HTML, then treat newlines as <br> and URLs as links.
+    // Escape HTML, then treat newlines as <br /> and URLs as links.
     renderMarkdownish: function (text) {
       if (!text) return "";
       var html = this.escapeHtml(text);
@@ -81,6 +98,42 @@
         el.style.opacity = "0";
         setTimeout(function () { el.remove(); }, 400);
       }, 6000);
+    },
+
+    // Handle an OAuth callback failure. `access_denied` is a user
+    // cancellation, not an error, so it is reported as a neutral notice
+    // with a retry path. Any other code is shown as a generic friendly
+    // message; the raw GitHub payload is never rendered.
+    handleCallbackError: function (code, container) {
+      var denied = code === "access_denied";
+      var message = friendlyError(code);
+      var target = container || document.querySelector(".github-callback");
+      if (target) {
+        target.hidden = false;
+        target.innerHTML = "";
+        var card = document.createElement("div");
+        card.className = denied ? "callback-card callback-cancelled" : "callback-card callback-error";
+        var title = document.createElement("h2");
+        title.textContent = denied ? "GitHub connection cancelled" : "Couldn’t connect to GitHub";
+        var body = document.createElement("p");
+        body.textContent = message;
+        card.appendChild(title);
+        card.appendChild(body);
+        if (denied) {
+          var explain = document.createElement("p");
+          explain.className = "field-hint";
+          explain.textContent = "Connecting GitHub grants this app read access to your repositories, issues, and pull requests so it can help with code reviews. You can revoke access at any time from your GitHub settings.";
+          card.appendChild(explain);
+        }
+        var retry = document.createElement("a");
+        retry.href = CONNECT_URL;
+        retry.className = "btn btn-primary";
+        retry.textContent = "Connect GitHub";
+        card.appendChild(retry);
+        target.appendChild(card);
+      } else {
+        this.flashError(message);
+      }
     },
 
     // Render Prev/Next controls for a paginated GitHub list endpoint.

@@ -137,6 +137,7 @@ class GitHubInvalidError(GitHubError):
 ERROR_MESSAGES = {
     "not_connected": "Connect your GitHub account to use this feature.",
     "auth": "Your GitHub connection is no longer valid. Reconnect your account.",
+    "cancelled": "GitHub connection was cancelled. You can retry whenever you're ready.",
     "permission": "GitHub denied access to this resource.",
     "not_found": "The requested GitHub resource was not found.",
     "rate_limit": "GitHub API rate limit reached. Please try again later.",
@@ -144,6 +145,20 @@ ERROR_MESSAGES = {
     "validation": "The GitHub request was invalid.",
     "github_error": "The GitHub request failed. Please try again.",
 }
+
+
+def is_access_denied(error: str | None) -> bool:
+    """Return ``True`` when GitHub reports the user denied the OAuth consent.
+
+    GitHub sends ``error=access_denied`` on the callback when the user clicks
+    "Cancel" on the consent screen. That is a user cancellation, not a
+    failure, so callers should treat it as such (issue: OAuth denial page).
+    """
+    return (error or "").strip().lower() == "access_denied"
+
+
+class GitHubCancelledError(GitHubError):
+    kind = "cancelled"
 
 
 def github_error_message(exc: GitHubError) -> str:
