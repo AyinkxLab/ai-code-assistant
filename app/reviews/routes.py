@@ -64,6 +64,28 @@ def _get_project(project_id: int) -> Project:
 
 
 # --------------------------------------------------------------------------
+# Review history pagination
+# --------------------------------------------------------------------------
+
+#: Review history used to be returned in full, so a long history meant one
+#: unbounded query plus one huge response. These bound the page size the same
+#: way the workspace dashboard does (issue #85).
+REVIEWS_PER_PAGE_DEFAULT = 20
+REVIEWS_PER_PAGE_MAX = 100
+
+
+def _reviews_page() -> int:
+    """Return the requested 1-based page number."""
+    return max(request.args.get("page", type=int) or 1, 1)
+
+
+def _reviews_per_page() -> int:
+    """Return the requested page size, clamped to the configured maximum."""
+    value = request.args.get("per_page", type=int) or REVIEWS_PER_PAGE_DEFAULT
+    return max(1, min(value, REVIEWS_PER_PAGE_MAX))
+
+
+# --------------------------------------------------------------------------
 # Configuration helpers
 # --------------------------------------------------------------------------
 
@@ -197,6 +219,12 @@ def project_config_page(project_id: int):
 @bp.route("/api/reviews", methods=["GET"])
 @login_required
 def api_list_reviews():
+    """Return one page of the current user's review history.
+
+    Filters (``source``/``kind``/``status``/``project_id``) combine with
+    ``page``/``per_page`` pagination and return the standard list envelope used
+    by the workspace and collaboration lists.
+    """
     query = Review.query.filter_by(user_id=current_user.id)
     source = request.args.get("source")
     kind = request.args.get("kind")
@@ -210,8 +238,28 @@ def api_list_reviews():
         query = query.filter_by(status=status)
     if project_id:
         query = query.filter_by(project_id=project_id)
-    reviews = query.order_by(Review.created_at.desc()).all()
-    return jsonify([r.to_dict() for r in reviews])
+    page = _reviews_page()
+    per_page = _reviews_per_page()
+    total = query.count()
+    # ``id`` breaks created_at ties so the ordering is total: without it, rows
+    # sharing a timestamp can repeat or vanish across page boundaries.
+    reviews = (
+        query.order_by(Review.created_at.desc(), Review.id.desc())
+        .offset((page - 1) * per_page)
+        .limit(per_page)
+        .all()
+    )
+    return jsonify(
+        {
+            "items": [r.to_dict() for r in reviews],
+            "total": total,
+            "page": page,
+            "per_page": per_page,
+            "total_pages": max(1, (total + per_page - 1) // per_page),
+            "has_next": page * per_page < total,
+            "has_prev": page > 1,
+        }
+    )
 
 
 @bp.route("/api/reviews", methods=["POST"])
