@@ -9,11 +9,17 @@ from datetime import UTC, datetime
 
 from app.extensions import db
 
+# Scopes required to create issues and post comments via the GitHub API.
+# GitHub accepts either the classic `public_repo` scope or the finer-grained
+# `repos` scope for writing to public repositories. Private repositories require
+# the corresponding `private_repo` or `repos` scope.
+WRITE_SCOPES = frozenset({"public_repo", "repo", "private_repo"})
+
 
 class GithubAccount(db.Model):
     """A user's connected GitHub account.
 
-    ``access_token_encrypted`` holds the Fernet ciphertext of the access token
+    `access_token_encrypted` holds the Fernet ciphertext of the access token
     used to call the GitHub REST API. The plaintext token is only materialized
     in memory, per request, inside the GitHub client.
     """
@@ -42,7 +48,7 @@ class GithubAccount(db.Model):
     )
 
     def set_access_token(self, plaintext: str) -> None:
-        """Encrypt and store ``plaintext`` (never kept in plain text)."""
+        """Encrypt and store `plaintext` (never kept in plain text)."""
         from app.services.crypto import encrypt_secret
 
         self.access_token_encrypted = encrypt_secret(plaintext)
@@ -53,13 +59,33 @@ class GithubAccount(db.Model):
 
         self.refresh_token_encrypted = encrypt_secret(plaintext) if plaintext else None
 
+    def scope_list(self) -> list[str]:
+        """Return the granted scopes as a normalized list."""
+        if not self.scopes:
+            return []
+        return [s.strip() for s in self.scopes.split(",") if s.strip()]
+
+    def has_scope(self, scope: str) -> bool:
+        """Whether the stored token grants `scope`."""
+        return scope in self.scope_list()
+
+    def can_write(self) -> bool:
+        """Whether the stored token can create issues and comments.
+
+        GitHub grants write access to public repositories with either the
+        `public_repo` scope or the finer-grained `repo` scope. The `private_repo`
+        scope also implies write access.
+        """
+        return bool(WRITE_SCOPES.intersection(self.scope_list()))
+
     def to_dict(self) -> dict:
         """Public metadata about the connection (never includes the token)."""
         return {
             "id": self.id,
             "github_user_id": self.github_user_id,
             "github_username": self.github_username,
-            "scopes": self.scopes.split(",") if self.scopes else [],
+            "scopes": self.scope_list(),
+            "can_write": self.can_write(),
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "updated_at": self.updated_at.isoformat() if self.updated_at else None,
         }

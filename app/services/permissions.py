@@ -6,20 +6,20 @@ strings scattered across routes.
 
 Roles
 -----
-* ``owner`` — workspace administration (members, invitations, settings,
+* `owner` — workspace administration (members, invitations, settings,
   ownership transfer, audit).
-* ``contributor`` — permitted development actions, no owner-level admin.
-* ``viewer`` — read-only collaboration surface.
+* `contributor` — permitted development actions, no owner-level admin.
+* `viewer` — read-only collaboration surface.
 
 Capability model
 ----------------
-A capability is a named action a role may perform. ``role_can`` resolves a
-role to a boolean; ``can``/``has_capability`` resolve the requesting user's
+A capability is a named action a role may perform. `role_can` resolves a
+role to a boolean; `can`/`has_capability` resolve the requesting user's
 role in a workspace and check it. Non-members always resolve to no
-capabilities (fail closed): role resolution returns ``None``, which maps to
+capabilities (fail closed): role resolution returns `None`, which maps to
 nothing.
 
-``resolve_workspace`` returns the workspace for a member (or owner) or raises
+`resolve_workspace` returns the workspace for a member (or owner) or raises
 404, which deliberately does not distinguish "workspace does not exist" from
 "you cannot access it" to avoid an existence oracle.
 
@@ -57,6 +57,14 @@ CAPABILITIES: dict[str, tuple[tuple[str, ...], str]] = {
         (ROLE_OWNER, "contributor", "viewer"),
         "Create project discussion comments",
     ),
+    "create_issue": (
+        (ROLE_OWNER, "contributor"),
+        "Open new issues on the project",
+    ),
+    "comment_on_issue": (
+        (ROLE_OWNER, "contributor"),
+        "Post comments on issues",
+    ),
     "view_activity": (
         (ROLE_OWNER, "contributor", "viewer"),
         "Read the workspace activity feed",
@@ -70,10 +78,10 @@ CAPABILITIES: dict[str, tuple[tuple[str, ...], str]] = {
 
 
 def role_can(role: str | None, capability: str) -> bool:
-    """Return ``True`` when ``role`` may perform ``capability``.
+    """Return `True` when `role` may perform `capability`.
 
-    Unknown roles and ``None`` fail closed. Only ``ROLE_ORDER`` contains
-    ``owner``, so an "owner" capability can never be granted to a typo.
+    Unknown roles and `None` fail closed. Only `ROLE_ORDER` contains
+    `owner`, so an "owner" capability can never be granted to a typo.
     """
     allowed = CAPABILITIES.get(capability)
     if allowed is None or role not in ROLE_RANK:
@@ -87,9 +95,9 @@ def _owner_of(workspace_id: int) -> int | None:
 
 
 def role_for(workspace_id: int, user) -> str | None:
-    """Resolve ``user``'s role in the workspace, or ``None`` for non-members.
+    """Resolve `user`'s role in the workspace, or `None` for non-members.
 
-    The workspace owner is authoritative via ``Workspace.user_id`` even if a
+    The workspace owner is authoritative via `Workspace.user_id` even if a
     stale membership row exists; everyone else resolves through an *active*
     membership row.
     """
@@ -104,7 +112,7 @@ def role_for(workspace_id: int, user) -> str | None:
 
 
 def can(capability: str, workspace_id: int, user=None) -> bool:
-    """Return ``True`` when ``user`` may perform ``capability`` in the workspace."""
+    """Return `True` when `user` may perform `capability` in the workspace."""
     if user is None:
         user = current_user
     return role_can(role_for(workspace_id, user), capability)
@@ -134,7 +142,7 @@ def resolve_workspace(workspace_id: int, user=None):
 
 
 def require_workspace_member(view):
-    """Decorator: resolve ``workspace_id`` as the route's int kwarg, 404 if not a member."""
+    """Decorator: resolve `workspace_id` as the route's int kwarg, 404 if not a member."""
 
     @wraps(view)
     def wrapped(*args, **kwargs):
@@ -148,7 +156,7 @@ def require_workspace_member(view):
 
 
 def require_workspace_capability(capability: str):
-    """Decorator factory: require ``capability`` for the route's workspace."""
+    """Decorator factory: require `capability` for the route's workspace."""
 
     def decorator(view):
         @wraps(view)
@@ -167,18 +175,18 @@ def require_workspace_capability(capability: str):
 
 
 def capability_roles(capability: str) -> tuple[str, ...]:
-    """Return the roles allowed to perform ``capability`` (for UI rendering)."""
+    """Return the roles allowed to perform `capability` (for UI rendering)."""
     entry = CAPABILITIES.get(capability)
     return entry[0] if entry else ()
 
 
 def capabilities_for_role(role: str | None) -> list[str]:
-    """Return the sorted list of capabilities ``role`` may perform."""
+    """Return the sorted list of capabilities `role` may perform."""
     return sorted(cap for cap in CAPABILITIES if role_can(role, cap))
 
 
 def can_access_project(project, user=None) -> bool:
-    """Return ``True`` when ``user`` may access ``project``'s collaboration data.
+    """Return `True` when `user` may access `project`'s collaboration data.
 
     The owner has full access; an active member of the project's workspace may
     access the project's collaboration surface (comments). Source-content tools
@@ -210,8 +218,40 @@ def resolve_project_collab(project_id: int, user=None):
     return project
 
 
+def can_create_issue(project, user=None) -> bool:
+    """Return `True` when `user` may open a new issue on `project`.
+
+    The project owner always may; an active workspace member must hold the
+    `create_issue` capability (owner/contributor). Viewers and non-members
+    fail closed.
+    """
+    if user is None:
+        user = current_user
+    if not getattr(user, "is_authenticated", False):
+        return False
+    if project.user_id == user.id:
+        return True
+    return can("create_issue", project.workspace_id, user)
+
+
+def can_comment_on_issue(project, user=None) -> bool:
+    """Return `True` when `user` may comment on `project`'s issues.
+
+    The project owner always may; an active workspace member must hold the
+    `comment_on_issue` capability (owner/contributor). Viewers and non-members
+    fail closed.
+    """
+    if user is None:
+        user = current_user
+    if not getattr(user, "is_authenticated", False):
+        return False
+    if project.user_id == user.id:
+        return True
+    return can("comment_on_issue", project.workspace_id, user)
+
+
 def assert_content_access(project, user=None) -> None:
-    """Fail closed (403) unless ``user`` may read ``project``'s source content.
+    """Fail closed(403) unless `user` may read `project`'s source content.
 
     Source-content access is currently owner-only; member content access lands
     with #127, at which point this becomes the single gate. The AI context
