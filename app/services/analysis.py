@@ -15,6 +15,8 @@ existing generic analysis with no Stellar instructions.
 
 from __future__ import annotations
 
+import re
+
 from app.services.llm import LLMProviderError, get_provider
 from app.services.stellar_detection import detect_stellar_from_dicts
 
@@ -26,6 +28,12 @@ MAX_CONTEXT_CHARS = 40_000
 MAX_STELLAR_CONTEXT_CHARS = 8_000
 # Max number of evidence / relevant-file / changed-file lines in that block.
 _STELLAR_ITEM_LIMIT = 15
+
+# Bound on the amount of referenced-file content added to the issue prompt.
+MAX_REFERENCED_FILES = 10
+# Matches repository-relative file paths mentioned in issue bodies, e.g.
+# ``app/services/analysis.py`` or ``src/lib.rs``.
+_FILE_PATH_RE = re.compile(r"(?<![\w./-])((?:[\w.-]+/)+[\w.-]+\.[A-Za-z0-9]{1,8})(?![\w./-])")
 
 _SYSTEM = (
     "You are an expert software engineering analyst. Be concrete, cite the "
@@ -141,6 +149,46 @@ def _stellar_context_block(signals, *, changed_paths: list[str] | None = None) -
     return _clip("\n".join(lines), MAX_STELLAR_CONTEXT_CHARS)
 
 
+def _extract_file_paths(text: str) -> list[str]:
+    """Return unique repository-relative file paths mentioned in ``text``."""
+    if not text:
+        return []
+    seen: dict[str, None] = {}
+    for match in _FILE_PATH_RE.finditer(text):
+        path = match.group(1).strip()
+        if path and path not in seen:
+            seen[path] = None
+    return list(seen)
+
+
+def _referenced_files_block(
+    paths: list[str], repo_files: list[dict] | None
+) -> tuple[str, list[str]]:
+    """Build a labelled block of referenced-file contents from ``repo_files``.
+
+    Returns the block text and the list of paths actually included. Missing or
+    inaccessible files are skipped so analysis degrades gracefully.
+    """
+    if not paths or not repo_files:
+        return "", []
+    by_path: dict[str, str] = {}
+    for item in repo_files:
+        path = str(item.get("path") or "")
+        if path and path not in by_path:
+            by_path[path] = str(item.get("content") or "")
+    blocks: list[str] = []
+    included: list[str] = []
+    for path in paths[:MAX_REFERENCED_FILES]:
+        content = by_path.get(path)
+        if content is None:
+            continue
+        blocks.append(f"### {path}\n{_clip(content, 6000)}")
+        included.append(path)
+    if not blocks:
+        return "", []
+    return "Referenced files (from issue body):\n" + "\n\n".join(blocks), included
+
+
 def _stellar_result(signals, *, detected: bool) -> dict:
     """Return the ``stellar`` metadata block attached to analysis results."""
     if not detected:
@@ -157,6 +205,10 @@ def analyze_issue(
     files used for Stellar/Soroban detection. When the repository shows
     concrete Stellar/Soroban evidence the prompt gains a Stellar-aware section;
     otherwise the existing generic issue analysis is unchanged.
+
+    File paths mentioned in the issue body are detected and, when their
+    contents are available in ``repo_files`` and fit within the context budget,
+    included in the prompt. Missing files are skipped gracefully.
     """
     body = issue.get("body") or "(no description provided)"
     labels = ", ".join(issue.get("labels") or []) or "none"
@@ -175,6 +227,14 @@ Provide a structured analysis with these sections:
 4. Suggested acceptance criteria - bullet list, testable
 5. Complexity/difficulty estimation - easy/medium/hard with one-line reasoning
 """
+    referenced_paths = _extract_file_paths(body)
+    referenced_block, included_paths = _referenced_files_block(referenced_paths, repo_files)
+    if referenced_block:
+        prompt += (
+            "\n\nReferenced files from the issue body (use these to ground your "
+            "analysis; label [CONFIRMED] vs [SUGGESTION]):\n"
+            + _clip(referenced_block, MAX_CONTEXT_CHARS // 2)
+        )
     signals = _detect(None, repo_files)
     stellar = _stellar_result(signals, detected=signals is not None and signals.is_stellar)
     if signals is not None and signals.is_stellar:
@@ -184,6 +244,7 @@ Provide a structured analysis with these sections:
         "issue_number": issue.get("number"),
         "title": issue.get("title"),
         "analysis": _run(prompt),
+        "referenced_files": included_paths,
         "stellar": stellar,
     }
 
