@@ -56,6 +56,25 @@ Findings use a normalized vocabulary (see `app/models/review_finding.py`):
 
 A finding carries a file path and line only — never raw repository content.
 
+### Output validation (reject, never coerce)
+
+Parsed model output that cannot be validated is rejected, never coerced:
+
+- Unknown severity, category, or confidence values are dropped (no defaulting
+  to `medium`/`other`/`suggestion`).
+- Findings need a string explanation; non-integer, boolean, zero, negative,
+  or oversized lines are dropped.
+- File paths must be syntactically valid (no traversal, backslashes, or
+  control characters) and, when the review context supplies a known-file
+  allow-list, must name a file from that context — invented paths and
+  `files_affected` entries are dropped.
+- Coverage percentages and coverage-with-a-number claims are dropped from
+  summaries, findings, and recommendations: the service has no coverage
+  runner and never reports measured percentages. Metrics are computed only
+  from persisted `Review`/`ReviewFinding` rows, never from model text.
+- Non-object payloads, non-list `findings`, non-dict `summary`, and non-string
+  summary items are dropped; findings are capped at `REVIEW_MAX_FINDINGS`.
+
 ## Environment settings
 
 All review behaviour is environment-driven and documented in

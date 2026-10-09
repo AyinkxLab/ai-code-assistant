@@ -63,7 +63,7 @@ JSON_REPLY = json.dumps(
                 "file": "app/main.py",
                 "line": 4,
                 "severity": "critical",
-                "category": "bug",
+                "category": "complexity",
                 "explanation": "Null dereference when data is missing.",
                 "recommendation": "Guard against None.",
                 "confidence": "confirmed",
@@ -71,8 +71,8 @@ JSON_REPLY = json.dumps(
             {
                 "file": "app/main.py",
                 "line": 9,
-                "severity": "informational",
-                "category": "other",
+                "severity": "low",
+                "category": "maintainability",
                 "explanation": "Style note only.",
                 "recommendation": "",
                 "confidence": "suggestion",
@@ -104,10 +104,11 @@ QUALITY_JSON_REPLY = json.dumps(
                 "confidence": "potential",
             },
             {
-                "file": "app/dup.py",
+                "file": "app/legacy.py",
+                "line": 5,
                 "severity": "medium",
                 "category": "duplication",
-                "explanation": "Duplicated parsing logic.",
+                "explanation": "Duplicated parsing logic in the legacy module.",
                 "recommendation": "Reuse a single function.",
                 "confidence": "confirmed",
             },
@@ -138,7 +139,8 @@ TESTS_JSON_REPLY = json.dumps(
                 "confidence": "confirmed",
             },
             {
-                "file": "tests/test_worker.py",
+                "file": "tests/test_app.py",
+                "line": 9,
                 "severity": "medium",
                 "category": "flaky-test",
                 "explanation": "The test depends on a real timer sleep.",
@@ -152,7 +154,7 @@ TESTS_JSON_REPLY = json.dumps(
 
 class TestParseReviewResponse:
     def test_parses_json_findings(self, app):
-        result = reviews.parse_review_response(JSON_REPLY, kind="pr")
+        result = reviews.parse_review_response(JSON_REPLY, kind="quality")
         assert result["error"] is None
         assert result["summary"]["overall_assessment"] == "Solid overall."
         assert len(result["findings"]) == 2
@@ -163,13 +165,13 @@ class TestParseReviewResponse:
         assert finding["confidence"] == "confirmed"
 
     def test_threshold_drops_low_severity(self, app):
-        result = reviews.parse_review_response(JSON_REPLY, kind="pr", threshold="high")
+        result = reviews.parse_review_response(JSON_REPLY, kind="quality", threshold="high")
         severities = [f["severity"] for f in result["findings"]]
         assert severities == ["critical"]
 
     def test_markdown_fenced_json(self, app):
         fenced = "```json\n" + JSON_REPLY + "\n```"
-        result = reviews.parse_review_response(fenced, kind="pr")
+        result = reviews.parse_review_response(fenced, kind="quality")
         assert len(result["findings"]) == 2
 
     def test_unstructured_text_falls_back(self, app):
@@ -177,7 +179,7 @@ class TestParseReviewResponse:
         assert result["findings"] == []
         assert "raw" in result["summary"]
 
-    def test_invalid_finding_entries_skipped(self, app):
+    def test_invalid_finding_entries_rejected_not_coerced(self, app):
         payload = {
             "summary": {"overall_assessment": "x"},
             "findings": [
@@ -185,44 +187,103 @@ class TestParseReviewResponse:
                 {"severity": "high"},
                 {"explanation": "   "},
                 {"file": "a.py", "line": "nope", "explanation": "ok", "category": "bogus"},
+                {"file": "a.py", "line": 3, "explanation": "ok", "category": "bogus"},
+                {
+                    "file": "a.py",
+                    "line": 3,
+                    "severity": "bogus",
+                    "explanation": "ok",
+                    "category": "bug",
+                    "confidence": "confirmed",
+                },
+                {
+                    "file": "a.py",
+                    "line": 3,
+                    "severity": "high",
+                    "explanation": "kept",
+                    "category": "bug",
+                    "confidence": "confirmed",
+                },
             ],
         }
         result = reviews.parse_review_response(json.dumps(payload), kind="pr")
         assert len(result["findings"]) == 1
         finding = result["findings"][0]
         assert finding["file"] == "a.py"
-        assert finding["line"] is None
-        assert finding["category"] == "other"
-        assert finding["severity"] == "medium"
+        assert finding["line"] == 3
+        assert finding["category"] == "bug"
+        assert finding["severity"] == "high"
 
     def test_categories_scoped_by_kind(self, app):
         payload = {
-            "findings": [{"explanation": "x", "category": "missing-tests"}],
+            "findings": [
+                {
+                    "explanation": "x",
+                    "category": "missing-tests",
+                    "severity": "low",
+                    "confidence": "suggestion",
+                }
+            ],
         }
         pr_result = reviews.parse_review_response(json.dumps(payload), kind="pr")
         tests_result = reviews.parse_review_response(json.dumps(payload), kind="tests")
-        assert pr_result["findings"][0]["category"] == "other"
+        assert pr_result["findings"] == []
         assert tests_result["findings"][0]["category"] == "missing-tests"
 
     def test_quality_categories_include_readability_and_dead_code(self, app):
         payload = {
             "findings": [
-                {"explanation": "x", "category": "readability"},
-                {"explanation": "y", "category": "dead-code"},
-                {"explanation": "z", "category": "bug"},
+                {
+                    "explanation": "x",
+                    "category": "readability",
+                    "severity": "low",
+                    "confidence": "suggestion",
+                },
+                {
+                    "explanation": "y",
+                    "category": "dead-code",
+                    "severity": "low",
+                    "confidence": "suggestion",
+                },
+                {
+                    "explanation": "z",
+                    "category": "bug",
+                    "severity": "low",
+                    "confidence": "suggestion",
+                },
             ]
         }
         result = reviews.parse_review_response(json.dumps(payload), kind="quality")
         categories = [f["category"] for f in result["findings"]]
-        assert categories == ["readability", "dead-code", "other"]
+        assert categories == ["readability", "dead-code"]
 
     def test_tests_categories_include_new_test_concerns(self, app):
         payload = {
             "findings": [
-                {"explanation": "x", "category": "coverage-gap"},
-                {"explanation": "y", "category": "missing-assertion"},
-                {"explanation": "z", "category": "flaky-test"},
-                {"explanation": "w", "category": "readability"},
+                {
+                    "explanation": "x",
+                    "category": "coverage-gap",
+                    "severity": "low",
+                    "confidence": "suggestion",
+                },
+                {
+                    "explanation": "y",
+                    "category": "missing-assertion",
+                    "severity": "low",
+                    "confidence": "suggestion",
+                },
+                {
+                    "explanation": "z",
+                    "category": "flaky-test",
+                    "severity": "low",
+                    "confidence": "suggestion",
+                },
+                {
+                    "explanation": "w",
+                    "category": "readability",
+                    "severity": "low",
+                    "confidence": "suggestion",
+                },
             ]
         }
         result = reviews.parse_review_response(json.dumps(payload), kind="tests")
@@ -230,7 +291,6 @@ class TestParseReviewResponse:
             "coverage-gap",
             "missing-assertion",
             "flaky-test",
-            "other",
         ]
 
 
@@ -264,6 +324,7 @@ class TestBuildPrContext:
         context = reviews.build_pr_context(pr, files, config)
         assert "app.py" in context["files_text"]
         assert "README.md" not in context["files_text"]
+        assert context["known_files"] == ["app.py"]
 
     def test_max_files_bounds_context(self, app):
         config = {"languages": None, "max_files": 2, "max_context_chars": 50000}
@@ -324,7 +385,9 @@ class TestContextBounding:
 
 class TestAnalyzeCodeQuality:
     def test_structured_findings_cover_named_concerns(self, app, monkeypatch):
-        project = _ready_project([("app/main.py", "def f():\n    pass\n")])
+        project = _ready_project(
+            [("app/main.py", "def f():\n    pass\n"), ("app/legacy.py", "def g():\n    pass\n")]
+        )
         monkeypatch.setattr(reviews, "get_provider", lambda: FakeProvider(QUALITY_JSON_REPLY))
         config = {
             "languages": None,
@@ -335,7 +398,7 @@ class TestAnalyzeCodeQuality:
         result = reviews.analyze_code_quality(project, config)
         assert result["error"] is None
         categories = {f["category"] for f in result["findings"]}
-        assert {"readability", "dead-code", "duplication"} <= categories
+        assert categories == {"readability", "dead-code", "duplication"}
 
     def test_review_project_quality_delegates_to_analyze_code_quality(self, app, monkeypatch):
         project = _ready_project([("app/main.py", "x")])
@@ -395,14 +458,27 @@ class TestReviewRun:
         }
         result = reviews.review_project(project, "quality", config)
         assert result["error"] is None
-        # The critical finding survives; the informational one is below the
-        # "low" severity threshold and is correctly dropped.
-        assert len(result["findings"]) == 1
-        assert result["findings"][0]["severity"] == "critical"
+        # Threshold "low" keeps critical through low; only informational is dropped.
+        assert [f["severity"] for f in result["findings"]] == ["critical", "low"]
 
     def test_review_project_unknown_kind_defaults_to_quality(self, app, monkeypatch):
         project = _ready_project([("app/main.py", "x")])
-        monkeypatch.setattr(reviews, "get_provider", lambda: FakeProvider(JSON_REPLY))
+        quality_reply = json.dumps(
+            {
+                "summary": {"overall_assessment": "ok"},
+                "findings": [
+                    {
+                        "file": "app/main.py",
+                        "line": 1,
+                        "severity": "low",
+                        "category": "maintainability",
+                        "explanation": "Note.",
+                        "confidence": "suggestion",
+                    }
+                ],
+            }
+        )
+        monkeypatch.setattr(reviews, "get_provider", lambda: FakeProvider(quality_reply))
         config = {
             "languages": None,
             "max_files": 40,
@@ -413,7 +489,22 @@ class TestReviewRun:
         assert result["findings"]
 
     def test_review_pull_request(self, app, monkeypatch):
-        monkeypatch.setattr(reviews, "get_provider", lambda: FakeProvider(JSON_REPLY))
+        pr_reply = json.dumps(
+            {
+                "summary": {"overall_assessment": "ok"},
+                "findings": [
+                    {
+                        "file": "app/main.py",
+                        "line": 1,
+                        "severity": "high",
+                        "category": "bug",
+                        "explanation": "Unchecked input.",
+                        "confidence": "confirmed",
+                    }
+                ],
+            }
+        )
+        monkeypatch.setattr(reviews, "get_provider", lambda: FakeProvider(pr_reply))
         pr = {
             "number": 3,
             "title": "Add feature",
@@ -432,6 +523,45 @@ class TestReviewRun:
         }
         result = reviews.review_pull_request(pr, files, config)
         assert result["findings"][0]["file"] == "app/main.py"
+        assert result["known_files"] == ["app/main.py"]
+
+    def test_review_pull_request_rejects_invented_files(self, app, monkeypatch):
+        pr_reply = json.dumps(
+            {
+                "summary": {"files_affected": ["app/main.py", "secret.py"]},
+                "findings": [
+                    {
+                        "file": "secret.py",
+                        "line": 1,
+                        "severity": "high",
+                        "category": "bug",
+                        "explanation": "Invented.",
+                        "confidence": "confirmed",
+                    },
+                    {
+                        "file": "app/main.py",
+                        "line": 1,
+                        "severity": "high",
+                        "category": "bug",
+                        "explanation": "Unchecked input.",
+                        "confidence": "confirmed",
+                    },
+                ],
+            }
+        )
+        monkeypatch.setattr(reviews, "get_provider", lambda: FakeProvider(pr_reply))
+        result = reviews.review_pull_request(
+            {"number": 3, "title": "t"},
+            [_pr_file("app/main.py")],
+            {
+                "languages": None,
+                "max_files": 40,
+                "max_context_chars": 40000,
+                "severity_threshold": "low",
+            },
+        )
+        assert [f["file"] for f in result["findings"]] == ["app/main.py"]
+        assert result["summary"]["files_affected"] == ["app/main.py"]
 
     def test_provider_error_reported(self, app, monkeypatch):
         from app.services.llm import LLMProviderError
@@ -568,6 +698,86 @@ class TestStructuredFindingContract:
             assert finding["file"] == "a.py"
             assert finding["line"] == 3
 
+    def test_unknown_vocabularies_are_rejected_not_defaulted(self, app):
+        base = {
+            "file": "a.py",
+            "line": 3,
+            "severity": "high",
+            "category": "bug",
+            "explanation": "real issue",
+            "confidence": "confirmed",
+        }
+        for field, bad in (
+            ("severity", "critical-ish"),
+            ("category", "vibes"),
+            ("confidence", "certain"),
+        ):
+            payload = {"findings": [dict(base, **{field: bad})]}
+            assert reviews.parse_review_response(json.dumps(payload), kind="pr")["findings"] == []
+
+    def test_non_integer_and_out_of_range_lines_rejected(self, app):
+        for bad_line in ("3", 3.0, True, 0, -1, 10_000_001):
+            payload = {
+                "findings": [
+                    {
+                        "file": "a.py",
+                        "line": bad_line,
+                        "severity": "high",
+                        "category": "bug",
+                        "explanation": "real issue",
+                        "confidence": "confirmed",
+                    }
+                ]
+            }
+            assert reviews.parse_review_response(json.dumps(payload), kind="pr")["findings"] == []
+
+    def test_unknown_files_rejected_when_allow_list_supplied(self, app):
+        payload = {
+            "summary": {"overall_assessment": "ok", "files_affected": ["app/main.py", "evil.py"]},
+            "findings": [
+                {
+                    "file": "evil.py",
+                    "line": 1,
+                    "severity": "high",
+                    "category": "bug",
+                    "explanation": "invented",
+                    "confidence": "confirmed",
+                },
+                {
+                    "file": "app/main.py",
+                    "line": 1,
+                    "severity": "high",
+                    "category": "bug",
+                    "explanation": "real",
+                    "confidence": "confirmed",
+                },
+            ],
+        }
+        result = reviews.parse_review_response(
+            json.dumps(payload), kind="pr", known_files=["app/main.py"]
+        )
+        assert [f["file"] for f in result["findings"]] == ["app/main.py"]
+        assert result["summary"]["files_affected"] == ["app/main.py"]
+        assert result["known_files"] == ["app/main.py"]
+
+    def test_empty_allow_list_rejects_every_path(self, app):
+        payload = {
+            "summary": {"files_affected": ["app/main.py"]},
+            "findings": [
+                {
+                    "file": "app/main.py",
+                    "line": 1,
+                    "severity": "high",
+                    "category": "bug",
+                    "explanation": "invented without context",
+                    "confidence": "confirmed",
+                }
+            ],
+        }
+        result = reviews.parse_review_response(json.dumps(payload), kind="pr", known_files=[])
+        assert result["findings"] == []
+        assert result["summary"]["files_affected"] == []
+
     def test_labels_instructed_consistently_for_pr_and_project(self, app, monkeypatch):
         project = _ready_project([("app/main.py", "x")])
         provider = CapturingProvider(JSON_REPLY)
@@ -605,6 +815,127 @@ class TestStructuredFindingContract:
         serialized = finding.to_dict()
         assert "raw_content" not in serialized
         assert {"file", "line", "severity", "category", "confidence"} <= set(serialized)
+
+    def test_traversal_and_empty_paths_rejected(self, app):
+        for bad in ("../secret.py", "", "/", "a//b.py"):
+            payload = {
+                "findings": [
+                    {
+                        "file": bad,
+                        "line": 1,
+                        "severity": "high",
+                        "category": "bug",
+                        "explanation": "x",
+                        "confidence": "confirmed",
+                    }
+                ]
+            }
+            assert reviews.parse_review_response(json.dumps(payload), kind="pr")["findings"] == []
+
+    def test_coverage_numbers_and_metrics_rejected(self, app):
+        payload = {
+            "summary": {
+                "overall_assessment": "Coverage is 87% and looks great.",
+                "testing_recommendations": ["Coverage is now 92 percent."],
+                "files_affected": ["app/main.py"],
+            },
+            "findings": [
+                {
+                    "file": "app/main.py",
+                    "line": 1,
+                    "severity": "medium",
+                    "category": "coverage-gap",
+                    "explanation": "Coverage dropped to 45%.",
+                    "recommendation": "Raise coverage to 90%.",
+                    "confidence": "potential",
+                }
+            ],
+        }
+        result = reviews.parse_review_response(json.dumps(payload), kind="tests")
+        assert result["findings"] == []
+        assert result["summary"]["overall_assessment"] == ""
+        assert result["summary"]["testing_recommendations"] == []
+        assert result["summary"]["files_affected"] == ["app/main.py"]
+
+        allowed = reviews.parse_review_response(
+            json.dumps(
+                {
+                    "summary": {"testing_recommendations": ["Cover edge cases."]},
+                    "findings": [],
+                }
+            ),
+            kind="tests",
+        )
+        assert allowed["summary"]["testing_recommendations"] == ["Cover edge cases."]
+
+    def test_non_string_fields_and_unknown_keys_rejected(self, app):
+        payload = {
+            "summary": {"overall_assessment": 42, "bogus": ["x"], "important_findings": [1, None]},
+            "findings": [
+                {
+                    "file": "a.py",
+                    "line": 1,
+                    "severity": "high",
+                    "category": "bug",
+                    "explanation": "real",
+                    "confidence": "confirmed",
+                    "recommendation": 7,
+                }
+            ],
+        }
+        result = reviews.parse_review_response(json.dumps(payload), kind="pr")
+        assert result["findings"] == []
+        assert result["summary"]["overall_assessment"] == ""
+        assert result["summary"]["important_findings"] == []
+        assert "bogus" not in result["summary"]
+
+    def test_non_list_findings_rejected(self, app):
+        payload = {"summary": {}, "findings": {"file": "a.py"}}
+        result = reviews.parse_review_response(json.dumps(payload), kind="pr")
+        assert result["findings"] == []
+
+    def test_findings_capped_and_validate_helper_rejects(self, app):
+        payload = {
+            "findings": [
+                {
+                    "file": f"a{i}.py",
+                    "line": 1,
+                    "severity": "low",
+                    "category": "other",
+                    "explanation": f"issue {i}",
+                    "confidence": "suggestion",
+                }
+                for i in range(5)
+            ]
+        }
+        result = reviews.parse_review_response(
+            json.dumps(payload), kind="pr", max_findings=2
+        )
+        assert len(result["findings"]) == 2
+        validated = reviews.validate_review_result(
+            {"summary": {"overall_assessment": 1}, "findings": payload["findings"]},
+            kind="pr",
+            max_findings=2,
+        )
+        assert len(validated["findings"]) == 2
+        assert validated["summary"]["overall_assessment"] == ""
+        assert (
+            reviews.validate_review_result(
+                {"summary": {}, "findings": payload["findings"]}, kind="pr", max_findings=0
+            )["findings"]
+            == []
+        )
+        assert (
+            reviews.validate_review_result(
+                {
+                    "summary": {"files_affected": ["evil.py", "a0.py"]},
+                    "findings": payload["findings"],
+                    "known_files": ["a0.py"],
+                },
+                kind="pr",
+            )["summary"]["files_affected"]
+            == ["a0.py"]
+        )
 
 
 #: A repository/PR payload that tries to hijack the reviewer's instructions.

@@ -11,8 +11,11 @@ supported:
 
 All prompts treat repository content as untrusted data and request a strict
 JSON payload so findings can be persisted as structured rows. The parser is
-defensive: when the model does not return valid JSON (e.g. the offline mock
-provider), it falls back to a text summary and no fabricated findings.
+strict: parsed model output that cannot be validated is rejected, not coerced.
+Unknown severities, categories, confidences, malformed lines, non-string
+fields, invented file paths, and fabricated coverage percentages/metrics are
+dropped rather than defaulted, so the service never invents files, findings,
+coverage numbers, or metrics.
 """
 
 from __future__ import annotations
@@ -78,6 +81,14 @@ outside the object, in exactly this shape:
     }
   ]
 }
+Validation rules (unvalidated output is rejected, not defaulted):
+- severity must be exactly one of critical|high|medium|low|informational
+- category must match the review kind's vocabulary; unknown values rejected
+- confidence must be exactly confirmed|potential|suggestion
+- file must name a file from the shown context; unknown paths rejected
+- line must be an integer >= 1 or null; strings/floats rejected
+- explanation is required; missing or non-string explanations rejected
+- never report coverage percentages, metrics, or files not shown
 Use empty arrays for sections with no content. findings may be empty.
 """
 
@@ -206,54 +217,235 @@ def _extract_json_object(text: str) -> dict | None:
     return None
 
 
+def _looks_like_coverage_claim(text: str) -> bool:
+    """Return ``True`` when ``text`` looks like an invented coverage number.
+
+    The review service has no coverage runner, so any coverage percentage or
+    coverage-with-a-number claim in model output is unvalidated and must be
+    rejected, never persisted. Bare uses of "cover" without a number (e.g.
+    "cover edge cases") are allowed.
+    """
+    if not isinstance(text, str) or not text:
+        return False
+    lowered = text.lower()
+    if "coverage" not in lowered and "cover" not in lowered:
+        return False
+    if re.search(r"\d+\s*%|\bpercent\b", lowered):
+        return True
+    return bool(re.search(r"\bcoverage\b\s*[:=]?\s*\d", lowered))
+
+
+def _valid_file_syntax(value) -> str | None:
+    """Validate a model-supplied file path's syntax (no known-file check).
+
+    Returns the normalized path or ``None`` when the value cannot be
+    validated. Rejects non-strings, empties, traversal (``..``), backslashes,
+    null bytes, and control characters instead of coercing them.
+    """
+    if not isinstance(value, str):
+        return None
+    cleaned = value.strip().lstrip("/")[:2000]
+    if not cleaned:
+        return None
+    if "\x00" in cleaned or "\\" in cleaned:
+        return None
+    if any(ord(char) < 32 for char in cleaned):
+        return None
+    parts = cleaned.split("/")
+    if any(part in ("", ".", "..") for part in parts):
+        return None
+    return cleaned
+
+
+def _normalize_known_files(known_files) -> set[str] | None:
+    """Normalize an allow-list of real file paths, or ``None`` when absent.
+
+    ``None`` (no allow-list supplied) disables the known-file check. Any
+    supplied iterable — including an empty one, meaning "no files were in
+    context" — enables it, so invented paths are rejected.
+    """
+    if known_files is None:
+        return None
+    normalized: set[str] = set()
+    if isinstance(known_files, (str, bytes)):
+        return normalized
+    try:
+        iterator = iter(known_files)  # type: ignore[arg-type]
+    except TypeError:
+        return None
+    for entry in iterator:
+        path = _valid_file_syntax(entry)
+        if path is not None:
+            normalized.add(path)
+    return normalized
+
+
+def _accepted_paths(paths, allowed_files: set[str] | None) -> list[str]:
+    """Return syntactically valid paths, optionally restricted to ``allowed_files``.
+
+    Invented or malformed paths are dropped; nothing is rewritten to a nearby
+    known file.
+    """
+    accepted: list[str] = []
+    seen: set[str] = set()
+    for path in paths or []:
+        if not isinstance(path, str):
+            continue
+        cleaned = _valid_file_syntax(path)
+        if cleaned is None:
+            continue
+        if allowed_files is not None and cleaned not in allowed_files:
+            continue
+        if cleaned in seen:
+            continue
+        seen.add(cleaned)
+        accepted.append(cleaned)
+    return accepted
+
+
+def _max_findings_cap(max_findings) -> int:
+    """Resolve the findings cap, defaulting to ``REVIEW_MAX_FINDINGS``."""
+    if max_findings is None:
+        try:
+            from flask import current_app, has_app_context
+
+            if has_app_context():
+                max_findings = int(current_app.config.get("REVIEW_MAX_FINDINGS", 100))
+            else:
+                max_findings = 100
+        except Exception:
+            max_findings = 100
+    try:
+        return max(0, int(max_findings))
+    except (TypeError, ValueError):
+        return 100
+
+
 def _as_string_list(value) -> list[str]:
+    """Return validated strings from ``value`` without coercing types.
+
+    Only ``str`` items are accepted; numbers, dicts, and other types are
+    rejected (dropped) rather than stringified so the service never invents
+    summary content from unvalidated model output. A single string is split
+    into lines for convenience. Items that look like fabricated coverage
+    claims are dropped.
+    """
+    items: list[str] = []
     if isinstance(value, str):
-        return [item.strip() for item in value.splitlines() if item.strip()]
-    if isinstance(value, list):
-        return [str(item).strip() for item in value if str(item).strip()]
-    return []
+        candidates = value.splitlines()
+    elif isinstance(value, list):
+        candidates = value
+    else:
+        return []
+    for item in candidates:
+        if not isinstance(item, str):
+            continue
+        text = item.strip()[:2000]
+        if not text:
+            continue
+        if _looks_like_coverage_claim(text):
+            continue
+        items.append(text)
+    return items
 
 
-def _normalize_summary(data: dict | None, raw: str) -> dict:
+def _normalize_summary(data, raw: str) -> dict:
+    """Validate a model summary without coercing unvalidated values.
+
+    Only ``str`` overall assessments and ``str`` list items are accepted.
+    Non-string values, fabricated coverage claims, and unknown keys are
+    rejected (dropped), never coerced into persisted summary content.
+    """
     summary: dict = {}
+    source = data if isinstance(data, dict) else {}
+    overall = source.get("overall_assessment")
+    overall_text = overall.strip()[:6000] if isinstance(overall, str) else ""
+    overall_text = overall_text.strip()
+    if overall_text and not _looks_like_coverage_claim(overall_text):
+        summary["overall_assessment"] = overall_text
+    else:
+        summary["overall_assessment"] = ""
     for key in SUMMARY_KEYS:
-        if key in ("overall_assessment",):
-            summary[key] = str((data or {}).get(key) or "").strip()
-        else:
-            summary[key] = _as_string_list((data or {}).get(key))
+        if key == "overall_assessment":
+            continue
+        summary[key] = _as_string_list(source.get(key))
     summary["raw"] = raw
     return summary
 
 
-def _coerce_finding(raw, kind: str, threshold_rank: int | None) -> dict | None:
-    """Validate and normalize a single finding, or return ``None`` to skip."""
+def _validate_finding(
+    raw,
+    kind: str,
+    threshold_rank: int | None,
+    known_files: set[str] | None = None,
+) -> dict | None:
+    """Validate a single finding, or return ``None`` to reject it.
+
+    Rejects (never coerces): non-dict entries, missing/non-string
+    explanations, unknown severity/category/confidence values, non-integer or
+    out-of-range lines, invalid file paths, files outside ``known_files`` when
+    provided, non-string recommendations, and fabricated coverage claims.
+    """
     if not isinstance(raw, dict):
         return None
-    explanation = str(raw.get("explanation") or "").strip()
+    explanation = raw.get("explanation")
+    if not isinstance(explanation, str):
+        return None
+    explanation = explanation.strip()[:6000]
     if not explanation:
         return None
+    if _looks_like_coverage_claim(explanation):
+        return None
 
-    severity = str(raw.get("severity") or "medium").strip().lower()
+    severity = raw.get("severity")
+    if not isinstance(severity, str):
+        return None
+    severity = severity.strip().lower()
     if severity not in SEVERITIES:
-        severity = "medium"
+        return None
     if threshold_rank is not None and _SEVERITY_RANK[severity] > threshold_rank:
         return None
 
-    category = str(raw.get("category") or "other").strip().lower()
+    category = raw.get("category")
+    if not isinstance(category, str):
+        return None
+    category = category.strip().lower()
     allowed = CATEGORIES_BY_KIND.get(kind) or ("other",)
     if category not in allowed:
-        category = "other"
+        return None
 
-    confidence = str(raw.get("confidence") or "suggestion").strip().lower()
+    confidence = raw.get("confidence")
+    if not isinstance(confidence, str):
+        return None
+    confidence = confidence.strip().lower()
     if confidence not in CONFIDENCES:
-        confidence = "suggestion"
+        return None
 
-    file_path = str(raw.get("file") or "").strip().lstrip("/")[:2000] or None
+    file_path: str | None = None
+    if raw.get("file") is not None:
+        file_path = _valid_file_syntax(raw.get("file"))
+        if file_path is None:
+            return None
+        if known_files is not None and file_path not in known_files:
+            return None
+
     line = raw.get("line")
-    try:
-        line = int(line) if line is not None else None
-    except (TypeError, ValueError):
-        line = None
+    if line is not None:
+        if isinstance(line, bool) or not isinstance(line, int):
+            return None
+        if line < 1 or line > 10_000_000:
+            return None
+
+    recommendation: str | None = None
+    if raw.get("recommendation") is not None:
+        candidate = raw.get("recommendation")
+        if not isinstance(candidate, str):
+            return None
+        candidate = candidate.strip()[:6000]
+        if candidate:
+            if _looks_like_coverage_claim(candidate):
+                return None
+            recommendation = candidate
 
     return {
         "file": file_path,
@@ -261,9 +453,16 @@ def _coerce_finding(raw, kind: str, threshold_rank: int | None) -> dict | None:
         "severity": severity,
         "category": category,
         "explanation": explanation,
-        "recommendation": str(raw.get("recommendation") or "").strip() or None,
+        "recommendation": recommendation,
         "confidence": confidence,
     }
+
+
+# Backwards-compatible alias: the old coercing helper is gone; any external
+# import of ``_coerce_finding`` now gets strict validation.
+def _coerce_finding(raw, kind: str, threshold_rank: int | None, known_files=None) -> dict | None:
+    """Strict alias for :func:`_validate_finding` (reject, don't coerce)."""
+    return _validate_finding(raw, kind, threshold_rank, known_files)
 
 
 def _rank_threshold(threshold: str | None) -> int | None:
@@ -273,23 +472,69 @@ def _rank_threshold(threshold: str | None) -> int | None:
     return None
 
 
-def parse_review_response(text: str, *, kind: str, threshold: str | None = None) -> dict:
-    """Parse a provider response into ``{"summary", "findings", "raw"}``."""
-    raw = (text or "").strip()
+def parse_review_response(
+    text: str,
+    *,
+    kind: str,
+    threshold: str | None = None,
+    known_files=None,
+    max_findings: int | None = None,
+) -> dict:
+    """Parse and validate a provider response into summary + findings.
+
+    Guardrails (reject, never coerce):
+
+    * The payload must be a JSON object; ``findings`` must be a list and
+      ``summary`` a dict — anything else yields no findings and an empty
+      validated summary (never prose-derived findings or metrics).
+    * Each finding is validated by :func:`_validate_finding`: unknown
+      severity/category/confidence, non-integer lines, invalid paths, files
+      outside ``known_files`` (when supplied), and coverage fabrications are
+      rejected.
+    * ``files_affected`` entries are validated against ``known_files`` when
+      supplied; invented paths are dropped.
+    * Coverage-looking summary items are dropped; the service has no coverage
+      runner and never reports measured percentages.
+    * Findings are capped at ``max_findings`` (or ``REVIEW_MAX_FINDINGS``
+      outside tests) so oversized model output cannot inflate metrics.
+    """
+    raw = text.strip()[:20000] if isinstance(text, str) else ""
     threshold_rank = _rank_threshold(threshold)
+    allowed_files = _normalize_known_files(known_files)
+    max_findings = _max_findings_cap(max_findings)
     payload = _extract_json_object(raw)
+    if max_findings == 0:
+        return {
+            "summary": _normalize_summary(payload.get("summary"), raw)
+            if payload is not None
+            else _normalize_summary(None, raw),
+            "findings": [],
+            "raw": raw,
+            "error": None,
+            "known_files": sorted(allowed_files) if allowed_files is not None else None,
+        }
 
     if payload is not None:
+        raw_findings = payload.get("findings")
+        if not isinstance(raw_findings, list):
+            raw_findings = []
         findings = []
-        for item in payload.get("findings") or []:
-            finding = _coerce_finding(item, kind, threshold_rank)
+        for item in raw_findings:
+            finding = _validate_finding(item, kind, threshold_rank, allowed_files)
             if finding is not None:
                 findings.append(finding)
+            if len(findings) >= max_findings:
+                break
+        summary = _normalize_summary(payload.get("summary"), raw)
+        summary["files_affected"] = _accepted_paths(
+            summary.get("files_affected"), allowed_files
+        )
         return {
-            "summary": _normalize_summary(payload.get("summary") or {}, raw),
+            "summary": summary,
             "findings": findings,
             "raw": raw,
             "error": None,
+            "known_files": sorted(allowed_files) if allowed_files is not None else None,
         }
 
     return {
@@ -297,7 +542,42 @@ def parse_review_response(text: str, *, kind: str, threshold: str | None = None)
         "findings": [],
         "raw": raw,
         "error": None,
+        "known_files": sorted(allowed_files) if allowed_files is not None else None,
     }
+
+
+def validate_review_result(result, *, kind: str, known_files=None, max_findings=None) -> dict:
+    """Re-validate an already-parsed review result before persistence.
+
+    Used as defense in depth by the route layer: ``result`` may come from the
+    parser or from any caller-supplied dict (tests, retries). Only validated
+    summary keys plus findings that pass :func:`_validate_finding` survive;
+    everything else — invented files, coverage numbers/metrics, unknown
+    vocabularies, malformed rows — is rejected, never coerced. Findings are
+    capped at ``max_findings`` so oversized output cannot inflate metrics.
+    """
+    if not isinstance(result, dict):
+        result = {}
+    if known_files is None and "known_files" in result:
+        known_files = result.get("known_files")
+    allowed_files = _normalize_known_files(known_files)
+    max_findings = _max_findings_cap(max_findings)
+    raw_findings = result.get("findings")
+    if not isinstance(raw_findings, list):
+        raw_findings = []
+    findings = []
+    for item in raw_findings:
+        if len(findings) >= max_findings:
+            break
+        finding = _validate_finding(item, kind, None, allowed_files)
+        if finding is not None:
+            findings.append(finding)
+    summary = _normalize_summary(result.get("summary"), "")
+    summary.pop("raw", None)
+    summary["files_affected"] = _accepted_paths(
+        summary.get("files_affected"), allowed_files
+    )
+    return {"summary": summary, "findings": findings}
 
 
 # --------------------------------------------------------------------------
@@ -305,8 +585,20 @@ def parse_review_response(text: str, *, kind: str, threshold: str | None = None)
 # --------------------------------------------------------------------------
 
 
-def _run_json(prompt: str, *, kind: str, threshold: str | None = None) -> dict:
-    """Run a completion and parse the structured response."""
+def _run_json(
+    prompt: str,
+    *,
+    kind: str,
+    threshold: str | None = None,
+    known_files=None,
+    max_findings: int | None = None,
+) -> dict:
+    """Run a completion and parse the structured response.
+
+    ``known_files`` (when supplied) is the allow-list of real file paths from
+    the bounded review context; findings or ``files_affected`` entries outside
+    it are rejected so the model cannot invent files.
+    """
     try:
         provider = get_provider()
         text = provider.complete(
@@ -321,8 +613,11 @@ def _run_json(prompt: str, *, kind: str, threshold: str | None = None) -> dict:
             "findings": [],
             "raw": "",
             "error": str(exc),
+            "known_files": list(known_files) if known_files is not None else None,
         }
-    parsed = parse_review_response(text, kind=kind, threshold=threshold)
+    parsed = parse_review_response(
+        text, kind=kind, threshold=threshold, known_files=known_files, max_findings=max_findings
+    )
     parsed["error"] = None
     return parsed
 
@@ -347,23 +642,52 @@ def build_pr_context(pr: dict, files: list[dict], config: dict) -> dict:
     budget = max(2000, int(config.get("max_context_chars") or 2000))
 
     selected = []
-    for file in files:
+    for file in files or []:
         if len(selected) >= max_files:
             break
-        if languages and not _matches_languages(file.get("filename") or "", languages):
+        if not isinstance(file, dict):
+            continue
+        filename = file.get("filename")
+        if not isinstance(filename, str) or not filename.strip():
+            continue
+        if languages and not _matches_languages(filename or "", languages):
             continue
         selected.append(file)
 
     changed = []
     per_file = max(budget // max(len(selected), 1), 2000)
     for file in selected:
-        patch = _clip(file.get("patch") or "", per_file)
+        filename = file.get("filename")
+        if not isinstance(filename, str) or not _valid_file_syntax(filename):
+            continue
+        patch = file.get("patch")
+        patch = patch if isinstance(patch, str) else ""
+        patch = _clip(patch, per_file)
+        status = file.get("status") if isinstance(file.get("status"), str) else ""
+        try:
+            additions = int(file.get("additions") or 0)
+        except (TypeError, ValueError):
+            additions = 0
+        try:
+            deletions = int(file.get("deletions") or 0)
+        except (TypeError, ValueError):
+            deletions = 0
         changed.append(
-            f"- {file.get('filename')} ({file.get('status')}, "
-            f"+{file.get('additions')}/-{file.get('deletions')})\n{patch}"
+            f"- {filename} ({status}, "
+            f"+{additions}/-{deletions})\n{patch}"
         )
 
-    test_files = [f.get("filename") for f in selected if is_test_path(f.get("filename") or "")]
+    test_files = [
+        f.get("filename")
+        for f in selected
+        if isinstance(f.get("filename"), str) and is_test_path(f.get("filename") or "")
+    ]
+    known_files = [
+        f.get("filename")
+        for f in selected
+        if isinstance(f.get("filename"), str)
+        and _valid_file_syntax(f.get("filename")) is not None
+    ]
     note = ""
     if files and len(selected) < len(files):
         note = (
@@ -377,14 +701,27 @@ def build_pr_context(pr: dict, files: list[dict], config: dict) -> dict:
         "files_text": body + note,
         "test_files": test_files,
         "selected_count": len(selected),
-        "total_count": len(files),
+        "total_count": len(files) if isinstance(files, list) else 0,
+        "known_files": known_files,
     }
 
 
 def review_pull_request(pr: dict, files: list[dict], config: dict) -> dict:
     """Review a pull request and return a structured summary + findings."""
-    context = build_pr_context(pr, files, config)
-    description = _clip(pr.get("body") or "(no description provided)", 8000)
+    context = build_pr_context(pr if isinstance(pr, dict) else {}, files, config)
+    if not isinstance(pr, dict):
+        pr = {}
+    if not isinstance(config, dict):
+        config = {}
+    number = pr.get("number") if isinstance(pr.get("number"), int) else None
+    title = pr.get("title") if isinstance(pr.get("title"), str) else ""
+    state = pr.get("state") if isinstance(pr.get("state"), str) else ""
+    merged = pr.get("merged") if isinstance(pr.get("merged"), bool) else False
+    author = pr.get("author") if isinstance(pr.get("author"), str) else ""
+    base = pr.get("base") if isinstance(pr.get("base"), str) else ""
+    head = pr.get("head") if isinstance(pr.get("head"), str) else ""
+    body = pr.get("body") if isinstance(pr.get("body"), str) else "(no description provided)"
+    description = _clip(body, 8000)
     tests_note = (
         ", ".join(context["test_files"])
         if context["test_files"]
@@ -398,10 +735,10 @@ def review_pull_request(pr: dict, files: list[dict], config: dict) -> dict:
     focus_note = " and ".join(focus) or "general"
 
     prompt = (
-        f"Pull request #{pr.get('number')}: {pr.get('title')}\n"
-        f"State: {pr.get('state')} (merged: {pr.get('merged')})\n"
-        f"Author: {pr.get('author')}\n"
-        f"Base: {pr.get('base')} -> Head: {pr.get('head')}\n\n"
+        f"Pull request #{number}: {title}\n"
+        f"State: {state} (merged: {merged})\n"
+        f"Author: {author}\n"
+        f"Base: {base} -> Head: {head}\n\n"
         f"Description:\n{description}\n\n"
         f"Changed files:\n{context['files_text']}\n\n"
         f"Test files in this change:\n{tests_note}\n\n"
@@ -412,7 +749,13 @@ def review_pull_request(pr: dict, files: list[dict], config: dict) -> dict:
         "proves the issue, otherwise 'potential' or 'suggestion'. Missing tests "
         "are best captured as a finding with category 'tests'.\n" + _JSON_SCHEMA
     )
-    return _run_json(prompt, kind="pr", threshold=config.get("severity_threshold"))
+    return _run_json(
+        prompt,
+        kind="pr",
+        threshold=config.get("severity_threshold"),
+        known_files=context.get("known_files"),
+        max_findings=config.get("max_findings"),
+    )
 
 
 # --------------------------------------------------------------------------
@@ -422,9 +765,17 @@ def review_pull_request(pr: dict, files: list[dict], config: dict) -> dict:
 
 def _project_context(project, config: dict, kind: str) -> dict:
     """Return bounded source/test file context for a project review."""
+    if not isinstance(config, dict):
+        config = {}
     languages = config.get("languages")
-    budget = max(2000, int(config.get("max_context_chars") or 2000))
-    max_files = max(1, int(config.get("max_files") or 1))
+    try:
+        budget = max(2000, int(config.get("max_context_chars") or 2000))
+    except (TypeError, ValueError):
+        budget = 2000
+    try:
+        max_files = max(1, int(config.get("max_files") or 1))
+    except (TypeError, ValueError):
+        max_files = 1
 
     files = [f for f in _text_files(project) if _matches_languages(f.path, languages)]
     source_files = files[:max_files]
@@ -438,12 +789,23 @@ def _project_context(project, config: dict, kind: str) -> dict:
             budget=budget // 2,
         )
 
+    known_files = [
+        f.path for f in source_files if _valid_file_syntax(f.path) is not None
+    ]
+    if kind == "tests":
+        for row in [f for f in files if f.path in test_files][: max_files // 2]:
+            if (
+                _valid_file_syntax(row.path) is not None
+                and row.path not in known_files
+            ):
+                known_files.append(row.path)
     return {
         "blocks": blocks,
         "test_files": test_files[:200],
         "test_blocks": test_blocks,
         "structure": None,
         "count": len(source_files),
+        "known_files": known_files,
     }
 
 
@@ -491,7 +853,15 @@ def analyze_code_quality(project, config: dict) -> dict:
         "Set confidence 'confirmed' only when the shown files prove the issue; "
         "otherwise use 'potential' or 'suggestion'.\n" + _JSON_SCHEMA
     )
-    return _run_json(prompt, kind="quality", threshold=config.get("severity_threshold"))
+    if not isinstance(config, dict):
+        config = {}
+    return _run_json(
+        prompt,
+        kind="quality",
+        threshold=config.get("severity_threshold"),
+        known_files=context.get("known_files"),
+        max_findings=config.get("max_findings"),
+    )
 
 
 _TEST_CATEGORY_HINT = (
@@ -540,7 +910,15 @@ def analyze_tests(project, config: dict) -> dict:
         "Set confidence 'confirmed' only when the shown files prove the issue; "
         "otherwise use 'potential' or 'suggestion'.\n" + _JSON_SCHEMA
     )
-    return _run_json(prompt, kind="tests", threshold=config.get("severity_threshold"))
+    if not isinstance(config, dict):
+        config = {}
+    return _run_json(
+        prompt,
+        kind="tests",
+        threshold=config.get("severity_threshold"),
+        known_files=context.get("known_files"),
+        max_findings=config.get("max_findings"),
+    )
 
 
 _SECURITY_CATEGORY_HINT = (
@@ -582,7 +960,15 @@ def review_project(project, kind: str, config: dict) -> dict:
         "Set confidence 'confirmed' only when the shown files prove the issue; "
         "otherwise use 'potential' or 'suggestion'.\n" + _JSON_SCHEMA
     )
-    return _run_json(prompt, kind="security", threshold=config.get("severity_threshold"))
+    if not isinstance(config, dict):
+        config = {}
+    return _run_json(
+        prompt,
+        kind="security",
+        threshold=config.get("severity_threshold"),
+        known_files=context.get("known_files"),
+        max_findings=config.get("max_findings"),
+    )
 
 
 # --------------------------------------------------------------------------
