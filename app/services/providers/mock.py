@@ -2,7 +2,7 @@
 
 Used by the test suite and local development so the full pipeline (models,
 routes, SSE streaming, UI) can run without network access or API keys. It
-implements the same :class:`LLMProvider` contract as the real providers, which
+implements the same :Class:``LLMProvider`` contract as the real providers, which
 is what the shared contract tests exercise.
 """
 
@@ -19,6 +19,7 @@ from app.services.providers.base import (
     message_role,
     prepare_messages,
 )
+from app.services.token_usage import messages_text, usage_from_text
 
 
 class MockProvider(LLMProvider):
@@ -54,9 +55,14 @@ class MockProvider(LLMProvider):
         if self.delay:
             time.sleep(self.delay)
         prepared = prepare_messages(messages, supports_vision=self.supports_vision)
+        content = self._respond(prepared)
+        usage = usage_from_text(messages_text(prepared), content)
         return ProviderResponse(
-            content=self._respond(prepared),
+            content=content,
             model=model or self.models[0],
+            prompt_tokens=usage["prompt_tokens"],
+            completion_tokens=usage["completion_tokens"],
+            total_tokens=usage["total_tokens"],
             latency_seconds=time.perf_counter() - started,
         )
 
@@ -67,7 +73,8 @@ class MockProvider(LLMProvider):
         model: str | None = None,
         params: dict | None = None,
     ) -> Iterator[str]:
-        text = self._respond(prepare_messages(messages, supports_vision=self.supports_vision))
+        prepared = prepare_messages(messages, supports_vision=self.supports_vision)
+        text = self._respond(prepared)
         for word in text.split(" "):
             if self.delay:
                 time.sleep(self.delay)

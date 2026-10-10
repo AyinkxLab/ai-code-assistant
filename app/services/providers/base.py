@@ -81,6 +81,48 @@ def prepare_messages(messages: Iterable[Any], *, supports_vision: bool) -> list[
 
 
 @dataclass(frozen=True)
+class TokenUsage:
+    """Vendor-neutral token accounting for a single completion (issue #2)."""
+
+    prompt_tokens: int | None = None
+    completion_tokens: int | None = None
+    total_tokens: int | None = None
+
+    @classmethod
+    def from_counts(
+        cls,
+        prompt_tokens: int | None,
+        completion_tokens: int | None,
+        total_tokens: int | None = None,
+    ) -> TokenUsage:
+        """Build usage, deriving ``total_tokens`` when the provider omits it."""
+        if total_tokens is None and (prompt_tokens is not None or completion_tokens is not None):
+            total_tokens = (prompt_tokens or 0) + (completion_tokens or 0)
+        return cls(
+            prompt_tokens=prompt_tokens,
+            completion_tokens=completion_tokens,
+            total_tokens=total_tokens,
+        )
+
+    @property
+    def has_usage(self) -> bool:
+        """Whether any token counts were reported."""
+        return (
+            self.prompt_tokens is not None
+            or self.completion_tokens is not None
+            or self.total_tokens is not None
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        """Serialize the usage for logging/telemetry."""
+        return {
+            "prompt_tokens": self.prompt_tokens,
+            "completion_tokens": self.completion_tokens,
+            "total_tokens": self.total_tokens,
+        }
+
+
+@dataclass(frozen=True)
 class ProviderResponse:
     """Uniform, vendor-neutral result of a single completion."""
 
@@ -88,14 +130,30 @@ class ProviderResponse:
     model: str | None = None
     prompt_tokens: int | None = None
     completion_tokens: int | None = None
+    total_tokens: int | None = None
     latency_seconds: float | None = None
 
+    def __post_init__(self) -> None:
+        """Derive ``total_tokens`` when the provider reports only the parts.
+
+        Vendors such as OpenAI/Anthropic may omit the total, and most call sites
+        (audit logging, the message columns, ``to_dict``) read ``total_tokens``
+        directly, so it must never stay ``None`` while the parts are known.
+        ``TokenUsage.from_counts`` applies the same rule to the ``usage`` view.
+        """
+        if self.total_tokens is None and (
+            self.prompt_tokens is not None or self.completion_tokens is not None
+        ):
+            object.__setattr__(
+                self,
+                "total_tokens",
+                (self.prompt_tokens or 0) + (self.completion_tokens or 0),
+            )
+
     @property
-    def total_tokens(self) -> int | None:
-        """Total tokens used, or ``None`` when the provider reports no usage."""
-        if self.prompt_tokens is None and self.completion_tokens is None:
-            return None
-        return (self.prompt_tokens or 0) + (self.completion_tokens or 0)
+    def usage(self) -> TokenUsage:
+        """Token usage metadata for this completion (issue #2)."""
+        return TokenUsage.from_counts(self.prompt_tokens, self.completion_tokens, self.total_tokens)
 
     def to_dict(self) -> dict[str, Any]:
         """Serialize the response for logging/telemetry."""
