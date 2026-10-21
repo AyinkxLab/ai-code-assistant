@@ -36,7 +36,7 @@ from app.services.marketplace import (
     MarketplaceError,
     MarketplaceUnavailableError,
     filter_entries,
-    load_marketplace,
+    load_marketplace_catalog,
 )
 from app.services.permissions import (
     can,
@@ -1553,9 +1553,10 @@ def api_marketplace():
     """
     try:
         workspace = _marketplace_workspace()
-        catalog = load_marketplace(current_app.config)
+        loaded = load_marketplace_catalog(current_app.config)
     except MarketplaceError as exc:
         return _marketplace_error(exc)
+    catalog = loaded.catalog
 
     query = (request.args.get("q") or "").strip()
     capability = (request.args.get("capability") or "").strip()
@@ -1569,6 +1570,7 @@ def api_marketplace():
             "plugins": plugins,
             "pagination": pagination,
             "filters": {"q": query or None, "capability": capability or None},
+            "warnings": list(loaded.warnings),
             "ordering": ["id", "version"],
         }
     )
@@ -1580,11 +1582,17 @@ def api_marketplace_entry(plugin_id: str):
     """Return one advertised entry, optionally pinned to ``?version=``."""
     try:
         workspace = _marketplace_workspace()
-        catalog = load_marketplace(current_app.config)
-        entry = catalog.get(plugin_id, request.args.get("version"))
+        loaded = load_marketplace_catalog(current_app.config)
+        entry = loaded.catalog.get(plugin_id, request.args.get("version"))
     except MarketplaceEntryNotFoundError as exc:
         return jsonify({"error": str(exc), "code": "not_found"}), 404
     except MarketplaceError as exc:
         return _marketplace_error(exc)
 
-    return jsonify({"workspace": workspace, "entry": entry.to_dict()})
+    return jsonify(
+        {
+            "workspace": workspace,
+            "entry": entry.to_dict(),
+            "warnings": list(loaded.warnings),
+        }
+    )

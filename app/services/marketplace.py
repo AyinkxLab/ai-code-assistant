@@ -45,11 +45,15 @@ from packaging.version import Version
 
 from app.config import BASE_DIR
 from app.services.plugin_catalog import (
+    CATALOG_VERSION,
+    MAX_CATALOG_BYTES,
+    MAX_CATALOG_ENTRIES,
     CatalogEntry,
     CatalogError,
     CatalogUnavailableError,
     load_catalog_file,
     load_remote_catalog,
+    parse_catalog_entry,
 )
 from app.services.schema_validation import schema_errors
 
@@ -222,6 +226,101 @@ def load_marketplace(
     return MarketplaceCatalog(entries)
 
 
+#: Bounded warnings returned by the lenient loader (#376).
+MAX_MARKETPLACE_WARNINGS = 20
+
+
+@dataclass(frozen=True)
+class MarketplaceLoadResult:
+    """A lenient catalog load: valid entries plus bounded warnings."""
+
+    catalog: MarketplaceCatalog
+    warnings: tuple[str, ...] = ()
+
+
+def _read_local_document(path: str) -> dict[str, Any] | None:
+    """Read a local catalog, returning ``None`` for missing/unreadable files."""
+    try:
+        file_path = Path(path)
+        if not file_path.is_file() or file_path.stat().st_size > MAX_CATALOG_BYTES:
+            return None
+        raw = file_path.read_text(encoding="utf-8")
+    except OSError:
+        return None
+    try:
+        document = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise MarketplaceError(f"invalid catalog JSON: {exc}") from exc
+    if not isinstance(document, Mapping):
+        raise MarketplaceError("catalog must be a JSON object")
+    if document.get("version", CATALOG_VERSION) != CATALOG_VERSION:
+        raise MarketplaceError(
+            f"unsupported catalog version {document.get('version')!r} "
+            f"(expected {CATALOG_VERSION})"
+        )
+    entries = document.get("plugins")
+    if not isinstance(entries, list):
+        raise MarketplaceError("catalog 'plugins' must be a list")
+    if len(entries) > MAX_CATALOG_ENTRIES:
+        raise MarketplaceError(f"catalog must contain at most {MAX_CATALOG_ENTRIES} entries")
+    return document
+
+
+def _add_warning(warnings: list[str], message: str) -> None:
+    if len(warnings) < MAX_MARKETPLACE_WARNINGS:
+        warnings.append(message)
+
+
+def load_marketplace_catalog(
+    config: Mapping[str, Any],
+    *,
+    resolver: Any = None,
+    transport: Any = None,
+) -> MarketplaceLoadResult:
+    """Load a catalog leniently for discovery (#374/#376).
+
+    Missing or unreadable local files yield an **empty catalog without error**.
+    Invalid individual entries are skipped and reported as bounded warnings;
+    a malformed JSON document, wrong version, or non-list ``plugins`` still
+    raise :class:`MarketplaceError` so operators can fix it.
+
+    Remote catalogs use the same bounded transport as the strict loader.
+    """
+    if not config.get("PLUGIN_MARKETPLACE_ENABLED", True):
+        raise MarketplaceDisabledError("The plugin marketplace is disabled.")
+
+    warnings: list[str] = []
+    kind, value = _catalog_source(config)
+
+    if kind == "remote":
+        try:
+            catalog = load_remote_catalog(config, resolver=resolver, transport=transport)
+        except CatalogUnavailableError as exc:
+            _add_warning(warnings, str(exc))
+            return MarketplaceLoadResult(MarketplaceCatalog([]), tuple(warnings))
+        except CatalogError as exc:
+            raise MarketplaceError(str(exc)) from exc
+        entries = [_flatten(entry, index) for index, entry in enumerate(catalog.list_entries())]
+        return MarketplaceLoadResult(MarketplaceCatalog(entries), tuple(warnings))
+
+    document = _read_local_document(value)
+    if document is None:
+        _add_warning(
+            warnings,
+            f"catalog file is missing or unreadable: {Path(value).name}",
+        )
+        return MarketplaceLoadResult(MarketplaceCatalog([]), tuple(warnings))
+
+    entries: list[MarketplaceEntry] = []
+    for index, raw_entry in enumerate(document["plugins"]):
+        try:
+            entry = parse_catalog_entry(raw_entry)
+            entries.append(_flatten(entry, index))
+        except (CatalogError, MarketplaceError) as exc:
+            _add_warning(warnings, f"plugins[{index}]: {exc}")
+    return MarketplaceLoadResult(MarketplaceCatalog(entries), tuple(warnings))
+
+
 def filter_entries(
     catalog: MarketplaceCatalog,
     *,
@@ -251,12 +350,15 @@ def filter_entries(
 __all__ = [
     "DEFAULT_CATALOG_PATH",
     "MANIFEST_SCHEMA_PATH",
+    "MAX_MARKETPLACE_WARNINGS",
     "MarketplaceCatalog",
     "MarketplaceDisabledError",
     "MarketplaceEntry",
     "MarketplaceEntryNotFoundError",
     "MarketplaceError",
+    "MarketplaceLoadResult",
     "MarketplaceUnavailableError",
     "filter_entries",
     "load_marketplace",
+    "load_marketplace_catalog",
 ]
