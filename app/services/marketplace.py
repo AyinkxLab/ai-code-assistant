@@ -35,6 +35,7 @@ allowlisted, integrity-checked install path.
 from __future__ import annotations
 
 import json
+import threading
 from collections.abc import Mapping
 from dataclasses import dataclass
 from functools import lru_cache
@@ -65,19 +66,49 @@ MANIFEST_SCHEMA_PATH = BASE_DIR / "plugins" / "plugin.schema.json"
 
 
 class MarketplaceError(ValueError):
-    """The marketplace catalog is unavailable or invalid."""
+    """The marketplace catalog is unavailable or invalid.
+
+    Every error carries a stable ``code``, HTTP ``status`` and sanitized
+    ``user_message``. Raw details remain in ``str(exc)`` for logs and tests but
+    are never copied into an API response; use :func:`marketplace_error_payload`.
+    """
+
+    code = "invalid"
+    status = 400
+    user_message = "The plugin catalog is invalid. Check the catalog file and try again."
 
 
 class MarketplaceDisabledError(MarketplaceError):
     """The marketplace is disabled by configuration."""
 
+    code = "disabled"
+    status = 404
+    user_message = "The plugin marketplace is disabled."
+
 
 class MarketplaceUnavailableError(MarketplaceError):
     """The configured catalog cannot be read."""
 
+    code = "unavailable"
+    status = 404
+    user_message = "The plugin catalog is unavailable. Please try again later."
+
 
 class MarketplaceEntryNotFoundError(MarketplaceError):
     """The requested plugin is not advertised."""
+
+    code = "not_found"
+    status = 404
+    user_message = "The requested plugin is not in the marketplace."
+
+
+def marketplace_error_payload(exc: MarketplaceError) -> dict[str, str]:
+    """Return the UI-safe error payload for a marketplace failure.
+
+    Route handlers must use this instead of ``str(exc)`` so filesystem paths,
+    remote URLs and parser details never reach the browser.
+    """
+    return {"error": exc.user_message, "code": exc.code}
 
 
 @dataclass(frozen=True)
@@ -153,8 +184,11 @@ class MarketplaceCatalog:
 
 @lru_cache(maxsize=4)
 def _load_manifest_schema(path: str) -> Mapping[str, Any]:
-    with Path(path).open(encoding="utf-8") as handle:
-        schema = json.load(handle)
+    try:
+        with Path(path).open(encoding="utf-8") as handle:
+            schema = json.load(handle)
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise MarketplaceError(f"plugin manifest schema is unreadable: {exc}") from exc
     if not isinstance(schema, Mapping):
         raise MarketplaceError("plugins/plugin.schema.json must be a JSON object")
     return schema
@@ -195,6 +229,29 @@ def _catalog_source(config: Mapping[str, Any]) -> tuple[str, str]:
     return "file", str(DEFAULT_CATALOG_PATH)
 
 
+#: Process-local last-known-good catalogs, keyed by ``(source kind, source)``.
+#: An offline source falls back to its last good catalog instead of disappearing
+#: (#380). The cache is deliberately small and never persisted.
+_LAST_GOOD_CATALOGS: dict[tuple[str, str], MarketplaceCatalog] = {}
+_CATALOG_CACHE_LOCK = threading.Lock()
+
+
+def reset_marketplace_cache() -> None:
+    """Forget cached catalogs (tests and explicit configuration changes)."""
+    with _CATALOG_CACHE_LOCK:
+        _LAST_GOOD_CATALOGS.clear()
+
+
+def _remember_catalog(kind: str, value: str, catalog: MarketplaceCatalog) -> None:
+    with _CATALOG_CACHE_LOCK:
+        _LAST_GOOD_CATALOGS[(kind, value)] = catalog
+
+
+def _last_good_catalog(kind: str, value: str) -> MarketplaceCatalog | None:
+    with _CATALOG_CACHE_LOCK:
+        return _LAST_GOOD_CATALOGS.get((kind, value))
+
+
 def load_marketplace(
     config: Mapping[str, Any],
     *,
@@ -223,7 +280,9 @@ def load_marketplace(
         raise MarketplaceError(str(exc)) from exc
 
     entries = [_flatten(entry, index) for index, entry in enumerate(catalog.list_entries())]
-    return MarketplaceCatalog(entries)
+    result = MarketplaceCatalog(entries)
+    _remember_catalog(kind, value, result)
+    return result
 
 
 #: Bounded warnings returned by the lenient loader (#376).
@@ -232,10 +291,36 @@ MAX_MARKETPLACE_WARNINGS = 20
 
 @dataclass(frozen=True)
 class MarketplaceLoadResult:
-    """A lenient catalog load: valid entries plus bounded warnings."""
+    """A lenient catalog load: entries, bounded warnings and fallback state."""
 
     catalog: MarketplaceCatalog
     warnings: tuple[str, ...] = ()
+    stale: bool = False
+    unavailable: bool = False
+
+    @property
+    def state(self) -> str:
+        """Return ``ok``, ``empty``, ``stale`` or ``unavailable`` for the API."""
+        if self.stale:
+            return "stale"
+        if self.unavailable:
+            return "unavailable"
+        return "empty" if len(self.catalog) == 0 else "ok"
+
+
+def _unavailable_result(
+    kind: str,
+    value: str,
+    message: str,
+    warnings: list[str],
+) -> MarketplaceLoadResult:
+    """Return the last good catalog, or an empty one, for an offline source."""
+    _add_warning(warnings, message)
+    cached = _last_good_catalog(kind, value)
+    if cached is None:
+        return MarketplaceLoadResult(MarketplaceCatalog([]), tuple(warnings), unavailable=True)
+    _add_warning(warnings, "serving the last known good marketplace catalog")
+    return MarketplaceLoadResult(cached, tuple(warnings), stale=True)
 
 
 def _read_local_document(path: str) -> dict[str, Any] | None:
@@ -245,6 +330,8 @@ def _read_local_document(path: str) -> dict[str, Any] | None:
         if not file_path.is_file() or file_path.stat().st_size > MAX_CATALOG_BYTES:
             return None
         raw = file_path.read_text(encoding="utf-8")
+    except UnicodeDecodeError as exc:
+        raise MarketplaceError("catalog file must be UTF-8 encoded") from exc
     except OSError:
         return None
     try:
@@ -296,29 +383,33 @@ def load_marketplace_catalog(
         try:
             catalog = load_remote_catalog(config, resolver=resolver, transport=transport)
         except CatalogUnavailableError as exc:
-            _add_warning(warnings, str(exc))
-            return MarketplaceLoadResult(MarketplaceCatalog([]), tuple(warnings))
+            return _unavailable_result(kind, value, str(exc), warnings)
         except CatalogError as exc:
             raise MarketplaceError(str(exc)) from exc
         entries = [_flatten(entry, index) for index, entry in enumerate(catalog.list_entries())]
-        return MarketplaceLoadResult(MarketplaceCatalog(entries), tuple(warnings))
+        result = MarketplaceCatalog(entries)
+        _remember_catalog(kind, value, result)
+        return MarketplaceLoadResult(result, tuple(warnings))
 
     document = _read_local_document(value)
     if document is None:
-        _add_warning(
-            warnings,
+        return _unavailable_result(
+            kind,
+            value,
             f"catalog file is missing or unreadable: {Path(value).name}",
+            warnings,
         )
-        return MarketplaceLoadResult(MarketplaceCatalog([]), tuple(warnings))
 
     entries: list[MarketplaceEntry] = []
     for index, raw_entry in enumerate(document["plugins"]):
         try:
             entry = parse_catalog_entry(raw_entry)
             entries.append(_flatten(entry, index))
-        except (CatalogError, MarketplaceError) as exc:
+        except (ValueError, TypeError, KeyError) as exc:
             _add_warning(warnings, f"plugins[{index}]: {exc}")
-    return MarketplaceLoadResult(MarketplaceCatalog(entries), tuple(warnings))
+    result = MarketplaceCatalog(entries)
+    _remember_catalog(kind, value, result)
+    return MarketplaceLoadResult(result, tuple(warnings))
 
 
 def filter_entries(
@@ -361,4 +452,6 @@ __all__ = [
     "filter_entries",
     "load_marketplace",
     "load_marketplace_catalog",
+    "marketplace_error_payload",
+    "reset_marketplace_cache",
 ]
