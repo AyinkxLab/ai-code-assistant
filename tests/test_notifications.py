@@ -90,7 +90,15 @@ class TestPreferences:
         make_user()
         login()
         data = client.get("/workspaces/api/notifications/preferences").get_json()
-        for key in ("invitations", "mentions", "membership", "ai_events", "shares"):
+        for key in (
+            "invitations",
+            "mentions",
+            "membership",
+            "ai_events",
+            "shares",
+            "budget_alerts",
+            "billing_alerts",
+        ):
             assert data[key] is True
 
     def test_update_preference_persists(self, client, make_user, login):
@@ -121,6 +129,23 @@ class TestPreferences:
         client.put("/workspaces/api/notifications/preferences", json={"shares": False})
         suppressed = notify(user, "share", payload={"title": "Suppressed share"})
         assert suppressed is None
+
+    def test_billing_alert_preference_gates_delivery(self, client, app, make_user, login):
+        user = make_user()
+        login()
+        client.put("/workspaces/api/notifications/preferences", json={"billing_alerts": False})
+        assert notify(user, "billing_alert", payload={"title": "Invoice overdue"}) is None
+        # Budget/usage alerts are a separate category and remain enabled.
+        assert notify(user, "budget_alert", payload={"title": "Budget exceeded"}) is not None
+
+    def test_budget_alert_preference_gates_delivery(self, client, app, make_user, login):
+        user = make_user()
+        login()
+        client.put("/workspaces/api/notifications/preferences", json={"budget_alerts": False})
+        assert notify(user, "budget_alert", payload={"title": "Budget exceeded"}) is None
+        assert notify(user, "usage_alert", payload={"title": "Usage spike"}) is None
+        # Billing alerts are a separate category and remain enabled.
+        assert notify(user, "billing_alert", payload={"title": "Invoice overdue"}) is not None
 
     def test_preference_row_created_on_get(self, client, make_user, login):
         user = make_user()

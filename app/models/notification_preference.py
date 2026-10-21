@@ -19,6 +19,7 @@ PREF_MEMBERSHIP = "membership"
 PREF_AI_EVENTS = "ai_events"
 PREF_SHARES = "shares"
 PREF_BUDGET_ALERTS = "budget_alerts"
+PREF_BILLING_ALERTS = "billing_alerts"
 
 PREFERENCE_TYPES = (
     PREF_INVITATIONS,
@@ -27,6 +28,7 @@ PREFERENCE_TYPES = (
     PREF_AI_EVENTS,
     PREF_SHARES,
     PREF_BUDGET_ALERTS,
+    PREF_BILLING_ALERTS,
 )
 
 # Map notification type -> preference key. ``None`` means the notification is
@@ -39,6 +41,8 @@ TYPE_PREFERENCE_MAP = {
     "ai_event": PREF_AI_EVENTS,
     "share": PREF_SHARES,
     "budget_alert": PREF_BUDGET_ALERTS,
+    "usage_alert": PREF_BUDGET_ALERTS,
+    "billing_alert": PREF_BILLING_ALERTS,
     # Plugin update notifications reuse the app-events preference category
     # (there is no separate plugins switch); owners can opt out via ai_events.
     "plugin_update": PREF_AI_EVENTS,
@@ -60,6 +64,7 @@ class NotificationPreference(db.Model):
     ai_events = db.Column(db.Boolean, nullable=False, default=True)
     shares = db.Column(db.Boolean, nullable=False, default=True)
     budget_alerts = db.Column(db.Boolean, nullable=False, default=True)
+    billing_alerts = db.Column(db.Boolean, nullable=False, default=True)
     created_at = db.Column(
         db.DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC)
     )
@@ -79,6 +84,7 @@ class NotificationPreference(db.Model):
             "ai_events": self.ai_events,
             "shares": self.shares,
             "budget_alerts": self.budget_alerts,
+            "billing_alerts": self.billing_alerts,
         }
 
     def allows(self, notification_type: str) -> bool:
