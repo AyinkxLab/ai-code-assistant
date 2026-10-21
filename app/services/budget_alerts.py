@@ -20,8 +20,14 @@ from app.services.token_usage import BudgetAlertDeduplicator
 
 logger = logging.getLogger(__name__)
 
+#: Alert kind emitted when spend reaches the warning threshold (default 80%).
+ALERT_WARNING = "warning"
+
 #: Alert kind emitted when spend is above the configured limit.
 ALERT_OVER_BUDGET = "over_budget"
+
+#: Default warning threshold as a fraction of the limit.
+DEFAULT_WARN_RATIO = 0.8
 
 _deduplicator = BudgetAlertDeduplicator()
 
@@ -73,39 +79,94 @@ def _send_alert_email(alert: dict) -> bool:
         return False
 
 
-def check_budget_alerts(workspace_id, *, spend, limit, period) -> list[dict]:
-    """Return alerts for `workspace_id` for the given budget `period`.
+def check_budget_alerts(
+    workspace_id,
+    *,
+    spend,
+    limit,
+    period,
+    warn_ratio: float = DEFAULT_WARN_RATIO,
+) -> list[dict]:
+    """Return the budget threshold alerts crossed for `workspace_id` (#371).
 
     `spend` and `limit` are compared as numbers. A missing, zero or negative
-    limit means no budget is configured, so no alert is emitted. The same alert
-    (workspace + period + kind) fires at most once per period; starting a new
-    period resets deduplication through
-    :class:~class:~app.services.token_usage.BudgetAlertDeduplicator`.
+    limit means no budget is configured, so no alert is emitted.
 
-    When SMTP is configured and a billing recipient is set, the alert is also
-    emailed. Email failures never affect the returned alerts.
+    Alerts fire at the **warning** threshold (default 80% of the limit) and the
+    **over-budget** threshold (100%). Each threshold fires at most once per
+    workspace/period: a burst of usage yields one alert per crossed threshold,
+    and starting a new period resets deduplication. Jumping straight past the
+    warning to over-budget still emits both crossed thresholds once.
+
+    When SMTP is configured and a billing recipient is set, the over-budget
+    alert is also emailed. Email failures never affect the returned alerts.
     """
     try:
         spend_value = float(spend or 0)
         limit_value = float(limit or 0)
+        ratio = float(warn_ratio)
     except (TypeError, ValueError):
         return []
-    if limit_value <= 0 or spend_value <= limit_value:
+    if limit_value <= 0:
         return []
 
-    period_key = str(period or "")
-    if not _deduplicator.check_and_mark((workspace_id, period_key), ALERT_OVER_BUDGET):
+    period_key = (workspace_id, str(period or ""))
+    reached = spend_value / limit_value
+    alerts: list[dict] = []
+
+    def build(kind: str) -> dict:
+        return {
+            "workspace_id": workspace_id,
+            "kind": kind,
+            "period": str(period or ""),
+            "spend": spend_value,
+            "limit": limit_value,
+            "ratio": round(reached, 6),
+            "over_by": round(max(0.0, spend_value - limit_value), 6),
+        }
+
+    if reached >= 1.0:
+        # Crossing the limit implies the warning was also crossed.
+        if _deduplicator.check_and_mark(period_key, ALERT_WARNING):
+            alerts.append(build(ALERT_WARNING))
+        if _deduplicator.check_and_mark(period_key, ALERT_OVER_BUDGET):
+            over = build(ALERT_OVER_BUDGET)
+            alerts.append(over)
+            _send_alert_email(over)
+    elif reached >= ratio and _deduplicator.check_and_mark(period_key, ALERT_WARNING):
+        alerts.append(build(ALERT_WARNING))
+
+    return alerts
+
+
+def notify_budget_alerts(alerts, users, *, workspace=None, link=None) -> list:
+    """Create in-app notifications for `users`, honouring their preferences.
+
+    A user who has opted out of ``budget_alerts`` receives nothing; this
+    delegates the preference check to
+    :func:`app.services.notifications.notify`. Returns the created
+    notifications.
+    """
+    if not alerts:
         return []
-    alert = {
-        "workspace_id": workspace_id,
-        "kind": ALERT_OVER_BUDGET,
-        "period": period_key,
-        "spend": spend_value,
-        "limit": limit_value,
-        "over_by": round(spend_value - limit_value, 6),
-    }
-    _send_alert_email(alert)
-    return [alert]
+    from app.services.notifications import notify
+
+    created = []
+    for user in users:
+        if user is None:
+            continue
+        for alert in alerts:
+            notification = notify(
+                user,
+                "budget_alert",
+                workspace=workspace if workspace is not None else alert.get("workspace_id"),
+                payload=alert,
+                link=link,
+                email=alert.get("kind") == ALERT_OVER_BUDGET,
+            )
+            if notification is not None:
+                created.append(notification)
+    return created
 
 
 def reset() -> None:
@@ -114,4 +175,11 @@ def reset() -> None:
     _deduplicator = BudgetAlertDeduplicator()
 
 
-##__ = ["ALERT_OVER_BUDGET", "check_budget_alerts", "reset"]
+__all__ = [
+    "ALERT_OVER_BUDGET",
+    "ALERT_WARNING",
+    "DEFAULT_WARN_RATIO",
+    "check_budget_alerts",
+    "notify_budget_alerts",
+    "reset",
+]
