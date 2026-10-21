@@ -16,6 +16,7 @@ from werkzeug.utils import secure_filename
 from app.extensions import db
 from app.models import AnalyzedFile, Conversation, FileAnalysis, Message
 from app.services import analysis, budgets, ratelimit, token_usage, usage_ledger
+from app.observability.usage_logging import UsageTimer
 from app.services.github import (
     GitHubError,
     get_github_client,
