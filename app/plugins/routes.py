@@ -31,12 +31,11 @@ from app.plugins import bp
 from app.services.capabilities import Capability, CapabilityStore
 from app.services.events import emit_event
 from app.services.marketplace import (
-    MarketplaceDisabledError,
     MarketplaceEntryNotFoundError,
     MarketplaceError,
-    MarketplaceUnavailableError,
     filter_entries,
     load_marketplace_catalog,
+    marketplace_error_payload,
 )
 from app.services.permissions import (
     can,
@@ -1505,12 +1504,8 @@ def _marketplace_workspace() -> dict | None:
 
 
 def _marketplace_error(exc: MarketplaceError):
-    """Map service errors to read-only API responses (never leak file paths)."""
-    if isinstance(exc, MarketplaceDisabledError):
-        return jsonify({"error": "The plugin marketplace is disabled.", "code": "disabled"}), 404
-    if isinstance(exc, MarketplaceUnavailableError):
-        return jsonify({"error": "The plugin catalog is unavailable.", "code": "unavailable"}), 404
-    return jsonify({"error": f"Invalid plugin catalog: {exc}", "code": "invalid"}), 400
+    """Map typed catalog errors to UI-safe responses (never leak file paths)."""
+    return jsonify(marketplace_error_payload(exc)), exc.status
 
 
 def _marketplace_page(entries):
@@ -1566,6 +1561,9 @@ def api_marketplace():
     return jsonify(
         {
             "workspace": workspace,
+            "state": loaded.state,
+            "stale": loaded.stale,
+            "unavailable": loaded.unavailable,
             "entries": plugins,
             "plugins": plugins,
             "pagination": pagination,
@@ -1592,6 +1590,9 @@ def api_marketplace_entry(plugin_id: str):
     return jsonify(
         {
             "workspace": workspace,
+            "state": loaded.state,
+            "stale": loaded.stale,
+            "unavailable": loaded.unavailable,
             "entry": entry.to_dict(),
             "warnings": list(loaded.warnings),
         }

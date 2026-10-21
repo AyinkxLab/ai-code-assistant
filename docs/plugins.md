@@ -505,6 +505,14 @@ shape is still a `400` so operators can fix it. The installer catalog used by
 advertised manifest is validated against
 [`plugins/plugin.schema.json`](../plugins/plugin.schema.json).
 
+Responses also carry a `state` so callers can distinguish an ordinary empty
+catalog (`empty`), an offline source with no previous success (`unavailable`),
+and an offline source served from the process-local last known good catalog
+(`stale`); `stale` and `unavailable` are booleans, and warnings explain the
+fallback. A non-UTF-8 file is an `invalid` 400, not a 500. Error payloads use the
+stable `{"error", "code"}` shape from `marketplace_error_payload`, so filesystem
+paths and parser details are never echoed to the browser (#380).
+
 Each returned entry contains only `id`, `name`, `version`, `description`,
 `author`, `capabilities`, `permissions`, `dependencies`, `compatibility`,
 `integrity`, and `source` (plus `signature` when present). Catalog data is
