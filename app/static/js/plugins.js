@@ -357,8 +357,12 @@
       return;
     }
     btn.disabled = true;
-    status.hidden = false;
-    status.textContent = "Validating manifest…";
+    if (MARKETPLACE && typeof MARKETPLACE.busyOn === "function") {
+      MARKETPLACE.busyOn(status, "Installing and validating the manifest\u2026");
+    } else {
+      status.hidden = false;
+      status.textContent = "Installing and validating the manifest\u2026";
+    }
     api("/plugins/api/workspaces/" + WORKSPACE_ID + "/plugins/install", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -367,12 +371,20 @@
       .then(function () {
         flash("Plugin installed.", "success");
         input.value = "";
-        status.hidden = true;
+        if (MARKETPLACE && typeof MARKETPLACE.busyOff === "function") {
+          MARKETPLACE.busyOff(status);
+        } else {
+          status.hidden = true;
+        }
         loadPlugins();
       })
       .catch(function (error) {
-        status.hidden = true;
-        flash(error.message, "error");
+        if (MARKETPLACE && typeof MARKETPLACE.busyError === "function") {
+          MARKETPLACE.busyError(status, error);
+        } else {
+          status.hidden = true;
+          flash(error.message, "error");
+        }
       })
       .finally(function () { btn.disabled = false; });
   }
