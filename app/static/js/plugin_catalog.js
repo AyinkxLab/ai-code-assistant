@@ -396,6 +396,44 @@
     }
   }
 
+  function currentFilters() {
+    var search = document.getElementById("plugin-catalog-search");
+    var capability = document.getElementById("plugin-catalog-capability");
+    return {
+      q: search ? String(search.value || "").trim() : "",
+      capability: capability ? String(capability.value || "") : "",
+    };
+  }
+
+  function bindFilters() {
+    var search = document.getElementById("plugin-catalog-search");
+    if (search && !search.dataset.bound) {
+      search.dataset.bound = "1";
+      var timer = null;
+      search.addEventListener("input", function () {
+        window.clearTimeout(timer);
+        timer = window.setTimeout(function () {
+          loadCatalog(state.workspaceId, {
+            page: 1,
+            canManage: state.canManage,
+            onChanged: state.onChanged,
+          });
+        }, 250);
+      });
+    }
+    var capability = document.getElementById("plugin-catalog-capability");
+    if (capability && !capability.dataset.bound) {
+      capability.dataset.bound = "1";
+      capability.addEventListener("change", function () {
+        loadCatalog(state.workspaceId, {
+          page: 1,
+          canManage: state.canManage,
+          onChanged: state.onChanged,
+        });
+      });
+    }
+  }
+
   function loadCatalog(workspaceId, options) {
     options = options || {};
     state.workspaceId = workspaceId || null;
@@ -413,6 +451,7 @@
     }
     section.hidden = false;
     if (pager) pager.innerHTML = "";
+    bindFilters();
     showMessage("", "info");
 
     if (MARKETPLACE && typeof MARKETPLACE.stateHtml === "function") {
@@ -423,13 +462,18 @@
       container.innerHTML = '<p class="empty-note">Loading marketplace\u2026</p>';
     }
 
+    var filters = currentFilters();
     var url =
       "/plugins/api/workspaces/" +
       encodeURIComponent(workspaceId) +
       "/catalog?page=" +
       encodeURIComponent(state.page) +
       "&limit=" +
-      PAGE_LIMIT;
+      PAGE_LIMIT +
+      "&q=" +
+      encodeURIComponent(filters.q) +
+      "&capability=" +
+      encodeURIComponent(filters.capability);
 
     api(url)
       .then(function (data) {
