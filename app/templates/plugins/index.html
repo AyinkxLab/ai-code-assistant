@@ -37,6 +37,12 @@
   <div class="project-list" id="plugin-marketplace-section" hidden>
     <h2>Marketplace</h2>
     <p class="field-hint">Browse the operator-controlled catalog. Members can view trust, compatibility, dependencies and artifact integrity; only workspace owners can install, update or roll back.</p>
+    <div class="plugin-catalog-filters">
+      <label class="field-label" for="plugin-catalog-search">Search</label>
+      <input id="plugin-catalog-search" class="field-input" type="search" placeholder="Name, author, id or capability" autocomplete="off">
+      <label class="field-label" for="plugin-catalog-capability">Capability</label>
+      <input id="plugin-catalog-capability" class="field-input" type="text" placeholder="e.g. PROJECT_READ" autocomplete="off">
+    </div>
     <div id="plugin-catalog-message" class="flash" role="status" hidden></div>
     <div id="plugin-catalog" aria-live="polite">
       <p class="empty-note">Select a workspace to browse the marketplace.</p>
