@@ -273,6 +273,15 @@ def _parse_days():
         return None, (jsonify({"error": str(exc), "kind": "invalid"}), 400)
 
 
+def _parse_filters() -> dict:
+    """Read the optional source/provider/model filters from the query string."""
+    return {
+        "source": usage_dashboards.normalize_filter(request.args.get("source")),
+        "provider": usage_dashboards.normalize_filter(request.args.get("provider")),
+        "model": usage_dashboards.normalize_filter(request.args.get("model")),
+    }
+
+
 def _dashboard_refusal():
     return jsonify({"error": "Usage dashboard not found.", "kind": "not_found"}), 404
 
@@ -296,8 +305,9 @@ def usage_page():
     workspace_id = request.args.get("workspace_id", type=int)
     if workspace_id is not None and not can_access_workspace_billing(workspace_id, current_user):
         abort(404)
+    filters = _parse_filters()
     payload = usage_dashboards.dashboard(
-        user_id=current_user.id, workspace_id=workspace_id, days=days
+        user_id=current_user.id, workspace_id=workspace_id, days=days, **filters
     )
     workspaces = (
         Workspace.query.filter_by(user_id=current_user.id)
@@ -310,6 +320,7 @@ def usage_page():
         days=days,
         workspace_id=workspace_id,
         workspaces=workspaces,
+        filters=filters,
     )
 
 
@@ -320,7 +331,8 @@ def api_usage_dashboard():
     days, error = _parse_days()
     if error is not None:
         return error
-    return jsonify(usage_dashboards.dashboard(user_id=current_user.id, days=days))
+    filters = _parse_filters()
+    return jsonify(usage_dashboards.dashboard(user_id=current_user.id, days=days, **filters))
 
 
 @bp.route("/api/usage/dashboard.csv")
@@ -330,7 +342,8 @@ def api_usage_dashboard_csv():
     days, error = _parse_days()
     if error is not None:
         return error
-    text, truncated = usage_dashboards.export_csv(user_id=current_user.id, days=days)
+    filters = _parse_filters()
+    text, truncated = usage_dashboards.export_csv(user_id=current_user.id, days=days, **filters)
     return _csv_response(text, truncated, "usage.csv")
 
 
@@ -343,7 +356,8 @@ def api_workspace_usage(workspace_id: int):
     days, error = _parse_days()
     if error is not None:
         return error
-    return jsonify(usage_dashboards.dashboard(workspace_id=workspace_id, days=days))
+    filters = _parse_filters()
+    return jsonify(usage_dashboards.dashboard(workspace_id=workspace_id, days=days, **filters))
 
 
 @bp.route("/api/workspaces/<int:workspace_id>/usage.csv")
@@ -355,7 +369,8 @@ def api_workspace_usage_csv(workspace_id: int):
     days, error = _parse_days()
     if error is not None:
         return error
-    text, truncated = usage_dashboards.export_csv(workspace_id=workspace_id, days=days)
+    filters = _parse_filters()
+    text, truncated = usage_dashboards.export_csv(workspace_id=workspace_id, days=days, **filters)
     return _csv_response(text, truncated, f"workspace-{workspace_id}-usage.csv")
 
 

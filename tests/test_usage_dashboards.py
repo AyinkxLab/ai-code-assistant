@@ -293,3 +293,99 @@ class TestAdminView:
 
     def test_unauthenticated_is_redirected_to_login(self, client):
         assert client.get("/admin/usage").status_code == 302
+
+
+class TestDashboardFilters:
+    def test_filters_narrow_every_panel(self, db, make_user):
+        user = make_user(username="owner", email="owner@example.com")
+        _record(user, source="chat", provider="openai", model="gpt-4o")
+        _record(
+            user,
+            source="analysis",
+            provider="anthropic",
+            model="claude",
+            prompt_tokens=20,
+            completion_tokens=10,
+            cost_estimate=0.02,
+        )
+
+        payload = usage_dashboards.dashboard(user_id=user.id, source="analysis", now=NOW)
+
+        assert payload["totals"]["count"] == 1
+        assert payload["totals"]["total_tokens"] == 30
+        assert [row["provider"] for row in payload["by_provider"]] == ["anthropic"]
+        assert [row["model"] for row in payload["by_model"]] == ["claude"]
+        sources = {row["source"]: row for row in payload["by_source"]}
+        assert sources["analysis"]["total_tokens"] == 30
+        assert sources["chat"]["total_tokens"] == 0
+        assert [row["date"] for row in payload["daily"]] == ["2026-10-20"]
+        assert payload["filters"] == {"source": "analysis", "provider": None, "model": None}
+        assert payload["scope"]["filters"]["source"] == "analysis"
+        # Available values still describe the whole window so the UI can switch.
+        assert payload["available_filters"]["sources"] == ["analysis", "chat"]
+
+    def test_provider_and_model_filters_combine(self, db, make_user):
+        user = make_user(username="owner", email="owner@example.com")
+        _record(user, provider="openai", model="gpt-4o")
+        _record(
+            user, provider="openai", model="gpt-4o-mini", prompt_tokens=20, completion_tokens=10
+        )
+        _record(user, provider="anthropic", model="claude", prompt_tokens=30, completion_tokens=15)
+
+        payload = usage_dashboards.dashboard(
+            user_id=user.id, provider="openai", model="gpt-4o-mini", now=NOW
+        )
+
+        assert payload["totals"]["count"] == 1
+        assert payload["totals"]["total_tokens"] == 30
+        assert [row["model"] for row in payload["by_model"]] == ["gpt-4o-mini"]
+
+    def test_blank_filters_mean_no_filter(self, db, make_user):
+        user = make_user(username="owner", email="owner@example.com")
+        _record(user, source="chat")
+        _record(user, source="analysis")
+
+        payload = usage_dashboards.dashboard(user_id=user.id, source="   ", now=NOW)
+
+        assert payload["filters"]["source"] is None
+        assert payload["totals"]["count"] == 2
+
+    def test_export_applies_the_same_filters(self, db, make_user):
+        user = make_user(username="owner", email="owner@example.com")
+        _record(user, source="chat", cost_estimate=0.01)
+        _record(user, source="analysis", cost_estimate=0.02)
+
+        text, truncated = usage_dashboards.export_csv(user_id=user.id, source="analysis", now=NOW)
+
+        assert truncated is False
+        lines = text.strip().splitlines()
+        assert len(lines) == 2
+        assert "analysis" in lines[1]
+        assert "chat" not in lines[1]
+
+    def test_page_persists_filters_in_the_url(self, client, make_user, login):
+        user = make_user(username="owner", email="owner@example.com")
+        _record(user, source="chat", provider="openai", model="gpt-4o")
+        login(email="owner@example.com")
+
+        response = client.get("/billing/usage?days=30&source=chat&provider=openai&model=gpt-4o")
+
+        assert response.status_code == 200
+        html = response.get_data(as_text=True)
+        assert 'value="chat" selected' in html
+        assert 'value="openai" selected' in html
+        assert 'value="gpt-4o" selected' in html
+        assert "source=chat" in html
+
+    def test_api_returns_the_selected_filters(self, client, make_user, login):
+        user = make_user(username="owner", email="owner@example.com")
+        _record(user, source="chat")
+        _record(user, source="analysis", prompt_tokens=20, completion_tokens=10)
+        login(email="owner@example.com")
+
+        response = client.get("/billing/api/usage/dashboard?source=analysis")
+
+        assert response.status_code == 200
+        payload = response.get_json()
+        assert payload["totals"]["count"] == 1
+        assert payload["filters"]["source"] == "analysis"

@@ -24,12 +24,33 @@
     {% endfor %}
   </select>
   {% endif %}
+  <label for="source">Source</label>
+  <select id="source" name="source">
+    <option value="">All sources</option>
+    {% for value in dashboard.available_filters.sources %}
+    <option value="{{ value }}" {% if dashboard.filters.source == value %}selected{% endif %}>{{ value }}</option>
+    {% endfor %}
+  </select>
+  <label for="provider">Provider</label>
+  <select id="provider" name="provider">
+    <option value="">All providers</option>
+    {% for value in dashboard.available_filters.providers %}
+    <option value="{{ value }}" {% if dashboard.filters.provider == value %}selected{% endif %}>{{ value }}</option>
+    {% endfor %}
+  </select>
+  <label for="model">Model</label>
+  <select id="model" name="model">
+    <option value="">All models</option>
+    {% for value in dashboard.available_filters.models %}
+    <option value="{{ value }}" {% if dashboard.filters.model == value %}selected{% endif %}>{{ value }}</option>
+    {% endfor %}
+  </select>
   <button class="btn" type="submit">Apply</button>
 </form>
 
 <p>
   <a class="btn"
-     href="{% if workspace_id %}{{ url_for('billing.api_workspace_usage_csv', workspace_id=workspace_id, days=days) }}{% else %}{{ url_for('billing.api_usage_dashboard_csv', days=days) }}{% endif %}">
+     href="{% if workspace_id %}{{ url_for('billing.api_workspace_usage_csv', workspace_id=workspace_id, days=days, source=dashboard.filters.source or '', provider=dashboard.filters.provider or '', model=dashboard.filters.model or '') }}{% else %}{{ url_for('billing.api_usage_dashboard_csv', days=days, source=dashboard.filters.source or '', provider=dashboard.filters.provider or '', model=dashboard.filters.model or '') }}{% endif %}">
     Download CSV
   </a>
 </p>
