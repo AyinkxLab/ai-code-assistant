@@ -17,6 +17,7 @@ from app.models import Budget, Workspace
 from app.services import audit, billing_reconciliation, budgets, permissions, usage_dashboards
 from app.services.billing_reconciliation import BillingImportError
 from app.services.budget_access import can_access_workspace_billing
+from app.services.invoices import InvoiceError, generate_invoice
 
 
 def _budget_workspaces():
@@ -356,3 +357,79 @@ def api_workspace_usage_csv(workspace_id: int):
         return error
     text, truncated = usage_dashboards.export_csv(workspace_id=workspace_id, days=days)
     return _csv_response(text, truncated, f"workspace-{workspace_id}-usage.csv")
+
+
+# ---------------------------------------------------------------------------
+# Monthly invoice generation (#482)
+# ---------------------------------------------------------------------------
+
+
+def _invoice_for(scope: str, scope_id: int, period: str):
+    """Generate an invoice and return a JSON response, or an error response."""
+    try:
+        invoice = generate_invoice(scope=scope, scope_id=scope_id, period=period)
+    except InvoiceError as exc:
+        return jsonify({"error": str(exc), "kind": exc.kind}), 400
+    return jsonify(invoice)
+
+
+@bp.route("/api/invoices")
+@login_required
+def api_list_invoices():
+    """Return a draft invoice for the signed-in user for a billing period.
+
+    Query parameters
+    ----------------
+    period : str
+        Required. A ``YYYY-MM`` calendar month, e.g. ``2026-10``.
+    workspace_id : int, optional
+        When supplied the invoice is scoped to that workspace instead of the
+        caller's user account. The caller must own the workspace or be a site
+        administrator.
+
+    Returns
+    -------
+    200
+        JSON invoice document (``draft: true``).
+    400
+        ``{"error": "...", "kind": "..."}`` when the period is missing or invalid.
+    403 / 404
+        When ``workspace_id`` is provided but the caller cannot access it.
+    """
+    period = request.args.get("period", "").strip()
+    if not period:
+        return jsonify({"error": "period is required.", "kind": "invalid"}), 400
+
+    workspace_id = request.args.get("workspace_id", type=int)
+    if workspace_id is not None:
+        if not can_access_workspace_billing(workspace_id, current_user):
+            return jsonify({"error": "Invoice not found.", "kind": "not_found"}), 404
+        return _invoice_for("workspace", workspace_id, period)
+
+    return _invoice_for("user", current_user.id, period)
+
+
+@bp.route("/api/invoices/<period>")
+@login_required
+def api_get_invoice(period: str):
+    """Return a draft invoice for the signed-in user for ``<period>``.
+
+    The period must be ``YYYY-MM``. An optional ``workspace_id`` query parameter
+    scopes the invoice to a workspace the caller can access.
+
+    Returns
+    -------
+    200
+        JSON invoice document (``draft: true``).
+    400
+        When the period string is malformed.
+    404
+        When ``workspace_id`` is provided but the caller cannot access it.
+    """
+    workspace_id = request.args.get("workspace_id", type=int)
+    if workspace_id is not None:
+        if not can_access_workspace_billing(workspace_id, current_user):
+            return jsonify({"error": "Invoice not found.", "kind": "not_found"}), 404
+        return _invoice_for("workspace", workspace_id, period)
+
+    return _invoice_for("user", current_user.id, period)
