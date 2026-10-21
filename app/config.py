@@ -114,6 +114,13 @@ class Config:
     # Pre-flight token/cost estimate (issue #104). The rate is only used to turn
     # an estimated token count into a rough figure shown before sending.
     LLM_ESTIMATE_USD_PER_1K_TOKENS = float(os.getenv("LLM_ESTIMATE_USD_PER_1K_TOKENS", "0.002"))
+    # Optional model identifier used by pre-flight estimates. When set, the
+    # price table is used; otherwise the legacy per-1k estimate rate applies.
+    LLM_MODEL = os.getenv("LLM_MODEL", "")
+    # Optional JSON overlay for the provider/model price table (#367/#438).
+    # Invalid JSON or entries are logged and ignored at startup; requests keep
+    # using the safe defaults. See app/services/pricing.py.
+    LLM_PRICE_TABLE = os.getenv("LLM_PRICE_TABLE", "")
     # Provider billing reconciliation (Phase 10). Operators import a provider's
     # reported monthly spend from a bounded CSV and it is compared against the
     # token-based estimate. The estimate is recomputed on read and is never

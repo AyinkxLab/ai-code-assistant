@@ -35,6 +35,27 @@ Costs are rounded with `ROUND_HALF_UP` to six decimal places
 (`COST_PRECISION`) — see [Cost precision](cost-precision.md). Token counts are
 clamped to `MAX_TOKEN_COUNT` before costing so implausible input stays finite.
 
+### Configuring the table
+
+`LLM_PRICE_TABLE` accepts a JSON overlay keyed by `provider/model`; entries not
+listed keep the shipped defaults:
+
+```json
+{
+  "openai/gpt-4o": {"input_per_1k_usd": 0.0025, "output_per_1k_usd": 0.01},
+  "mock/*": {"input_per_1k_usd": 0.0, "output_per_1k_usd": 0.0}
+}
+```
+
+Each entry must be an object with non-negative finite `input_per_1k_usd` and
+`output_per_1k_usd` numbers. Malformed JSON, a bad key, or an invalid rate is
+reported at startup (`PRICE_TABLE_ERROR` + an error log) and the application
+falls back to the shipped estimates; requests are never broken by a bad table.
+`app/services/cost.py` turns a usage record into a labelled estimate
+(`cost_is_estimate`, `token_source: reported|estimated`, `priced`), returning
+`None` for unknown models. Pre-flight estimates use the table when `LLM_MODEL`
+is set, otherwise the legacy `LLM_ESTIMATE_USD_PER_1K_TOKENS` rate is kept.
+
 ### Workspace price overrides
 
 Workspace owners can manage provider/model overrides (issue #442):
@@ -137,7 +158,9 @@ workspace, and org-wide) are bounded to 5,000 rows / 2 MiB and set
 | `CURRENCY_CODE` | `USD` | Currency code shown next to every cost figure. |
 | `CURRENCY_SYMBOL` | `$` | Display symbol. |
 | `CURRENCY_DECIMAL_PLACES` | `4` | Display precision (stored costs use 6 decimals). |
-| `LLM_ESTIMATE_USD_PER_1K_TOKENS` | `0.002` | Fallback rate used by billing reconciliation when costing historical tokens. |
+| `LLM_ESTIMATE_USD_PER_1K_TOKENS` | `0.002` | Fallback rate used when no `LLM_MODEL` is configured and by billing reconciliation. |
+| `LLM_MODEL` | empty | Pre-flight estimate model; when set, the provider/model price table is used. |
+| `LLM_PRICE_TABLE` | empty | Optional JSON overlay for provider/model prices. Invalid configuration logs an error, sets `PRICE_TABLE_ERROR`, and falls back to defaults. |
 | `BUDGET_ENFORCEMENT_ENABLED` | `1` | Evaluates budgets before LLM calls; disable only for local debugging. |
 | `BUDGET_DEFAULT_WARN_THRESHOLD` | `0.8` | Default warning fraction for new budgets. |
 | `BILLING_IMPORT_MAX_BYTES` | `1048576` | Maximum billing CSV upload size. |

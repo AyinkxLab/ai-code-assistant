@@ -797,11 +797,10 @@ def estimate_tokens(text: str | None) -> int:
 
 
 def _estimate_cost(tokens: int) -> float:
-    """Estimated cost for ``tokens`` using the configured per-1k rate."""
-    from flask import current_app
+    """Estimated cost for pre-flight ``tokens`` from the price table/rate."""
+    from app.services.cost import estimate_preflight_cost
 
-    rate = float(current_app.config.get("LLM_ESTIMATE_USD_PER_1K_TOKENS", 0.0) or 0.0)
-    return round(tokens / 1000 * rate, 6)
+    return estimate_preflight_cost(tokens)
 
 
 def _cost_payload(tokens: int) -> dict:

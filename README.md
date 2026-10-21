@@ -101,6 +101,8 @@ from a documented price table, not provider invoices.
 | `BILLING_IMPORT_MAX_BYTES` | `1048576` | Maximum provider billing CSV upload size. |
 | `BILLING_IMPORT_MAX_ROWS` | `5000` | Maximum billing CSV rows. |
 | `CURRENCY_CODE` | `USD` | Currency code shown on every cost figure. |
+| `LLM_MODEL` | empty | Pre-flight estimate model; when set, the price table is used. |
+| `LLM_PRICE_TABLE` | empty | Optional JSON provider/model price overlay; invalid values log and fall back safely. |
 
 See [Observability](docs/observability.md) for the ledger, metrics, dashboards,
 and export contract, and [Billing](docs/billing.md) for the price table,
