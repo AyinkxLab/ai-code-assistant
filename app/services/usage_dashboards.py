@@ -66,12 +66,23 @@ def _window_start(days: int, now: datetime | None) -> datetime:
     return current - timedelta(days=days)
 
 
+def normalize_filter(value) -> str | None:
+    """Trim a query-string filter; blank means "no filter"."""
+    if value is None:
+        return None
+    text = str(value).strip()
+    return text or None
+
+
 def query_records(
     *,
     user_id: int | None = None,
     workspace_id: int | None = None,
     days: int = DEFAULT_WINDOW_DAYS,
     now: datetime | None = None,
+    source: str | None = None,
+    provider: str | None = None,
+    model: str | None = None,
 ) -> list[UsageRecord]:
     """Return ledger rows inside the window, in deterministic order."""
     since = _window_start(days, now)
@@ -80,7 +91,39 @@ def query_records(
         query = query.filter(UsageRecord.user_id == user_id)
     if workspace_id is not None:
         query = query.filter(UsageRecord.workspace_id == workspace_id)
+    if source:
+        query = query.filter(UsageRecord.source == source)
+    if provider:
+        query = query.filter(UsageRecord.provider == provider)
+    if model:
+        query = query.filter(UsageRecord.model == model)
     return query.order_by(UsageRecord.created_at, UsageRecord.id).all()
+
+
+def available_filters(
+    *,
+    user_id: int | None = None,
+    workspace_id: int | None = None,
+    days: int = DEFAULT_WINDOW_DAYS,
+    now: datetime | None = None,
+) -> dict:
+    """Distinct filter values in the current scope/window (before filtering)."""
+    records = query_records(user_id=user_id, workspace_id=workspace_id, days=days, now=now)
+
+    def distinct(attribute: str) -> list[str]:
+        return sorted(
+            {
+                _label(getattr(record, attribute, None))
+                for record in records
+                if getattr(record, attribute, None) not in (None, "")
+            }
+        )
+
+    return {
+        "sources": distinct("source"),
+        "providers": distinct("provider"),
+        "models": distinct("model"),
+    }
 
 
 def _label(value, fallback: str = "unknown") -> str:
@@ -135,19 +178,41 @@ def dashboard(
     workspace_id: int | None = None,
     days: int = DEFAULT_WINDOW_DAYS,
     now: datetime | None = None,
+    source: str | None = None,
+    provider: str | None = None,
+    model: str | None = None,
 ) -> dict:
     """Compute a dashboard payload from stored usage rows.
 
-    Empty scopes return zero totals and empty breakdowns; the shape is stable so
-    templates and clients can render empty states without special cases.
+    The optional ``source``/``provider``/``model`` filters are applied to every
+    panel (totals, breakdowns and the daily series) so the whole page describes
+    the same slice. Empty scopes return zero totals and empty breakdowns; the
+    shape is stable so templates and clients can render empty states without
+    special cases.
     """
-    records = query_records(user_id=user_id, workspace_id=workspace_id, days=days, now=now)
+    filters = {
+        "source": normalize_filter(source),
+        "provider": normalize_filter(provider),
+        "model": normalize_filter(model),
+    }
+    records = query_records(
+        user_id=user_id,
+        workspace_id=workspace_id,
+        days=days,
+        now=now,
+        **filters,
+    )
     payload = _payload(records)
+    payload["filters"] = filters
+    payload["available_filters"] = available_filters(
+        user_id=user_id, workspace_id=workspace_id, days=days, now=now
+    )
     payload["scope"] = {
         "type": "workspace" if workspace_id is not None else "user",
         "user_id": user_id,
         "workspace_id": workspace_id,
         "days": days,
+        "filters": filters,
     }
     return payload
 
@@ -167,6 +232,9 @@ def export_csv(
     workspace_id: int | None = None,
     days: int = DEFAULT_WINDOW_DAYS,
     now: datetime | None = None,
+    source: str | None = None,
+    provider: str | None = None,
+    model: str | None = None,
     max_rows: int = MAX_CSV_ROWS,
     max_bytes: int = MAX_CSV_BYTES,
 ) -> tuple[str, bool]:
@@ -174,9 +242,18 @@ def export_csv(
 
     The row and byte caps are hard limits. Once either is reached the remaining
     rows are omitted and ``truncated`` is ``True`` so the caller can advertise
-    that fact via a response header.
+    that fact via a response header. The source/provider/model filters match
+    :func:`dashboard` so the export is the same slice as the page.
     """
-    records = query_records(user_id=user_id, workspace_id=workspace_id, days=days, now=now)
+    records = query_records(
+        user_id=user_id,
+        workspace_id=workspace_id,
+        days=days,
+        now=now,
+        source=normalize_filter(source),
+        provider=normalize_filter(provider),
+        model=normalize_filter(model),
+    )
     currency = get_currency_config()["code"]
     buffer = io.StringIO()
     writer = csv.DictWriter(buffer, fieldnames=CSV_COLUMNS, lineterminator="\n")
@@ -223,8 +300,10 @@ __all__ = [
     "MAX_CSV_ROWS",
     "MAX_WINDOW_DAYS",
     "admin_dashboard",
+    "available_filters",
     "dashboard",
     "export_csv",
     "normalize_days",
+    "normalize_filter",
     "query_records",
 ]
