@@ -203,13 +203,59 @@
     if (button) button.addEventListener("click", handler);
   }
 
+  function progressHtml(message) {
+    return (
+      '<span class="marketplace-progress" role="status" aria-live="polite">' +
+      '<span class="marketplace-spinner" aria-hidden="true"></span>' +
+      '<span class="marketplace-progress-text">' +
+      escapeHtml(message || "Working\u2026") +
+      "</span></span>"
+    );
+  }
+
+  // Long-running installs/updates/rollbacks stay non-blocking because the
+  // browser keeps painting while the request is in flight; these helpers make
+  // that visible and mark the region busy for assistive technology.
+  function busyOn(element, message) {
+    if (!element) return;
+    element.hidden = false;
+    element.setAttribute("aria-busy", "true");
+    element.innerHTML = progressHtml(message);
+  }
+
+  function busyOff(element) {
+    if (!element) return;
+    element.hidden = true;
+    element.removeAttribute("aria-busy");
+    element.innerHTML = "";
+  }
+
+  function busyError(element, error) {
+    if (!element) return;
+    element.hidden = false;
+    element.removeAttribute("aria-busy");
+    element.innerHTML = errorStateHtml(error, {
+      title: "The action failed",
+      message:
+        error && error.code === "timeout"
+          ? "The request timed out. Please try again."
+          : error && error.message
+            ? error.message
+            : "Please try again.",
+    });
+  }
+
   window.AICAPluginMarketplace = {
     DEFAULT_TIMEOUT_MS: DEFAULT_TIMEOUT_MS,
     bindRetry: bindRetry,
+    busyError: busyError,
+    busyOff: busyOff,
+    busyOn: busyOn,
     errorKind: errorKind,
     errorStateHtml: errorStateHtml,
     escapeHtml: escapeHtml,
     fetchJson: fetchJson,
+    progressHtml: progressHtml,
     renderLockfile: renderLockfile,
     safeSource: safeSource,
     stateHtml: stateHtml,

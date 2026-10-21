@@ -318,13 +318,31 @@
     if (version && action !== "rollback") body.version = version;
 
     button.disabled = true;
-    showMessage("Working\u2026", "info");
+    showMessage("", "info");
+    var progress = document.getElementById("plugin-catalog-progress");
+    var label =
+      action === "install"
+        ? "Installing " + pluginId + "\u2026"
+        : action === "update"
+          ? "Updating " + pluginId + "\u2026"
+          : "Rolling back " + pluginId + "\u2026";
+    if (MARKETPLACE && typeof MARKETPLACE.busyOn === "function") {
+      MARKETPLACE.busyOn(progress, label + " This can take a moment.");
+    } else if (progress) {
+      progress.hidden = false;
+      progress.textContent = label;
+    }
     api(actionUrl({ pluginId: pluginId }, action), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
     })
       .then(function () {
+        if (MARKETPLACE && typeof MARKETPLACE.busyOff === "function") {
+          MARKETPLACE.busyOff(progress);
+        } else if (progress) {
+          progress.hidden = true;
+        }
         showMessage(
           action === "install"
             ? "Plugin installed from catalog."
@@ -341,14 +359,14 @@
         });
       })
       .catch(function (error) {
-        showMessage(
-          error && error.code === "timeout"
-            ? "The marketplace request timed out. Please try again."
-            : error && error.message
-              ? error.message
-              : "The marketplace action failed. Please try again.",
-          "error"
-        );
+        if (MARKETPLACE && typeof MARKETPLACE.busyError === "function") {
+          MARKETPLACE.busyError(progress, error);
+        } else {
+          showMessage(
+            error && error.message ? error.message : "The marketplace action failed.",
+            "error"
+          );
+        }
       })
       .finally(function () {
         button.disabled = false;

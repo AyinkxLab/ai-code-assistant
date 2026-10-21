@@ -31,13 +31,14 @@
     <div class="prompt-editor-actions">
       <button id="plugin-install-btn" class="btn btn-primary" type="button">Install</button>
     </div>
-    <p id="plugin-install-status" class="field-hint" hidden></p>
+    <div id="plugin-install-status" class="field-hint" hidden></div>
   </div>
 
   <div class="project-list" id="plugin-marketplace-section" hidden>
     <h2>Marketplace</h2>
     <p class="field-hint">Browse the operator-controlled catalog. Members can view trust, compatibility, dependencies and artifact integrity; only workspace owners can install, update or roll back.</p>
     <div id="plugin-catalog-message" class="flash" role="status" hidden></div>
+    <div id="plugin-catalog-progress" class="plugin-catalog-progress" role="status" aria-live="polite" hidden></div>
     <div id="plugin-catalog" aria-live="polite">
       <p class="empty-note">Select a workspace to browse the marketplace.</p>
     </div>
