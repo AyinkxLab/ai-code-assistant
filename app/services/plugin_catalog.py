@@ -438,6 +438,50 @@ def load_remote_catalog(
     return _parse_remote_catalog_body(getattr(response, "content", None))
 
 
+def filter_catalog_entries(
+    entries,
+    *,
+    query: str | None = None,
+    capability: str | None = None,
+    tag: str | None = None,
+):
+    """Filter catalog entries by free-text query, capability, and/or tag (#378).
+
+    Matching is literal and case-insensitive. ``query`` matches against the
+    plugin id, name, description, and author. ``capability`` requires an exact
+    (case-insensitive) manifest capability. ``tag`` matches the manifest's
+    optional ``tags`` list; because tags are capability-oriented today, a tag
+    also matches an identical capability. The input order is preserved.
+    """
+    needle = (query or "").strip().lower()
+    wanted_capability = (capability or "").strip().lower()
+    wanted_tag = (tag or "").strip().lower()
+
+    matches = []
+    for entry in entries:
+        manifest = entry.manifest or {}
+        capabilities = {str(item).strip().lower() for item in (manifest.get("capabilities") or [])}
+        tags = {str(item).strip().lower() for item in (manifest.get("tags") or [])} | capabilities
+
+        if wanted_capability and wanted_capability not in capabilities:
+            continue
+        if wanted_tag and wanted_tag not in tags:
+            continue
+        if needle:
+            haystack = " ".join(
+                [
+                    entry.plugin_id,
+                    str(manifest.get("name") or ""),
+                    str(manifest.get("description") or ""),
+                    str(manifest.get("author") or ""),
+                ]
+            ).lower()
+            if needle not in haystack:
+                continue
+        matches.append(entry)
+    return matches
+
+
 __all__ = [
     "CATALOG_VERSION",
     "MAX_CATALOG_BYTES",
@@ -447,6 +491,7 @@ __all__ = [
     "CatalogError",
     "CatalogUnavailableError",
     "PluginCatalog",
+    "filter_catalog_entries",
     "load_catalog_file",
     "load_plugin_catalog",
     "load_remote_catalog",

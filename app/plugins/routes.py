@@ -48,6 +48,7 @@ from app.services.plugin_catalog import (
     CatalogEntryNotFoundError,
     CatalogError,
     CatalogUnavailableError,
+    filter_catalog_entries,
     load_plugin_catalog,
 )
 from app.services.plugin_compat import (
@@ -551,7 +552,12 @@ def api_browse_catalog(workspace_id: int):
     for entry in catalog.list_entries():
         versions_by_id.setdefault(entry.plugin_id, []).append(entry)
 
-    all_entries = list(catalog.list_entries())
+    all_entries = filter_catalog_entries(
+        list(catalog.list_entries()),
+        query=request.args.get("q"),
+        capability=request.args.get("capability"),
+        tag=request.args.get("tag"),
+    )
     total = len(all_entries)
     pages = (total + limit - 1) // limit if total else 0
     offset = (page - 1) * limit
