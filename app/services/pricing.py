@@ -22,12 +22,19 @@ produce an infinite estimate. Negative counts are still rejected.
 
 from __future__ import annotations
 
+import json
+import logging
 import math
 from dataclasses import asdict, dataclass
 from decimal import ROUND_HALF_UP, Decimal
 from typing import Any
 
-from flask import has_app_context
+from flask import current_app, has_app_context
+
+logger = logging.getLogger(__name__)
+
+#: Environment/config key holding an optional JSON price-table overlay.
+PRICE_TABLE_CONFIG_KEY = "LLM_PRICE_TABLE"
 
 #: Wildcard key understood by :func:`get_model_price`.
 WILDCARD = "*"
@@ -132,13 +139,112 @@ DEFAULT_PRICE_TABLE: dict[tuple[str, str], ModelPrice] = {
 }
 
 
+class PriceTableConfigError(ValueError):
+    """The configured price table is malformed or contains invalid entries."""
+
+
+def parse_price_table(text: str | None) -> dict[tuple[str, str], ModelPrice]:
+    """Parse and validate ``LLM_PRICE_TABLE`` JSON.
+
+    The document is an object keyed by ``"provider/model"``:
+
+    ```json
+    {
+      "openai/gpt-4o": {"input_per_1k_usd": 0.0025, "output_per_1k_usd": 0.01},
+      "mock/*": {"input_per_1k_usd": 0.0, "output_per_1k_usd": 0.0}
+    }
+    ```
+
+    Entries are merged over :data:`DEFAULT_PRICE_TABLE`, so a partial table only
+    overrides the keys it declares. Malformed JSON, non-object documents,
+    missing/invalid keys, non-numeric, negative, or non-finite prices raise
+    :class:`PriceTableConfigError` with an actionable message.
+    """
+    if text is None or not str(text).strip():
+        return _normalized_table(DEFAULT_PRICE_TABLE)
+    try:
+        document = json.loads(text)
+    except json.JSONDecodeError as exc:
+        raise PriceTableConfigError(f"invalid JSON: {exc}") from exc
+    if not isinstance(document, dict):
+        raise PriceTableConfigError("price table must be a JSON object")
+
+    parsed: dict[tuple[str, str], ModelPrice] = {}
+    for key, value in document.items():
+        if not isinstance(key, str) or "/" not in key:
+            raise PriceTableConfigError(f"price table key {key!r} must be 'provider/model'")
+        provider, model = key.split("/", 1)
+        provider, model = provider.strip(), model.strip()
+        if not provider or not model:
+            raise PriceTableConfigError(
+                f"price table key {key!r} must have a non-empty provider and model"
+            )
+        if not isinstance(value, dict):
+            raise PriceTableConfigError(f"price table entry {key!r} must be an object")
+        input_price = _validated_rate(key, "input_per_1k_usd", value.get("input_per_1k_usd"))
+        output_price = _validated_rate(key, "output_per_1k_usd", value.get("output_per_1k_usd"))
+        parsed[(provider.lower(), model.lower())] = _price(
+            provider, model, input_price, output_price
+        )
+
+    merged = _normalized_table(DEFAULT_PRICE_TABLE)
+    merged.update(parsed)
+    return merged
+
+
+def _validated_rate(key: str, field: str, value: Any) -> float:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise PriceTableConfigError(f"price table entry {key!r}.{field} must be a number")
+    rate = float(value)
+    if not math.isfinite(rate) or rate < 0:
+        raise PriceTableConfigError(
+            f"price table entry {key!r}.{field} must be a non-negative finite number"
+        )
+    return rate
+
+
+def configure_price_table(app) -> None:
+    """Validate ``LLM_PRICE_TABLE`` at startup, degrading safely if invalid.
+
+    A valid table is stored in ``app.extensions['price_table']`` and used by all
+    pricing lookups. An invalid table logs a clear error, falls back to the
+    shipped defaults, and never raises out of ``create_app`` or a request.
+    """
+    raw = app.config.get(PRICE_TABLE_CONFIG_KEY, "")
+    try:
+        table = parse_price_table(raw)
+        error = None
+    except PriceTableConfigError as exc:
+        table = _normalized_table(DEFAULT_PRICE_TABLE)
+        error = str(exc)
+        logger.error(
+            "Invalid %s configuration; using default price estimates: %s",
+            PRICE_TABLE_CONFIG_KEY,
+            error,
+        )
+    app.extensions["price_table"] = table
+    app.config["PRICE_TABLE_ERROR"] = error
+
+
+def active_price_table() -> dict[tuple[str, str], ModelPrice]:
+    """Return the configured table, or the shipped defaults outside an app."""
+    if has_app_context():
+        table = current_app.extensions.get("price_table")
+        if table:
+            return table
+    return _normalized_table(DEFAULT_PRICE_TABLE)
+
+
 def _normalize(value: str | None) -> str:
     return (value or "").strip().lower()
 
 
 def _normalized_table(table=None) -> dict[tuple[str, str], ModelPrice]:
-    """Return ``table`` (default: the shipped table) with normalized keys."""
-    source = DEFAULT_PRICE_TABLE if table is None else table
+    """Return ``table`` (default: the active/shipped table) with normalized keys."""
+    if table is None:
+        source = active_price_table() if has_app_context() else DEFAULT_PRICE_TABLE
+    else:
+        source = table
     return {
         (_normalize(provider), _normalize(model)): price
         for (provider, model), price in source.items()
@@ -518,9 +624,13 @@ __all__ = [
     "DEFAULT_PRICE_TABLE",
     "ESTIMATE_DISCLAIMER",
     "MAX_TOKEN_COUNT",
+    "PRICE_TABLE_CONFIG_KEY",
     "WILDCARD",
     "ModelPrice",
     "PriceOverrideError",
+    "PriceTableConfigError",
+    "active_price_table",
+    "configure_price_table",
     "delete_workspace_price_override",
     "effective_price_table",
     "estimate_cost_usd",
@@ -532,6 +642,7 @@ __all__ = [
     "list_model_prices",
     "list_workspace_price_overrides",
     "merge_price_tables",
+    "parse_price_table",
     "price_table",
     "remove_workspace_price_override",
     "set_workspace_price_override",

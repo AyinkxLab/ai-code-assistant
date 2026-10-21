@@ -73,6 +73,13 @@ def create_app(config_name: str | None = None) -> Flask:
 
     configure_github_cache(app)
 
+    # Validate the optional LLM_PRICE_TABLE override at startup (#438). Invalid
+    # configuration is logged and falls back to the shipped estimates instead of
+    # breaking pricing or request handling.
+    from app.services.pricing import configure_price_table
+
+    configure_price_table(app)
+
     # Prometheus metrics and the protected /metrics endpoint (Phase 10, #370).
     # Registers the blueprint plus the per-request counter hook.
     from app.observability import init_observability

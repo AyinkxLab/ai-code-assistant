@@ -494,16 +494,24 @@ anything. It is separate from the per-workspace installer catalog above:
 empty so the offline default is safe). If `PLUGIN_MARKETPLACE_URL` is set and no
 local catalog is configured, the document is fetched through
 `app/services/plugin_network.py`: HTTPS only, allowlisted host, bounded timeout
-and body size, and redirects refused. Every embedded manifest is validated
-against [`plugins/plugin.schema.json`](../plugins/plugin.schema.json); malformed
-entries reject the catalog instead of being silently skipped.
+and body size, and redirects refused.
+
+The discovery API uses the lenient loader introduced in #374/#376: a missing or
+unreadable local file yields an empty catalog (HTTP 200, never an error), and
+individual invalid entries are excluded with bounded warnings in the response
+instead of hiding every valid entry. A malformed JSON document or wrong catalog
+shape is still a `400` so operators can fix it. The installer catalog used by
+`install-from-catalog` remains strict and rejects the whole document. Every
+advertised manifest is validated against
+[`plugins/plugin.schema.json`](../plugins/plugin.schema.json).
 
 Each returned entry contains only `id`, `name`, `version`, `description`,
 `author`, `capabilities`, `permissions`, `dependencies`, `compatibility`,
 `integrity`, and `source` (plus `signature` when present). Catalog data is
 untrusted metadata: it is never executed and never grants capabilities.
 Pagination is bounded (`page >= 1`, `limit` clamped to 100) and ordered by id
-then version. Tests live in `tests/test_marketplace_catalog.py`.
+then version. Tests live in `tests/test_marketplace_catalog.py`,
+`tests/test_marketplace_lenient.py`, and `tests/test_marketplace_performance.py`.
 
 ### Catalog dependency validation (#391)
 
