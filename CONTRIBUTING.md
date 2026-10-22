@@ -796,6 +796,62 @@ pytest tests/test_plugins_manifest.py tests/test_capabilities.py \
        tests/test_plugin_error_reports.py tests/test_plugins_cli.py
 ```
 
+## Supply-chain rules for contributors
+
+This repository has been the target of a supply-chain attack before: a commit
+shipped an obfuscated JavaScript payload disguised as a web font together with
+a `.vscode/tasks.json` that executed it on every folder open. The rules below
+exist so that the same thing cannot happen again, and they are enforced
+automatically by `scripts/check_assets.py` (CI job **Asset & VS Code guard**).
+If the guard fails, fix your change — do not edit the guard.
+
+Run it locally before pushing:
+
+```bash
+python scripts/check_assets.py
+```
+
+What the guard rejects:
+
+| Area                          | Rule                                                                                     |
+| ----------------------------- | ---------------------------------------------------------------------------------------- |
+| Assets                        | A file with a font extension that is not a real font, or that contains script markers.     |
+| Editor tasks                  | Any `.vscode` file that runs on `folderOpen`, sets `task.allowAutomaticTasks`, or shells out. |
+| Workflow triggers             | `pull_request_target` and `workflow_run` — both are privileged on fork pull requests.      |
+| Workflow permissions          | Every workflow must declare a top-level `permissions:` block; only `contents: read` (plus `security-events: write` for CodeQL) is allowed. |
+| Action pinning                | Every third-party action must be pinned to a full 40-character commit SHA, not a tag.      |
+| Workflow secrets              | A `pull_request`-triggered workflow may not read `secrets.*`.                              |
+| Checkout credentials          | Every `actions/checkout` step must set `persist-credentials: false`.                       |
+| Python requirements           | Exact `==` pins only; no `--extra-index-url`, no direct-URL requirements.                  |
+| npm manifests                 | No install lifecycle scripts (`postinstall` and friends); the lockfile must match `package.json` and resolve only from `registry.npmjs.org` with an integrity hash. |
+| Dockerfiles / install scripts | No `curl … \| sh`, no `--trusted-host`/`-k`, no `ADD <url>`, no unpinned `pip install`/`npm install`. |
+| Ignore rules                  | `.gitignore` must not ignore itself.                                                      |
+| The guard itself              | `scripts/check_assets.py` must keep all of its checks, and `tests/test_asset_guard.py` must exist. |
+
+Practical rules:
+
+- **Pin every action to a commit SHA.** Write
+  `uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2`.
+  The trailing comment keeps the version readable. Dependabot updates the SHA
+  for you.
+- **Never add an install script to `package.json`.** `preinstall`, `install`,
+  `postinstall`, `prepare` and friends run automatically during `npm install`
+  and `npm ci`, which is exactly how a package can execute code on a
+  contributor's machine.
+- **Do not add a binary or an executable asset** unless the change is
+  unavoidable. If you must, say so explicitly in the pull request description.
+- **Do not add a `.vscode` task that runs on folder open** or that downloads
+  anything. The repository's `.vscode/launch.json` is developer-only and is
+  not executed by the application.
+- **Do not weaken `scripts/check_assets.py` or its test** to make CI pass. The
+  guard contains a tripwire that fails the build if the checks are removed, and
+  removing the tripwire is itself a violation.
+- **Do not merge your own pull request.** Ask a maintainer to review it.
+
+If you *find* something like the payload described above in someone else's pull
+request, do not comment publicly about it — report it privately as described in
+[SECURITY.md](SECURITY.md).
+
 ## Security reporting
 
 See [SECURITY.md](SECURITY.md) for how to report a vulnerability privately.

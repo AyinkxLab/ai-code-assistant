@@ -27,9 +27,18 @@ class TestUsageTop:
         with app.app_context():
             top = usage_ledger.top_entities(user_id=user.id, limit=2)
         assert top["limit"] == 2
-        assert [row["id"] for row in top["conversations"]] == [2, 1]
-        assert top["conversations"][1]["records"] == 2
+        # Conversation 2 costs 5.0, conversation 3 costs 3.0 and conversation 1
+        # aggregates two records for 2.0, so cost decides the top two.
+        assert [row["id"] for row in top["conversations"]] == [2, 3]
         assert [row["id"] for row in top["projects"]] == [20, 30]
+
+        # Without truncation, conversation 1 is present and its two records are
+        # aggregated into one row.
+        with app.app_context():
+            all_top = usage_ledger.top_entities(user_id=user.id, limit=3)
+        assert [row["id"] for row in all_top["conversations"]] == [2, 3, 1]
+        assert all_top["conversations"][2]["records"] == 2
+        assert all_top["conversations"][2]["total_tokens"] == 200
 
     def test_scoped_to_the_requesting_user(self, app, make_user):
         owner = make_user(email="owner@example.com")
