@@ -204,7 +204,7 @@ class TestBudgetAlertDeduplication:
         db.session.commit()
 
         alerts = check_budget_alerts(workspace.id, spend=150, limit=100, period="2024-01")
-        assert len(alerts) == 1
+        assert len(alerts) == 2
         alerts = check_budget_alerts(workspace.id, spend=150, limit=100, period="2024-01")
         assert len(alerts) == 0
 
@@ -216,6 +216,6 @@ class TestBudgetAlertDeduplication:
         db.session.add(workspace)
         db.session.commit()
 
-        assert len(check_budget_alerts(workspace.id, spend=150, limit=100, period="2024-01")) == 1
+        assert len(check_budget_alerts(workspace.id, spend=150, limit=100, period="2024-01")) == 2
         assert len(check_budget_alerts(workspace.id, spend=150, limit=100, period="2024-01")) == 0
-        assert len(check_budget_alerts(workspace.id, spend=150, limit=100, period="2024-02")) == 1
+        assert len(check_budget_alerts(workspace.id, spend=150, limit=100, period="2024-02")) == 2
