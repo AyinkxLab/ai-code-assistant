@@ -41,7 +41,7 @@ from flask_login import current_user, login_required
 from app.extensions import db
 from app.github import bp
 from app.models import GithubAccount
-from app.services import analysis, ratelimit
+from app.services import analysis, budgets, ratelimit
 from app.services.github import (
     GITHUB_AUTHORIZE_URL,
     GITHUB_TOKEN_URL,
@@ -893,6 +893,9 @@ def api_issue_detail(owner: str, repo: str, number: int):
 
     payload = issue_payload(data)
     if analyze:
+        refusal = budgets.budget_refusal(current_user)
+        if refusal is not None:
+            return refusal
         payload["analysis"] = analysis.analyze_issue(
             payload, owner, repo, repo_files=_stellar_repo_context(client, full_name)
         )
@@ -983,6 +986,9 @@ def api_pull_detail(owner: str, repo: str, number: int):
         for f in files
     ]
     if analyze:
+        refusal = budgets.budget_refusal(current_user)
+        if refusal is not None:
+            return refusal
         payload["analysis"] = analysis.analyze_pull_request(
             payload, files, repo_files=_stellar_repo_context(client, full_name)
         )
@@ -996,6 +1002,7 @@ def api_pull_detail(owner: str, repo: str, number: int):
 
 @bp.route("/api/repos/<owner>/<repo>/analyze", methods=["POST"])
 @login_required
+@budgets.budget_guard
 def api_analyze_repo(owner: str, repo: str):
     """Produce an AI overview of a repository from README and file names."""
     full_name = validate_full_name(f"{owner}/{repo}")
@@ -1016,6 +1023,7 @@ def api_analyze_repo(owner: str, repo: str):
 
 @bp.route("/api/repos/<owner>/<repo>/analyze-file", methods=["POST"])
 @login_required
+@budgets.budget_guard
 def api_analyze_file(owner: str, repo: str):
     """Analyze a single file's contents with the AI provider."""
     full_name = validate_full_name(f"{owner}/{repo}")
