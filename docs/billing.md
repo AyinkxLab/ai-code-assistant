@@ -79,9 +79,15 @@ limit tokens, estimated cost, or both (`app/models/budget.py`).
 
 - `token_limit` caps total tokens recorded in the month.
 - `cost_limit` caps estimated cost in the configured currency.
-- `warn_threshold` (default `0.8`) triggers a warning notification before the
-  limit is reached.
-- Enforcement runs **before** an LLM call. A blocked call returns `429` with
+- `warn_threshold` (default `0.8`, i.e. 80%) triggers a warning notification
+  before the limit is reached. It is configured per budget and also returned as
+  `warn_threshold_pct` for clients that present a percentage. A warning is
+  advisory: the request still runs and only adds a header.
+- Enforcement runs **before** an LLM call and is shared by every billable path
+  (chat, project chat, reviews, project analysis, the AI tools and GitHub AI
+  analysis). All of them go through the same `budget_guard` /
+  `budget_refusal` decision point in `app/services/budgets.py`; a blocked call
+  never reaches the provider. A blocked call returns `429` with
   `kind: "budget_exceeded"`, `limits_hit`, `retry_after`, the evaluated budgets,
   and a `Retry-After` header. Evaluation failures fail closed with `503`
   (`kind: "budget_check_failed"`).

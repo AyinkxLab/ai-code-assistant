@@ -80,6 +80,15 @@ class Budget(db.Model):
     )
 
     @property
+    def warn_threshold_pct(self) -> float:
+        """Return the warning threshold as a percentage of the limit.
+
+        The stored value is a fraction (``0.8``); this is the same threshold in
+        the percentage form used by the budget UI and API consumers (``80.0``).
+        """
+        return round(float(self.warn_threshold or DEFAULT_WARN_THRESHOLD) * 100, 2)
+
+    @property
     def scope(self) -> str:
         """Return ``"user"`` or ``"workspace"`` for this budget."""
         return SCOPE_USER if self.user_id is not None else SCOPE_WORKSPACE
@@ -101,6 +110,7 @@ class Budget(db.Model):
             "token_limit": self.token_limit,
             "cost_limit": self.cost_limit,
             "warn_threshold": self.warn_threshold,
+            "warn_threshold_pct": self.warn_threshold_pct,
             "is_active": bool(self.is_active),
             "created_by_id": self.created_by_id,
             "created_at": self.created_at.isoformat() if self.created_at else None,

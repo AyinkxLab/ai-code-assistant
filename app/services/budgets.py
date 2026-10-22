@@ -166,6 +166,20 @@ def warn_threshold_default() -> float:
     return min(max(value, 0.01), 1.0)
 
 
+def threshold_ratio(budget: Budget) -> float:
+    """Return ``budget``'s warning threshold as a fraction of its limit.
+
+    The column is constrained to ``0 < warn_threshold <= 1``, but rows can be
+    built in memory (tests, fixtures, imports) before validation runs, so the
+    value is clamped and falls back to the documented default when unusable.
+    """
+    try:
+        value = float(budget.warn_threshold)
+    except (AttributeError, TypeError, ValueError):
+        return DEFAULT_WARN_THRESHOLD
+    return min(max(value, 0.01), 1.0)
+
+
 def budgets_for(user, workspace_id: int | None = None) -> list[Budget]:
     """Return active monthly budgets applicable to ``user`` and ``workspace``."""
     budgets: list[Budget] = []
@@ -224,7 +238,7 @@ def evaluate_budget(budget: Budget, now: datetime | None = None) -> BudgetStatus
     tokens, cost = usage_totals(budget, now)
     limits_hit: list[str] = []
     warned = False
-    threshold = float(budget.warn_threshold or DEFAULT_WARN_THRESHOLD)
+    threshold = threshold_ratio(budget)
 
     token_ratio = None
     if budget.token_limit is not None:
@@ -382,6 +396,42 @@ def _workspace_id_for_request(kwargs: dict) -> int | None:
     return None
 
 
+def budget_refusal(user, workspace_id: int | None = None):
+    """Return a refusal response when a billable call cannot proceed.
+
+    This is the single decision point shared by the :func:`budget_guard`
+    decorator and code paths that request AI work without being a dedicated
+    billable route (for example an issue fetch with ``?analyze=1``). Returns
+    ``None`` when the call is allowed, otherwise a ``429`` response for an
+    exceeded limit or a ``503`` response when evaluation fails (fail closed).
+    """
+    try:
+        decision = check_budgets(user, workspace_id)
+    except BudgetCheckError:
+        response = jsonify(
+            {
+                "error": "Budget check unavailable; refusing the request.",
+                "kind": "budget_check_failed",
+            }
+        )
+        response.status_code = 503
+        return response
+
+    g.budget_decision = decision
+    if not decision.allowed:
+        notify_decision(user, decision, level="blocked")
+        return budget_error_response(decision)
+    if decision.warned:
+        notify_decision(user, decision, level="warning")
+    return None
+
+
+#: Attribute stamped on view functions protected by :func:`budget_guard`.
+#: The enforcement-coverage test uses it to prove that every billable endpoint
+#: still enforces the hard limit when new routes are added.
+BUDGET_ENFORCED_ATTR = "budget_enforced"
+
+
 def budget_guard(view):
     """Decorator enforcing budgets before an LLM-calling view runs.
 
@@ -394,26 +444,12 @@ def budget_guard(view):
     def wrapped(*args, **kwargs):
         if not enforcement_enabled():
             return view(*args, **kwargs)
-        try:
-            decision = check_budgets(current_user, _workspace_id_for_request(kwargs))
-        except BudgetCheckError:
-            response = jsonify(
-                {
-                    "error": "Budget check unavailable; refusing the request.",
-                    "kind": "budget_check_failed",
-                }
-            )
-            response.status_code = 503
-            return response
-
-        g.budget_decision = decision
-        if decision.warned and decision.allowed:
-            notify_decision(current_user, decision, level="warning")
-        if not decision.allowed:
-            notify_decision(current_user, decision, level="blocked")
-            return budget_error_response(decision)
+        refusal = budget_refusal(current_user, _workspace_id_for_request(kwargs))
+        if refusal is not None:
+            return refusal
         return view(*args, **kwargs)
 
+    setattr(wrapped, BUDGET_ENFORCED_ATTR, True)
     return wrapped
 
 
@@ -678,6 +714,7 @@ reset = reset_alerts
 
 
 __all__ = [
+    "BUDGET_ENFORCED_ATTR",
     "BudgetCheckError",
     "BudgetDecision",
     "BudgetStatus",
@@ -685,6 +722,7 @@ __all__ = [
     "after_usage_recorded",
     "budget_error_response",
     "budget_guard",
+    "budget_refusal",
     "budgets_for",
     "check_budgets",
     "delete_budget",
@@ -696,6 +734,7 @@ __all__ = [
     "reset_alerts",
     "seconds_until_next_period",
     "statuses_for_user",
+    "threshold_ratio",
     "upsert_budget",
     "usage_totals",
     "validate_limits",
