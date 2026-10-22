@@ -1,6 +1,10 @@
 # Core web framework
-Flask==3.1.1
-Werkzeug==3.1.3
+# Flask >= 3.1.3 (PYSEC-2026-2151 / CVE-2026-27205): session responses must
+# carry Vary: Cookie so shared caches cannot serve one user's cached page to
+# another. Werkzeug >= 3.1.9 (PYSEC-2026-2046/2044/2320/4312): safe_join()
+# must reject Windows reserved device names.
+Flask==3.1.3
+Werkzeug==3.1.9
 
 # Database
 Flask-SQLAlchemy==3.1.1
@@ -15,8 +19,12 @@ WTForms==3.2.1
 email-validator==2.2.0
 
 # Utilities
-python-dotenv==1.1.0
-requests==2.32.4
+# python-dotenv >= 1.2.2 (PYSEC-2026-2270 / CVE-2026-28684): set_key()/
+# unset_key() must not follow symlinks when rewriting a .env file.
+# requests >= 2.33.0 (PYSEC-2026-2275 / CVE-2026-25645): zip extraction must
+# not reuse a predictable temp-file name.
+python-dotenv==1.2.2
+requests==2.33.0
 cryptography==50.0.0
 packaging==26.3
 
@@ -26,7 +34,11 @@ py7zr==1.1.3
 rarfile==4.5
 
 # Real-time collaboration (issue #50)
-Flask-SocketIO==5.5.1
+# Flask-SocketIO >= 5.6.1: earlier releases assign to
+# `RequestContext.session`, which Flask 3.1 made read-only, so every Socket.IO
+# session copy raises AttributeError. 5.6.1 adds the Flask >= 3.1.3 session
+# fix. This pin must move together with the Flask pin above.
+Flask-SocketIO==5.6.1
 simple-websocket==1.1.0
 
 # Production server

@@ -235,3 +235,80 @@ end-to-end view for reviewers and operators.
 - The `/stellar` read-only endpoints are login-required and lightly rate
   limited but not workspace-scoped: they query public network data bound to the
   configured network (equivalent to a block explorer).
+
+## Repository supply-chain protection
+
+The application code inside this repository protects its users, but the
+repository itself can also be used as an attack vector: a commit can hide an
+executable payload inside a file that looks harmless, or a workflow can hand
+its secrets to code from a pull request. This repository has been attacked
+exactly that way — a commit once shipped an obfuscated JavaScript payload
+disguised as a web font together with a `.vscode/tasks.json` that ran it on
+every folder open.
+
+Two layers of defence are now in place against that class of attack:
+
+### 1. The asset and supply-chain guard (`scripts/check_assets.py`)
+
+Every CI run executes this guard (the **Asset & VS Code guard** job in
+`ci.yml`). It scans the tree for:
+
+| Area                          | What it rejects                                                                          |
+| ----------------------------- | ---------------------------------------------------------------------------------------- |
+| Assets                        | Font-extension files that are not real fonts, or that contain script markers.             |
+| Editor tasks                  | `.vscode` files that run on `folderOpen`, enable `task.allowAutomaticTasks`, or shell out. |
+| Workflow triggers             | `pull_request_target` and `workflow_run` — both run with the base repository's privileges on fork pull requests. |
+| Workflow permissions          | Every workflow must declare a top-level `permissions:` block; write scopes are limited to an allowlist (`contents: read` everywhere, plus `security-events: write` for CodeQL only). |
+| Action pinning                | Third-party actions must be pinned to a full 40-character commit SHA, not a mutable tag.   |
+| Workflow secrets             | `pull_request`-triggered workflows must not read `secrets.*`.                              |
+| Checkout credentials          | Every `actions/checkout` step must set `persist-credentials: false` so the CI token is never handed to pull-request code. |
+| Python requirements           | Exact `==` pins only; no `--extra-index-url`, no direct-URL or VCS requirements.           |
+| npm manifests                 | No install lifecycle scripts; the lockfile must match `package.json` and resolve only from `registry.npmjs.org` with an integrity hash. |
+| Dockerfiles / install scripts | No `curl … \| sh`, no `--trusted-host`/`-k` insecure transport, no `ADD <url>`, no unpinned installs. |
+| Ignore rules                  | `.gitignore` must not ignore itself (that is how rule changes get hidden).                |
+| The guard itself              | The guard carries a tripwire: if its checks are removed, CI fails; the guard test must also be present. |
+
+The guard's behaviour is tested by `tests/test_asset_guard.py`, which builds
+fake repository trees in temporary directories and asserts both that each
+attack shape above is caught and that clean trees produce no false positives.
+
+### 2. The CI hardening (`/.github/workflows/`)
+
+The workflows apply the principle of least privilege to CI itself:
+
+- Every workflow and job declares `permissions: contents: read` at minimum.
+- All actions are pinned to verified commit SHAs.
+- All checkouts run with `persist-credentials: false`.
+- Every job has a `timeout-minutes` ceiling and a `concurrency` group that
+  cancels superseded runs, so a malicious commit cannot pin a runner.
+- CodeQL (`codeql.yml`) analyses `python`, `javascript`, and `actions` with the
+  `security-extended` query suite on every push to `main` and every pull
+  request, and weekly on a schedule.
+- Dependency Review (`dependency-review.yml`) fails a pull request that
+  introduces a dependency with a known high or critical advisory. It requires
+  the repository's dependency graph to be enabled (`Settings` → `Code
+  security` → `Advanced Security` → `Dependency graph`); without it the job
+  fails rather than silently passing.
+- Dependency Audit (`dependency-audit.yml`) runs `pip-audit` on both
+  requirements files and `npm audit` against the lockfile on every push,
+  pull request, and weekly schedule.
+- Dependabot (`.github/dependabot.yml`) opens weekly version-bump pull
+  requests for pip, npm, GitHub Actions, and Docker.
+
+### Code-owner review
+
+`.github/CODEOWNERS` requests a review from the repository owner for every
+path where a change can silently widen this trust boundary (workflows, the
+guard, dependency manifests, build files, `.vscode`, fonts, ignore rules).
+Combined with a branch-protection rule that *requires* code-owner review (a
+GitHub web setting the owner must enable), this makes those files effectively
+maintainer-gated.
+
+### What contributors must not do
+
+Contributors must not weaken or bypass the guard, add lifecycle scripts to
+`package.json`, add unpinned dependencies, or add auto-run editor tasks.
+See the "Supply-chain rules for contributors" section of
+[CONTRIBUTING.md](../CONTRIBUTING.md) for the contributor-facing version of
+these rules, and [SECURITY.md](../SECURITY.md) for how to report an attempt to
+introduce any of them.

@@ -1,0 +1,83 @@
+name: Dependency Audit
+
+# Fails the build when a pinned dependency has a known vulnerability.
+#
+# This complements (and does not replace) Dependabot version updates and
+# GitHub's dependency review action:
+#   * Dependabot opens the upgrade pull request.
+#   * Dependency Review blocks the upgrade if it would introduce a new
+#     high/critical advisory.
+#   * This workflow fails the build if the *currently pinned* version is
+#     already vulnerable, including when an advisory is published after the
+#     pin was set.
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    # Weekly, off the hour. The schedule catches advisories published for
+    # versions that were already pinned.
+    - cron: "43 4 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: dependency-audit-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  python:
+    name: Python dependency audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: "3.12"
+
+      # pip-audit is a PyPA project. It is pinned so the checker itself
+      # cannot be silently swapped for a different build.
+      - name: Install pip-audit
+        run: |
+          python -m pip install --upgrade pip
+          pip install pip-audit==2.10.1
+
+      - name: Audit runtime dependencies
+        run: pip-audit --requirement requirements.txt --progress-spinner off
+
+      - name: Audit development dependencies
+        run: pip-audit --requirement requirements-dev.txt --progress-spinner off
+
+  npm:
+    name: npm dependency audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+
+      - name: Set up Node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: "20"
+
+      # `npm audit` works from package-lock.json alone, so the dependency tree
+      # is never installed and no install script of a pull request's packages
+      # is executed here.
+      - name: Audit npm dependencies
+        run: npm audit --audit-level=high

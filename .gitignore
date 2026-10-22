@@ -18,6 +18,24 @@ htmlcov/
 .env
 .env.*
 !.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+*.jks
+*.keystore
+id_rsa*
+id_ecdsa*
+id_ed25519*
+.netrc
+.npmrc
+.pypirc
+credentials
+credentials.*
+htpasswd
+secrets.yaml
+secrets.yml
+secrets.json
 
 # IDE / editors
 .idea/
@@ -46,4 +64,3 @@ node_modules/
 branch_structure.json
 temp_auto_push.bat
 temp_interactive_push.bat
-.gitignore

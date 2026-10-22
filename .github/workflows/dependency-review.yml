@@ -1,0 +1,43 @@
+name: Dependency Review
+
+# Dependency Review compares the dependency manifests of a pull request against
+# the base branch and fails when the pull request introduces a dependency with
+# a known high or critical vulnerability.
+#
+# It only ever runs on `pull_request`. It must not be moved to
+# `pull_request_target`: that trigger would give the review job access to the
+# base repository's secrets while still inspecting untrusted pull request
+# code.
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: dependency-review-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  dependency-review:
+    name: Dependency Review
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+
+      # The action needs the repository's dependency graph. Check
+      # Settings -> Code security -> Advanced Security and confirm that
+      # "Dependency graph" is enabled; without it this job fails with an
+      # error rather than silently passing. It reads the manifests of the
+      # merge commit and never executes the pull request's code.
+      - name: Review dependencies
+        uses: actions/dependency-review-action@da24556b548a50705dd671f47852072ea4c105d9 # v4.7.1
+        with:
+          fail-on-severity: high

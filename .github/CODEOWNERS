@@ -1,0 +1,54 @@
+# CODEOWNERS
+#
+# This file requests a review from the listed owners when a pull request
+# touches the matching paths. It is *advisory*: GitHub only asks for the
+# review, it does not block the merge. To make it binding, the repository
+# needs a branch protection rule on `main` that requires review from a code
+# owner ("Require review from Code Owners"). See docs/security.md for the
+# exact settings to enable.
+#
+# Only `@Ayinkx` is listed. This organisation has no teams, and `@Ayinkx` is
+# the only account with push or admin access to the repository, so it is the
+# only account that can meaningfully act on a code-owner review request.
+#
+# There is deliberately no `* @Ayinkx` line. A global entry would route every
+# pull request from the ~30 external contributors through a single person,
+# which trains everyone to ignore review requests. The paths below are the
+# ones where a change can silently widen the trust boundary of the repository,
+# so those are the ones that deserve an owner.
+#
+# Later patterns win over earlier ones, so the most specific rules are listed
+# last.
+
+# --- Continuous integration and the actions trust boundary --------------
+/.github/                    @Ayinkx
+/.github/workflows/          @Ayinkx
+/.github/dependabot.yml      @Ayinkx
+/.github/CODEOWNERS          @Ayinkx
+
+# --- The supply-chain guard and its test -------------------------------
+/scripts/check_assets.py     @Ayinkx
+/tests/test_asset_guard.py   @Ayinkx
+
+# --- Dependency manifests ----------------------------------------------
+/requirements.txt            @Ayinkx
+/requirements-dev.txt        @Ayinkx
+/package.json                @Ayinkx
+/package-lock.json           @Ayinkx
+
+# --- Build and packaging -----------------------------------------------
+/Dockerfile                  @Ayinkx
+/docker-compose.yml          @Ayinkx
+/.dockerignore               @Ayinkx
+
+# --- Files that execute on a contributor's machine ----------------------
+# A `.vscode` task or a font-shaped file is exactly how the payload that was
+# previously shipped in this repository was delivered.
+/.vscode/                    @Ayinkx
+/public/fonts/               @Ayinkx
+
+# --- Ignore rules and security policy ----------------------------------
+/.gitignore                  @Ayinkx
+/SECURITY.md                 @Ayinkx
+/docs/security.md            @Ayinkx
+/CONTRIBUTING.md             @Ayinkx

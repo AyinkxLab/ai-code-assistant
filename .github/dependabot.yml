@@ -1,0 +1,76 @@
+# Dependabot keeps the dependency manifests in this repository current.
+#
+# One entry per ecosystem that is actually used here:
+#   * pip      -> requirements.txt and requirements-dev.txt
+#   * npm      -> package.json and package-lock.json
+#   * actions  -> the pinned actions referenced from .github/workflows
+#   * docker   -> Dockerfile and docker-compose.yml
+#
+# Each ecosystem opens its own pull request, so an npm bump never mixes with
+# a pip bump and a reviewer can see exactly which manifest changed.
+#
+# Pull requests are opened weekly rather than daily to keep review noise low.
+#
+# No `labels:` key is set on purpose. GitHub applies the `dependencies` label
+# (and an ecosystem label) to every Dependabot pull request by default and
+# creates the labels it needs, so there is nothing to configure. Adding
+# `labels: ["security"]` here would also tag routine version bumps as security
+# work, which dilutes the label that is already used for real advisories.
+version: 2
+
+updates:
+  - package-ecosystem: pip
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+      time: "07:00"
+      timezone: Etc/UTC
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "chore(deps-pip)"
+    groups:
+      # Keep the runtime and development manifests in sync where the same
+      # package appears in both, so a single bump cannot leave them out of
+      # step and fail the dependency audit.
+      pip:
+        patterns:
+          - "*"
+        exclude-patterns:
+          - "ruff"
+          - "black"
+
+  - package-ecosystem: npm
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+      time: "07:00"
+      timezone: Etc/UTC
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "chore(deps-npm)"
+
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+      time: "07:00"
+      timezone: Etc/UTC
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "chore(deps-actions)"
+    # Dependabot understands `owner/action@<sha> #<tag>` and rewrites the SHA
+    # while keeping the human-readable tag in the comment.
+
+  - package-ecosystem: docker
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+      time: "07:00"
+      timezone: Etc/UTC
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "chore(deps-docker)"
