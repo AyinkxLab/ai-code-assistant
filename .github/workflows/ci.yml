@@ -206,6 +206,7 @@ jobs:
           tests/test_chat_onboarding.py
           tests/test_chat_project_files.py
           tests/test_chat_coverage.py
+          tests/test_llm_cache.py
           tests/test_token_usage.py
           tests/test_api_keys.py
           tests/test_providers.py

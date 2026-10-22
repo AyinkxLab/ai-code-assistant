@@ -109,6 +109,23 @@ class TestCacheClass:
         cache.set("k", ProviderResponse(content="x"))
         assert cache.get("k") is None
 
+    def test_clear_drops_entries_but_keeps_counters(self):
+        cache = llm_cache.LLMResponseCache(ttl=60, clock=lambda: 0.0)
+        cache.set("k", ProviderResponse(content="x"))
+        cache.clear()
+        assert cache.stats()["entries"] == 0
+        assert cache.get("k") is None
+
+
+class TestProcessCache:
+    def test_get_cache_and_stats_use_the_process_cache(self, app):
+        cache = llm_cache.get_cache()
+        assert isinstance(cache, llm_cache.LLMResponseCache)
+        assert llm_cache.cache_stats()["max_entries"] == cache.max_entries
+
+    def test_user_key_version_without_a_user_is_empty(self):
+        assert llm_cache._user_key_version(None, "openai") == ""
+
 
 class TestCachedChat:
     def test_identical_requests_hit_cache(self, app):
@@ -156,3 +173,8 @@ class TestCachedChat:
         provider.base_url = "https://changed.example"
         llm_cache.cached_chat(user, _msgs(), provider=provider)
         assert provider.calls == 2
+
+    def test_cached_complete_returns_content(self, app):
+        provider = _FakeProvider()
+        content = llm_cache.cached_complete(_User(1), _msgs(), provider=provider)
+        assert content == "reply 1"

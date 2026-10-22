@@ -22,12 +22,19 @@
   ];
 
   /**
-   * Format a number with appropriate suffix (K, M, B)
+   * Format a number with appropriate suffix (K, M, B).
+   *
+   * Whole thousands/millions/billions drop the trailing ".0" ("1K", not
+   * "1.0K"); fractional values keep one decimal ("1.5K").
    */
   function formatNumber(num) {
-    if (num >= 1e9) return (num / 1e9).toFixed(1) + "B";
-    if (num >= 1e6) return (num / 1e6).toFixed(1) + "M";
-    if (num >= 1e3) return (num / 1e3).toFixed(1) + "K";
+    function withSuffix(value, suffix) {
+      const formatted = value.toFixed(1);
+      return (formatted.endsWith(".0") ? formatted.slice(0, -2) : formatted) + suffix;
+    }
+    if (num >= 1e9) return withSuffix(num / 1e9, "B");
+    if (num >= 1e6) return withSuffix(num / 1e6, "M");
+    if (num >= 1e3) return withSuffix(num / 1e3, "K");
     return num.toString();
   }
 

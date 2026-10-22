@@ -127,10 +127,23 @@ class TestMigrationHead:
         result = _run_flask(["db", "heads"], {"DATABASE_URL": "sqlite:///:memory:"})
         assert result.returncode == 0, result.stderr
         output = result.stdout + result.stderr
-        assert "b7c8d9e0f1a2" in output
-        # The merge revision must be the single head (no dangling branches).
+
+        # A dangling branch in the migration graph would leave more than one
+        # head, so `flask db upgrade` would no longer reach a single schema.
         head_lines = [line for line in output.splitlines() if "(head)" in line]
-        assert len(head_lines) == 1
+        assert len(head_lines) == 1, output
+
+        # Compare against the scripts on disk rather than a hard-coded
+        # revision, so this test keeps working when a new migration becomes
+        # the head.
+        from alembic.config import Config
+        from alembic.script import ScriptDirectory
+
+        config = Config()
+        config.set_main_option("script_location", str(REPO_ROOT / "migrations"))
+        script_heads = ScriptDirectory.from_config(config).get_heads()
+        assert len(script_heads) == 1
+        assert script_heads[0] in output
 
     def test_workspace_price_overrides_table_upgraded(self):
         expected = {
@@ -204,6 +217,7 @@ class TestMigrationHead:
             "total_tokens",
             "tokens_estimated",
             "cost_estimate",
+            "cost_recomputed_at",
             "request_id",
             "latency_ms",
             "status",
