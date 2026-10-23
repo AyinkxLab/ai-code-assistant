@@ -37,6 +37,12 @@ The ledger is append-only. `flask usage backfill` imports historical assistant
 messages in bounded, idempotent batches; `flask usage purge` removes rows older
 than `USAGE_RETENTION_DAYS`. Denied calls do not count toward budgets.
 
+Reads filter on a bounded `created_at` window plus an optional scope column and
+group by `source`/`provider`/`model`. Composite indexes
+(`ix_usage_records_<scope>_created`, `ix_usage_records_source_created`,
+`ix_usage_records_provider_model_created`, `ix_usage_records_status_created`)
+serve those shapes; `tests/test_usage_ledger_indexes.py` pins the query plans.
+
 ## Metrics
 
 `GET /metrics` returns Prometheus `text/plain; version=0.0.4` and is bounded by

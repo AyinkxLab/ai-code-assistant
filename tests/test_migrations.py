@@ -237,6 +237,12 @@ class TestMigrationHead:
                 "ix_usage_records_created_at",
                 "ix_usage_records_request_id",
                 "ix_usage_records_status",
+                "ix_usage_records_user_created",
+                "ix_usage_records_workspace_created",
+                "ix_usage_records_project_created",
+                "ix_usage_records_source_created",
+                "ix_usage_records_provider_model_created",
+                "ix_usage_records_status_created",
             } <= indexes
 
     def test_usage_correlation_columns_downgrade_removed(self):
