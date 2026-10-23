@@ -5,7 +5,7 @@ work but never had a migration, and billing alerts need their own category. Add
 both columns, tolerating databases where ``budget_alerts`` already exists (for
 example a dev database created from the models).
 
-Revision ID: b7c8d9e0f1a2
+Revision ID: aa11bb22cc33
 Revises: c7d8e9f0a1b2
 Create Date: 2026-10-21 00:00:00.000000
 """
@@ -13,7 +13,8 @@ Create Date: 2026-10-21 00:00:00.000000
 import sqlalchemy as sa
 from alembic import op
 
-revision = "b7c8d9e0f1a2"
+# Unique revision id: the original b7c8d9e0f1a2 duplicated the budgets migration.
+revision = "aa11bb22cc33"
 down_revision = "c7d8e9f0a1b2"
 branch_labels = None
 depends_on = None
