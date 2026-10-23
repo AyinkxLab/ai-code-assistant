@@ -1987,6 +1987,33 @@ a:hover {
   margin-top: 4px;
 }
 
+/* Workspace usage dashboard states (#456). Loading, empty and error states
+   are explicit; the error state always offers a retry and never leaves the
+   previous loading placeholders on screen. */
+.usage-state {
+  padding: 12px 4px;
+}
+
+.usage-state-title {
+  margin: 0 0 4px;
+  font-weight: 600;
+}
+
+.usage-state .empty-note {
+  margin: 0 0 10px;
+}
+
+.usage-state-error {
+  padding: 14px 16px;
+  border: 1px solid var(--warning);
+  border-radius: var(--radius);
+  background: var(--bg-elevated);
+}
+
+.usage-state-error .usage-retry {
+  margin-top: 4px;
+}
+
 /* Install/update/rollback progress (#420). Text is always present so the state
    is not color- or motion-only; the spinner is decorative. */
 .plugin-catalog-progress {

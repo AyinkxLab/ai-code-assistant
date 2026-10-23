@@ -202,113 +202,20 @@
       });
   }
 
-  function formatTokens(value) {
-    return Number(value || 0).toLocaleString("en-US");
-  }
-
-  function formatCost(value, currency) {
-    if (window.AICACurrency && window.AICACurrency.formatCost) {
-      try {
-        return window.AICACurrency.formatCost(value, currency);
-      } catch (error) {
-        return String(value || 0);
-      }
-    }
-    return String(value || 0);
-  }
-
-  function usageRow(cells) {
-    return (
-      "<tr>" +
-      cells
-        .map(function (value, index) {
-          return index === 0
-            ? '<td scope="row">' + escapeHtml(value) + "</td>"
-            : "<td>" + escapeHtml(value) + "</td>";
-        })
-        .join("") +
-      "</tr>"
-    );
-  }
-
-  function renderUsageTable(id, rows, emptyText) {
-    var body = document.getElementById(id);
-    if (!body) return;
-    if (!rows.length) {
-      body.innerHTML = '<tr><td colspan="4" class="empty-note">' + escapeHtml(emptyText) + "</td></tr>";
-      return;
-    }
-    body.innerHTML = rows.join("");
-  }
-
   function loadWorkspaceUsage() {
     var panel = document.getElementById("workspace-usage-panel");
     if (!panel) return;
-    api("/workspaces/api/workspaces/" + WORKSPACE_ID + "/usage")
-      .then(function (data) {
-        var currency = data.currency || null;
-        var totals = data.totals || {};
-        var totalsEl = document.getElementById("workspace-usage-totals");
-        if (totalsEl) {
-          totalsEl.innerHTML =
-            '<div class="metric-card"><span class="metric-label">Total tokens</span>' +
-            '<strong class="metric-value">' + escapeHtml(formatTokens(totals.total_tokens)) + "</strong></div>" +
-            '<div class="metric-card"><span class="metric-label">Requests</span>' +
-            '<strong class="metric-value">' + escapeHtml(formatTokens(totals.count)) + "</strong></div>" +
-            '<div class="metric-card"><span class="metric-label">Estimated cost</span>' +
-            '<strong class="metric-value">' + escapeHtml(formatCost(totals.cost_estimate, currency)) + "</strong></div>";
-        }
-
-        var note = document.getElementById("workspace-usage-note");
-        if (note) {
-          note.textContent =
-            "Token and cost totals across this workspace. Costs are estimates." +
-            (data.member_detail === "self" ? " Member breakdown shows your usage only." : "");
-        }
-
-        renderUsageTable(
-          "workspace-usage-projects",
-          (data.by_project || []).map(function (row) {
-            return usageRow([
-              row.name,
-              formatTokens(row.totals.total_tokens),
-              formatCost(row.totals.cost_estimate, currency),
-            ]);
-          }),
-          "No project usage yet."
-        );
-
-        renderUsageTable(
-          "workspace-usage-sources",
-          (data.by_source || []).map(function (row) {
-            return usageRow([
-              row.source,
-              formatTokens(row.totals.total_tokens),
-              formatCost(row.totals.cost_estimate, currency),
-            ]);
-          }),
-          "No usage recorded yet."
-        );
-
-        if (data.member_detail === "all") {
-          renderUsageTable(
-            "workspace-usage-members",
-            (data.by_member || []).map(function (row) {
-              return usageRow([
-                row.username,
-                row.role || "member",
-                formatTokens(row.totals.total_tokens),
-                formatCost(row.totals.cost_estimate, currency),
-              ]);
-            }),
-            "No member usage yet."
-          );
-        }
-      })
-      .catch(function (error) {
-        var note = document.getElementById("workspace-usage-note");
-        if (note) note.textContent = "Usage unavailable: " + error.message;
-      });
+    if (!window.AICAWorkspaceUsage) {
+      var note = document.getElementById("workspace-usage-note");
+      if (note) note.textContent = "Usage unavailable: the usage panel did not load.";
+      return;
+    }
+    window.AICAWorkspaceUsage.load({
+      document: document,
+      fetchUsage: function () {
+        return api("/workspaces/api/workspaces/" + WORKSPACE_ID + "/usage");
+      },
+    });
   }
 
   function bindControls() {

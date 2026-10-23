@@ -44,13 +44,15 @@
   </div>
 </div>
 
-<div class="collab-panel" id="workspace-usage-panel" aria-labelledby="workspace-usage-heading">
+<div class="collab-panel" id="workspace-usage-panel" aria-labelledby="workspace-usage-heading" aria-busy="true">
   <h2 id="workspace-usage-heading">Workspace usage</h2>
   <p class="field-hint" id="workspace-usage-note">
     Token and cost totals across this workspace. Costs are estimates.
   </p>
   <div id="workspace-usage-totals" class="metrics-strip">
-    <p class="empty-note">Loading usage...</p>
+    <div class="usage-state usage-state-loading" role="status" aria-live="polite">
+      <p class="empty-note">Loading usage...</p>
+    </div>
   </div>
   <div class="usage-breakdown-grid">
     <div>
@@ -126,5 +128,6 @@
   window.COLLAB_WORKSPACE_ID = {{ workspace.id }};
   window.COLLAB_MY_ROLE = {{ my_role|tojson }};
 </script>
+<script src="{{ url_for('static', filename='js/workspace_usage.js') }}"></script>
 <script src="{{ url_for('static', filename='js/members.js') }}"></script>
 {% endblock %}
