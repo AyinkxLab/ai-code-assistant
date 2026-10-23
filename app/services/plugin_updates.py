@@ -62,8 +62,26 @@ def _newer_compatible_entries(
     if has_app_context():
         trusted_publishers = current_app.config.get("PLUGIN_TRUSTED_KEYS") or {}
 
+    return _compatible_updates(
+        plugin,
+        catalog.list_entries(),
+        trusted_publishers=trusted_publishers,
+    )
+
+
+def _compatible_updates(
+    plugin: Plugin,
+    entries,
+    *,
+    trusted_publishers: dict,
+) -> list[CatalogEntry]:
+    """Filter ``entries`` to newer, compatible versions of ``plugin``.
+
+    Entries for other plugins are ignored, so callers may pass a grouped slice
+    of the catalog instead of the whole catalog.
+    """
     updates: list[CatalogEntry] = []
-    for entry in catalog.list_entries():
+    for entry in entries:
         if entry.plugin_id != plugin.id:
             continue
         if not is_newer(entry.version, plugin.version):
@@ -95,6 +113,72 @@ def latest_available_update(
         return None
     updates = _newer_compatible_entries(plugin, catalog=active)
     return updates[-1] if updates else None
+
+
+def available_updates(
+    workspace: Workspace | int,
+    *,
+    config: Any | None = None,
+    catalog: PluginCatalog | None = None,
+) -> list[dict]:
+    """Report installed plugins with a newer, compatible catalog version (#400).
+
+    The catalog is loaded once and grouped by plugin id, so every entry is
+    examined once even when the workspace has many installed plugins. Only
+    entries that are both newer than the installed version and compatible with
+    the running application are returned. Results are ordered by plugin id.
+    """
+    workspace_obj = (
+        db.session.get(Workspace, workspace) if isinstance(workspace, int) else workspace
+    )
+    if workspace_obj is None:
+        return []
+
+    active = _load_catalog(config, catalog)
+    if active is None:
+        return []
+
+    installed_ids = [
+        row.plugin_id
+        for row in PluginInstallation.query.filter_by(workspace_id=workspace_obj.id).all()
+    ]
+    if not installed_ids:
+        return []
+
+    entries_by_plugin: dict[str, list[CatalogEntry]] = {}
+    for entry in active.list_entries():
+        entries_by_plugin.setdefault(entry.plugin_id, []).append(entry)
+
+    trusted_publishers = {}
+    if has_app_context():
+        trusted_publishers = current_app.config.get("PLUGIN_TRUSTED_KEYS") or {}
+
+    plugins = Plugin.query.filter(Plugin.id.in_(installed_ids)).order_by(Plugin.id).all()
+    results: list[dict] = []
+    for plugin in plugins:
+        candidates = entries_by_plugin.get(plugin.id)
+        if not candidates:
+            continue
+        updates = _compatible_updates(
+            plugin,
+            candidates,
+            trusted_publishers=trusted_publishers,
+        )
+        if not updates:
+            continue
+        latest = updates[-1]
+        results.append(
+            {
+                "plugin_id": plugin.id,
+                "name": plugin.name,
+                "current_version": plugin.version,
+                "available_version": latest.version,
+                "compatible": True,
+                "source": latest.source,
+                "integrity": latest.integrity,
+            }
+        )
+    return results
 
 
 def update_plan(
@@ -246,6 +330,7 @@ def notify_available_updates(
 
 
 __all__ = [
+    "available_updates",
     "latest_available_update",
     "notify_available_updates",
     "rollback_target",

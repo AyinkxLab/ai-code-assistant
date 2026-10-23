@@ -253,6 +253,7 @@ management operations.
 | `GET`  | `/plugins/api/workspaces/<id>/plugins/<plugin_id>` | Inspect one plugin | any member |
 | `GET`  | `/plugins/api/workspaces/<id>/catalog` (alias `/marketplace`) | Browse catalog metadata, trust, dependencies and install/update/rollback state | any member |
 | `GET`  | `/plugins/api/workspaces/<id>/lockfile` | Read the resolved lockfile pin set | any member |
+| `GET`  | `/plugins/api/workspaces/<id>/plugins/updates` | Installed plugins with a newer, compatible catalog version | any member |
 | `GET`  | `/plugins/api/trusted-publishers` | List configured trusted publisher ids (never keys) and the active policy | authenticated |
 | `POST` | `/plugins/api/workspaces/<id>/plugins/install` | Install a trusted/local manifest | owner |
 | `POST` | `/plugins/api/workspaces/<id>/plugins/install-from-catalog` | Install a catalog-pinned plugin (trust policy + dependency graph enforced) | owner |

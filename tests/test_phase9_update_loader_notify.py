@@ -371,6 +371,98 @@ class TestUpdateNotifications:
 
 
 # --------------------------------------------------------------------------
+# #400 update availability check API
+# --------------------------------------------------------------------------
+
+
+class TestUpdateAvailabilityApi:
+    def _setup(self, app, client, make_user, login, entries):
+        owner = make_user(username="owner", email="owner@example.com")
+        login(email="owner@example.com")
+        ws = _workspace(owner)
+        plugin = _plugin(version="0.1.0")
+        _install(plugin, ws)
+        app.config["PLUGIN_CATALOG_FILE"] = str(_write_catalog(app, entries))
+        return ws, plugin
+
+    @staticmethod
+    def _url(ws):
+        return f"/plugins/api/workspaces/{ws.id}/plugins/updates"
+
+    def test_reports_only_compatible_newer_versions(self, app, client, make_user, login):
+        ws, plugin = self._setup(
+            app,
+            client,
+            make_user,
+            login,
+            [
+                _entry(version="0.2.0"),
+                _entry(version="0.3.0"),
+                {
+                    **_entry(version="0.4.0"),
+                    "manifest": _manifest(version="0.4.0", compatibility=">=99.0.0"),
+                },
+            ],
+        )
+
+        response = client.get(self._url(ws))
+
+        assert response.status_code == 200
+        updates = response.get_json()["updates"]
+        assert len(updates) == 1
+        assert updates[0]["plugin_id"] == plugin.id
+        assert updates[0]["current_version"] == "0.1.0"
+        assert updates[0]["available_version"] == "0.3.0"
+        assert updates[0]["compatible"] is True
+
+    def test_reports_nothing_when_catalog_is_not_newer(self, app, client, make_user, login):
+        ws, _plugin_row = self._setup(
+            app,
+            client,
+            make_user,
+            login,
+            [_entry(version="0.1.0"), _entry(version="0.0.9")],
+        )
+
+        response = client.get(self._url(ws))
+
+        assert response.status_code == 200
+        assert response.get_json()["updates"] == []
+
+    def test_reports_nothing_when_the_only_update_is_incompatible(
+        self, app, client, make_user, login
+    ):
+        ws, _plugin_row = self._setup(
+            app,
+            client,
+            make_user,
+            login,
+            [
+                {
+                    **_entry(version="0.2.0"),
+                    "manifest": _manifest(version="0.2.0", compatibility=">=99.0.0"),
+                }
+            ],
+        )
+
+        response = client.get(self._url(ws))
+
+        assert response.status_code == 200
+        assert response.get_json()["updates"] == []
+
+    def test_member_without_workspace_access_gets_404(self, app, client, make_user, login):
+        owner = make_user(username="owner", email="owner@example.com")
+        ws = _workspace(owner)
+        make_user(username="stranger", email="stranger@example.com")
+        login(email="stranger@example.com")
+        app.config["PLUGIN_CATALOG_FILE"] = str(_write_catalog(app, [_entry(version="0.2.0")]))
+
+        response = client.get(self._url(ws))
+
+        assert response.status_code == 404
+
+
+# --------------------------------------------------------------------------
 # #403 update/rollback UI + API
 # --------------------------------------------------------------------------
 
