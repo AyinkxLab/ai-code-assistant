@@ -43,3 +43,7 @@ simple-websocket==1.1.0
 
 # Production server
 gunicorn==23.0.0
+
+# Invoice PDF export (issue #483). CSV export works without this dependency;
+# PDF export imports it lazily.
+fpdf2==2.8.9

@@ -28,6 +28,9 @@
           <a class="nav-link" href="{{ url_for('workspaces.index') }}">Workspaces</a>
           <a class="nav-link" href="{{ url_for('billing.usage_page') }}">Usage</a>
           <a class="nav-link" href="{{ url_for('billing.index') }}">Billing</a>
+          {% if current_user.is_admin %}
+          <a class="nav-link" href="{{ url_for('admin.usage_report') }}">Admin usage</a>
+          {% endif %}
           <a class="nav-link" href="{{ url_for('plugins.index') }}">Plugins</a>
           <a class="nav-link" href="{{ url_for('stellar.index') }}">Stellar</a>
           <a class="nav-link" href="{{ url_for('reviews.index') }}">Reviews</a>

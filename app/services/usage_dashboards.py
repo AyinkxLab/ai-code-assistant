@@ -23,6 +23,13 @@ from app.services.currency import get_currency_config
 DEFAULT_WINDOW_DAYS = 30
 MAX_WINDOW_DAYS = 365
 
+#: Supported time-series bucket sizes (#449). Daily buckets start at midnight
+#: UTC; weekly buckets start on Monday UTC and end on Sunday.
+BUCKET_DAY = "day"
+BUCKET_WEEK = "week"
+DEFAULT_BUCKET = BUCKET_DAY
+VALID_BUCKETS = (BUCKET_DAY, BUCKET_WEEK)
+
 #: Hard cap on CSV rows and bytes, so an export can never stream unbounded data.
 MAX_CSV_ROWS = 5000
 MAX_CSV_BYTES = 2 * 1024 * 1024
@@ -61,6 +68,22 @@ def normalize_days(value, default: int = DEFAULT_WINDOW_DAYS) -> int:
     return days
 
 
+def normalize_bucket(value) -> str:
+    """Coerce a query-string bucket into :data:`VALID_BUCKETS`.
+
+    A blank value means the default (daily) bucket.
+
+    Raises:
+        ValueError: If the value is not ``day`` or ``week``.
+    """
+    if value is None or value == "":
+        return DEFAULT_BUCKET
+    bucket = str(value).strip().lower()
+    if bucket not in VALID_BUCKETS:
+        raise ValueError("bucket must be 'day' or 'week'.")
+    return bucket
+
+
 def _window_start(days: int, now: datetime | None) -> datetime:
     current = now or datetime.now(UTC)
     return current - timedelta(days=days)
@@ -80,13 +103,21 @@ def query_records(
     workspace_id: int | None = None,
     days: int = DEFAULT_WINDOW_DAYS,
     now: datetime | None = None,
+    until: datetime | None = None,
     source: str | None = None,
     provider: str | None = None,
     model: str | None = None,
 ) -> list[UsageRecord]:
-    """Return ledger rows inside the window, in deterministic order."""
+    """Return ledger rows inside the window, in deterministic order.
+
+    ``until`` optionally adds an inclusive upper bound. Dashboards omit it; the
+    time-series endpoint passes the same ``now`` value so a row dated in the
+    future can never leak into the selected range.
+    """
     since = _window_start(days, now)
     query = UsageRecord.query.filter(UsageRecord.created_at >= since)
+    if until is not None:
+        query = query.filter(UsageRecord.created_at <= until)
     if user_id is not None:
         query = query.filter(UsageRecord.user_id == user_id)
     if workspace_id is not None:
@@ -226,6 +257,105 @@ def admin_dashboard(*, days: int = DEFAULT_WINDOW_DAYS, now: datetime | None = N
     return payload
 
 
+def _bucket_start(moment, bucket: str):
+    """Return the calendar start date for the bucket containing ``moment``."""
+    day = moment.date() if isinstance(moment, datetime) else moment
+    if bucket == BUCKET_WEEK:
+        return day - timedelta(days=day.weekday())
+    return day
+
+
+def _bucket_dates(start, end, bucket: str):
+    """Yield every bucket start between ``start`` and ``end`` inclusive."""
+    step = timedelta(days=7 if bucket == BUCKET_WEEK else 1)
+    cursor = start
+    while cursor <= end:
+        yield cursor
+        cursor += step
+
+
+def _bucket_end(start, bucket: str):
+    """Return the inclusive calendar end date for a bucket."""
+    return start + timedelta(days=6 if bucket == BUCKET_WEEK else 0)
+
+
+def timeseries(
+    *,
+    user_id: int | None = None,
+    workspace_id: int | None = None,
+    days: int = DEFAULT_WINDOW_DAYS,
+    bucket: str = DEFAULT_BUCKET,
+    now: datetime | None = None,
+    source: str | None = None,
+    provider: str | None = None,
+    model: str | None = None,
+) -> dict:
+    """Aggregate usage and cost into bounded daily or weekly buckets (#449).
+
+    The range is ``[now - days, now]``: both ends are inclusive, so a partial
+    first/last day or week contains only rows inside the requested window. Every
+    bucket intersecting the range is returned, including empty buckets, which
+    keeps the series stable for charts. Aggregation is computed strictly from
+    stored :class:`~app.models.UsageRecord` rows and the same source/provider/
+    model filters as :func:`dashboard`.
+    """
+    bucket = normalize_bucket(bucket)
+    filters = {
+        "source": normalize_filter(source),
+        "provider": normalize_filter(provider),
+        "model": normalize_filter(model),
+    }
+    current = now or datetime.now(UTC)
+    since = _window_start(days, current)
+    records = query_records(
+        user_id=user_id,
+        workspace_id=workspace_id,
+        days=days,
+        now=current,
+        until=current,
+        **filters,
+    )
+
+    rows: dict = {}
+    first = _bucket_start(since, bucket)
+    last = _bucket_start(current, bucket)
+    for key in _bucket_dates(first, last, bucket):
+        rows[key] = []
+    for record in records:
+        created = getattr(record, "created_at", None)
+        if created is None:
+            continue
+        rows.setdefault(_bucket_start(created, bucket), []).append(record)
+
+    buckets = [
+        {
+            "start": start.isoformat(),
+            "end": _bucket_end(start, bucket).isoformat(),
+            "totals": usage_ledger.summarize_records(rows[start]),
+        }
+        for start in sorted(rows)
+    ]
+    return {
+        "bucket": bucket,
+        "range": {
+            "start": since.isoformat(),
+            "end": current.isoformat(),
+            "days": days,
+        },
+        "currency": get_currency_config(),
+        "cost_is_estimate": True,
+        "totals": usage_ledger.summarize_records(records),
+        "buckets": buckets,
+        "filters": filters,
+        "scope": {
+            "type": "workspace" if workspace_id is not None else "user",
+            "user_id": user_id,
+            "workspace_id": workspace_id,
+            "days": days,
+        },
+    }
+
+
 def export_csv(
     *,
     user_id: int | None = None,
@@ -294,16 +424,22 @@ def export_csv(
 
 
 __all__ = [
+    "BUCKET_DAY",
+    "BUCKET_WEEK",
     "CSV_COLUMNS",
+    "DEFAULT_BUCKET",
     "DEFAULT_WINDOW_DAYS",
     "MAX_CSV_BYTES",
     "MAX_CSV_ROWS",
     "MAX_WINDOW_DAYS",
+    "VALID_BUCKETS",
     "admin_dashboard",
     "available_filters",
     "dashboard",
     "export_csv",
+    "normalize_bucket",
     "normalize_days",
     "normalize_filter",
     "query_records",
+    "timeseries",
 ]

@@ -1,0 +1,133 @@
+{% extends "base.html" %}
+
+{% block title %}Admin usage report - {{ config.APP_NAME }}{% endblock %}
+
+{% block content %}
+<h1>Admin usage report</h1>
+<p>
+  Detailed usage rows for every stored ledger entry in the selected window. Cost
+  is an <strong>estimate</strong> derived from the configured price table; rows
+  without a known price are excluded from the cost total rather than treated as
+  zero. Prompts and completions are never read.
+</p>
+
+<form method="get" action="{{ url_for('admin.usage_report') }}" class="inline-form">
+  <label for="days">Window (days)</label>
+  <input id="days" name="days" type="number" min="1" max="365" value="{{ days }}">
+
+  <label for="scope">Scope</label>
+  <select id="scope" name="scope">
+    <option value="all" {% if scope == 'all' %}selected{% endif %}>All users and workspaces</option>
+    <option value="user" {% if scope == 'user' %}selected{% endif %}>Single user</option>
+    <option value="workspace" {% if scope == 'workspace' %}selected{% endif %}>Single workspace</option>
+  </select>
+
+  <label for="user_id">User</label>
+  <select id="user_id" name="user_id">
+    <option value="">Any user</option>
+    {% for user in users %}
+    <option value="{{ user.id }}" {% if user_id == user.id %}selected{% endif %}>{{ user.username }}</option>
+    {% endfor %}
+  </select>
+
+  <label for="workspace_id">Workspace</label>
+  <select id="workspace_id" name="workspace_id">
+    <option value="">Any workspace</option>
+    {% for workspace in workspaces %}
+    <option value="{{ workspace.id }}" {% if workspace_id == workspace.id %}selected{% endif %}>{{ workspace.name }}</option>
+    {% endfor %}
+  </select>
+
+  <label for="source">Source</label>
+  <select id="source" name="source">
+    <option value="">All sources</option>
+    {% for value in available_filters.sources %}
+    <option value="{{ value }}" {% if filters.source == value %}selected{% endif %}>{{ value }}</option>
+    {% endfor %}
+  </select>
+
+  <label for="provider">Provider</label>
+  <select id="provider" name="provider">
+    <option value="">All providers</option>
+    {% for value in available_filters.providers %}
+    <option value="{{ value }}" {% if filters.provider == value %}selected{% endif %}>{{ value }}</option>
+    {% endfor %}
+  </select>
+
+  <label for="model">Model</label>
+  <select id="model" name="model">
+    <option value="">All models</option>
+    {% for value in available_filters.models %}
+    <option value="{{ value }}" {% if filters.model == value %}selected{% endif %}>{{ value }}</option>
+    {% endfor %}
+  </select>
+
+  <label for="per_page">Rows per page</label>
+  <input id="per_page" name="per_page" type="number" min="1" max="100" value="{{ per_page }}">
+
+  <button class="btn" type="submit">Apply</button>
+</form>
+
+<section aria-labelledby="report-totals-heading">
+  <h2 id="report-totals-heading">Filtered totals</h2>
+  <div class="metric-grid">
+    <div class="metric"><span class="metric-label">Rows</span><strong>{{ summary['count'] }}</strong></div>
+    <div class="metric"><span class="metric-label">Prompt tokens</span><strong>{{ summary.prompt_tokens }}</strong></div>
+    <div class="metric"><span class="metric-label">Completion tokens</span><strong>{{ summary.completion_tokens }}</strong></div>
+    <div class="metric"><span class="metric-label">Total tokens</span><strong>{{ summary.total_tokens }}</strong></div>
+    <div class="metric"><span class="metric-label">Estimated cost</span><strong>{{ currency.symbol }}{{ '%.6f'|format(summary.cost_estimate) }}</strong></div>
+  </div>
+  <p class="sidebar-empty">
+    {{ summary.priced_records }} of {{ summary['count'] }} rows have a known price.
+    Showing page {{ pagination.page }} of {{ pagination.pages or 1 }}.
+  </p>
+</section>
+
+<section aria-labelledby="report-rows-heading">
+  <h2 id="report-rows-heading">Usage rows</h2>
+  {% if rows %}
+  <table class="billing-table">
+    <thead>
+      <tr>
+        <th scope="col">Date</th>
+        <th scope="col">User</th>
+        <th scope="col">Workspace</th>
+        <th scope="col">Source</th>
+        <th scope="col">Provider</th>
+        <th scope="col">Model</th>
+        <th scope="col">Status</th>
+        <th scope="col">Tokens</th>
+        <th scope="col">Estimated cost</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in rows %}
+      <tr>
+        <td>{% if row.created_at %}{{ row.created_at.strftime('%Y-%m-%d %H:%M') }}{% endif %}</td>
+        <td>{% if row.user_id in users_by_id %}{{ users_by_id[row.user_id].username }}{% elif row.user_id %}user {{ row.user_id }}{% else %}&mdash;{% endif %}</td>
+        <td>{% if row.workspace_id in workspaces_by_id %}{{ workspaces_by_id[row.workspace_id].name }}{% elif row.workspace_id %}workspace {{ row.workspace_id }}{% else %}&mdash;{% endif %}</td>
+        <td>{{ row.source or 'unknown' }}</td>
+        <td>{{ row.provider or 'unknown' }}</td>
+        <td>{{ row.model or 'unknown' }}</td>
+        <td>{{ row.status or 'unknown' }}</td>
+        <td>{{ row.total_tokens or 0 }}</td>
+        <td>{% if row.cost_estimate is none %}&mdash;{% else %}{{ currency.symbol }}{{ '%.6f'|format(row.cost_estimate) }}{% endif %}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  <nav class="inline-form" aria-label="Usage report pages">
+    {% if pagination.has_prev %}
+    <a class="btn" href="{{ url_for('admin.usage_report', days=days, scope=scope, user_id=user_id or '', workspace_id=workspace_id or '', source=filters.source or '', provider=filters.provider or '', model=filters.model or '', per_page=per_page, page=pagination.prev_num) }}">Previous</a>
+    {% endif %}
+    <span>Page {{ pagination.page }} of {{ pagination.pages or 1 }} ({{ pagination.total }} rows)</span>
+    {% if pagination.has_next %}
+    <a class="btn" href="{{ url_for('admin.usage_report', days=days, scope=scope, user_id=user_id or '', workspace_id=workspace_id or '', source=filters.source or '', provider=filters.provider or '', model=filters.model or '', per_page=per_page, page=pagination.next_num) }}">Next</a>
+    {% endif %}
+  </nav>
+  {% else %}
+  <p class="sidebar-empty">No usage rows match this window and scope.</p>
+  {% endif %}
+</section>
+{% endblock %}

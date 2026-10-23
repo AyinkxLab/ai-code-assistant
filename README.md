@@ -98,15 +98,19 @@ from a documented price table, not provider invoices.
 | `USAGE_RETENTION_DAYS` | `365` | Minimum age before `flask usage purge` may delete ledger rows. |
 | `BUDGET_ENFORCEMENT_ENABLED` | `1` | Refuses LLM calls that would exceed a monthly token/cost budget (fail closed). |
 | `BUDGET_DEFAULT_WARN_THRESHOLD` | `0.8` | Default warning fraction for new budgets. |
+| `BILLING_ALERT_EMAIL` | empty | Recipient for best-effort over-budget alert email; empty disables email. |
 | `BILLING_IMPORT_MAX_BYTES` | `1048576` | Maximum provider billing CSV upload size. |
 | `BILLING_IMPORT_MAX_ROWS` | `5000` | Maximum billing CSV rows. |
+| `USAGE_EXPORT_CSV_MAX_ROWS` | `5000` | Hard row cap for CSV exports; clipped exports advertise truncation. |
 | `CURRENCY_CODE` | `USD` | Currency code shown on every cost figure. |
+| `CURRENCY_SYMBOL` | `$` | Display symbol paired with the currency code. |
+| `CURRENCY_DECIMAL_PLACES` | `4` | Display precision for estimates (stored costs use six decimals). |
 | `LLM_MODEL` | empty | Pre-flight estimate model; when set, the price table is used. |
 | `LLM_PRICE_TABLE` | empty | Optional JSON provider/model price overlay; invalid values log and fall back safely. |
 
 See [Observability](docs/observability.md) for the ledger, metrics, dashboards,
-and export contract, and [Billing](docs/billing.md) for the price table,
-budgets, and reconciliation.
+time series, and export contract, and [Billing](docs/billing.md) for the price
+table, quotas, budgets, alerts, invoices, and reconciliation.
 
 ## Documentation
 
