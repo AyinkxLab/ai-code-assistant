@@ -82,7 +82,7 @@ from app.services.plugin_trust import (
     PluginTrustConfigError,
     trusted_publisher_ids,
 )
-from app.services.plugin_updates import notify_available_updates, update_plan
+from app.services.plugin_updates import available_updates, notify_available_updates, update_plan
 from app.services.plugin_versions import is_newer, latest_version
 from app.services.plugins import ManifestValidationError, PluginError, PluginManifest
 
@@ -1025,6 +1025,14 @@ def api_update_plan(workspace_id: int, plugin_id: str):
     if plugin is None:
         return jsonify({"error": "Plugin not found."}), 404
     return jsonify(update_plan(plugin, workspace_id=workspace_id))
+
+
+@bp.route("/api/workspaces/<int:workspace_id>/plugins/updates", methods=["GET"])
+@login_required
+def api_available_updates(workspace_id: int):
+    """Report installed plugins with a newer, compatible catalog version (#400)."""
+    resolve_workspace(workspace_id)
+    return jsonify({"updates": available_updates(workspace_id)})
 
 
 @bp.route(
