@@ -23,6 +23,23 @@ class UsageRecord(db.Model):
 
     __tablename__ = "usage_records"
 
+    #: Composite indexes for the windowed filter + grouping shapes used by the
+    #: dashboards, exports and top-entity reports (#436). ``created_at`` is last
+    #: in each index so the time-range filter is satisfied by the same scan.
+    __table_args__ = (
+        db.Index("ix_usage_records_user_created", "user_id", "created_at"),
+        db.Index("ix_usage_records_workspace_created", "workspace_id", "created_at"),
+        db.Index("ix_usage_records_project_created", "project_id", "created_at"),
+        db.Index("ix_usage_records_source_created", "source", "created_at"),
+        db.Index(
+            "ix_usage_records_provider_model_created",
+            "provider",
+            "model",
+            "created_at",
+        ),
+        db.Index("ix_usage_records_status_created", "status", "created_at"),
+    )
+
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(
         db.Integer,
