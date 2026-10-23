@@ -273,6 +273,14 @@ def _parse_days():
         return None, (jsonify({"error": str(exc), "kind": "invalid"}), 400)
 
 
+def _parse_bucket():
+    """Parse ``bucket`` and return ``(bucket, error_response)``."""
+    try:
+        return usage_dashboards.normalize_bucket(request.args.get("bucket")), None
+    except ValueError as exc:
+        return None, (jsonify({"error": str(exc), "kind": "invalid"}), 400)
+
+
 def _parse_filters() -> dict:
     """Read the optional source/provider/model filters from the query string."""
     return {
@@ -335,6 +343,22 @@ def api_usage_dashboard():
     return jsonify(usage_dashboards.dashboard(user_id=current_user.id, days=days, **filters))
 
 
+@bp.route("/api/usage/timeseries")
+@login_required
+def api_usage_timeseries():
+    """Return the signed-in user's usage and cost as daily/weekly buckets (#449)."""
+    days, error = _parse_days()
+    if error is not None:
+        return error
+    bucket, error = _parse_bucket()
+    if error is not None:
+        return error
+    filters = _parse_filters()
+    return jsonify(
+        usage_dashboards.timeseries(user_id=current_user.id, days=days, bucket=bucket, **filters)
+    )
+
+
 @bp.route("/api/usage/dashboard.csv")
 @login_required
 def api_usage_dashboard_csv():
@@ -358,6 +382,24 @@ def api_workspace_usage(workspace_id: int):
         return error
     filters = _parse_filters()
     return jsonify(usage_dashboards.dashboard(workspace_id=workspace_id, days=days, **filters))
+
+
+@bp.route("/api/workspaces/<int:workspace_id>/usage/timeseries")
+@login_required
+def api_workspace_timeseries(workspace_id: int):
+    """Return a workspace time series for its owner or a site administrator."""
+    if not can_access_workspace_billing(workspace_id, current_user):
+        return _dashboard_refusal()
+    days, error = _parse_days()
+    if error is not None:
+        return error
+    bucket, error = _parse_bucket()
+    if error is not None:
+        return error
+    filters = _parse_filters()
+    return jsonify(
+        usage_dashboards.timeseries(workspace_id=workspace_id, days=days, bucket=bucket, **filters)
+    )
 
 
 @bp.route("/api/workspaces/<int:workspace_id>/usage.csv")

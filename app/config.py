@@ -133,6 +133,9 @@ class Config:
     # spend. The default warning threshold is applied to new budgets.
     BUDGET_ENFORCEMENT_ENABLED = os.getenv("BUDGET_ENFORCEMENT_ENABLED", "1") == "1"
     BUDGET_DEFAULT_WARN_THRESHOLD = float(os.getenv("BUDGET_DEFAULT_WARN_THRESHOLD", "0.8"))
+    # Optional recipient for over-budget alert email. In-app notifications are
+    # always created; email is best-effort and requires SMTP to be configured.
+    BILLING_ALERT_EMAIL = os.getenv("BILLING_ALERT_EMAIL", "")
     # Display currency for every cost figure (issue #441). Defaults to USD; the
     # code is always shown next to the symbol so a figure is never ambiguous.
     # Operators that change the code are responsible for keeping the configured

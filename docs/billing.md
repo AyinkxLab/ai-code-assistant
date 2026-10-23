@@ -112,6 +112,48 @@ Implementation: `app/services/budgets.py`, `app/billing/routes.py`; tests:
 `tests/test_budgets.py`, `tests/test_budget_e2e.py`,
 `tests/test_budget_overrides.py`, `tests/test_alerts.py`.
 
+## Quotas
+
+A budget is the application's quota: a monthly ceiling on tokens, estimated cost,
+or both, scoped to one user or one workspace. Quotas are **hard** in the sense
+that a refused call never reaches the provider; they are not overage billing.
+
+- The limit applies to rows in the current calendar month and excludes `denied`
+  rows, so a refused request cannot consume the caller's remaining quota.
+- Evaluation happens before every billable path. When a limit would be exceeded
+  the request returns `429` with `kind: "budget_exceeded"`, `limits_hit`,
+  `retry_after`, the evaluated budgets, and a `Retry-After` header.
+- A missing budget means unlimited usage. Quotas are opt-in per user/workspace.
+- Temporary overrides and workspace overrides can raise or lower a limit without
+  changing historical ledger rows; see `app/services/budget_overrides.py`.
+- The budget management API described above reads live usage ratios, so an
+  operator can see how much of each quota is consumed.
+
+## Alerts
+
+Budget alerts are advisory and never block a request.
+
+| Alert | When it fires | Delivery |
+| ----- | ------------- | -------- |
+| `warning` | Spend reaches `warn_threshold` (default 80%) of the limit. | In-app notification. |
+| `over_budget` | Spend reaches or exceeds 100% of the limit. | In-app notification plus best-effort email. |
+
+- Each threshold fires at most once per workspace/period/level. The default
+  de-duplicator is process-local; a restart or a separate worker may therefore
+  emit the threshold once more.
+- Jumping straight past the limit emits both crossed thresholds once.
+- Users can opt out of `budget_alerts` notifications; their preference is
+  honoured before an in-app notification is created.
+- Email is sent only when SMTP is configured and `BILLING_ALERT_EMAIL` names a
+  recipient. Email failure is logged and never changes the response or the
+  in-app notification.
+- A request that crosses the warning threshold still succeeds and adds
+  `X-Budget-Warning: approaching_limit` to its response.
+
+Implementation: `app/services/budget_alerts.py`, `app/services/token_usage.py`,
+`app/services/email.py`; tests: `tests/test_alerts.py`,
+`tests/test_budget_alerts.py`, `tests/test_budget_warning_threshold.py`.
+
 ## Provider billing reconciliation
 
 `POST /billing/import` accepts a bounded CSV of what a provider actually charged
@@ -134,6 +176,54 @@ messages and are never overwritten by an import.
 Implementation: `app/services/billing_reconciliation.py`,
 `app/models/provider_billing_record.py`; tests:
 `tests/test_billing_reconciliation.py`.
+
+## Invoices
+
+Invoices are **drafts** generated on demand from the usage ledger. Nothing is
+persisted, and every amount is an estimate rather than a provider-confirmed
+charge.
+
+| Route | Access | Purpose |
+| ----- | ------ | ------- |
+| `GET /billing/api/invoices?period=YYYY-MM` | signed-in user | Draft invoice for the caller. |
+| `GET /billing/api/invoices?period=YYYY-MM&workspace_id=<id>` | workspace owner/admin | Draft invoice for a workspace. |
+| `GET /billing/api/invoices/<YYYY-MM>` | signed-in user | Same document using a path period. |
+
+Query parameters:
+
+- `period` (required) — a `YYYY-MM` calendar month. `GET` with a missing or
+  malformed period returns `400` with `kind: "period"` or `kind: "invalid"`.
+- `workspace_id` (optional) — scopes the invoice to a workspace the caller owns
+  or administers; an inaccessible workspace returns `404`.
+
+The response contains `scope`, `scope_id`, `period`, `draft: true`,
+`line_items`, and `totals`. Each line item aggregates one `(provider, model)`
+pair with record count, token counts, and an estimated cost. Unknown provider or
+model labels are preserved as `"unknown"` so historical rows are not dropped.
+`cost_estimate` is `null` when no contributing row has a known price, and
+`cost_is_estimate` is always `true`.
+
+Implementation: `app/services/invoices.py`, `app/billing/routes.py`; tests:
+`tests/test_invoices.py`, `tests/test_invoice_export.py`.
+
+## Usage time series
+
+`GET /billing/api/usage/timeseries` returns the signed-in user's usage and cost
+grouped into bounded buckets. Workspace owners/admins can use
+`GET /billing/api/workspaces/<workspace_id>/usage/timeseries`.
+
+| Query parameter | Default | Meaning |
+| --------------- | ------- | ------- |
+| `days` | `30` | Inclusive window size, bounded to `1..365`. |
+| `bucket` | `day` | `day` or `week`; weekly buckets start Monday UTC and end Sunday UTC. |
+| `source` / `provider` / `model` | empty | Exact filters applied before aggregation. |
+
+The response includes `bucket`, `range` (`start`, `end`, `days`), `totals`, and
+a `buckets` array. Each bucket has an inclusive `start`/`end` date and the same
+totals shape as the dashboards. Every bucket intersecting the requested range is
+returned, including empty ones, so a chart has a stable shape. Buckets are
+computed strictly from stored `UsageRecord` rows and rows outside
+`[now - days, now]` are excluded, including future-dated rows.
 
 ## Recomputing historical costs
 
@@ -169,9 +259,14 @@ workspace, and org-wide) are bounded to 5,000 rows / 2 MiB and set
 | `LLM_PRICE_TABLE` | empty | Optional JSON overlay for provider/model prices. Invalid configuration logs an error, sets `PRICE_TABLE_ERROR`, and falls back to defaults. |
 | `BUDGET_ENFORCEMENT_ENABLED` | `1` | Evaluates budgets before LLM calls; disable only for local debugging. |
 | `BUDGET_DEFAULT_WARN_THRESHOLD` | `0.8` | Default warning fraction for new budgets. |
+| `BILLING_ALERT_EMAIL` | empty | Recipient for best-effort over-budget alert email; empty disables email. |
 | `BILLING_IMPORT_MAX_BYTES` | `1048576` | Maximum billing CSV upload size. |
 | `BILLING_IMPORT_MAX_ROWS` | `5000` | Maximum billing CSV rows. |
+| `USAGE_EXPORT_CSV_MAX_ROWS` | `5000` | Hard row cap for CSV exports; truncated exports set `X-Export-Truncated: true`. |
 | `USAGE_RETENTION_DAYS` | `365` | Ledger retention window for `flask usage purge`. |
+| `SMTP_HOST` / `SMTP_PORT` / `SMTP_USER` / `SMTP_PASSWORD` | empty / `587` / empty / empty | Optional SMTP transport used for invitations and budget-alert email. |
+| `MAIL_DEFAULT_SENDER` | empty | Sender address for outgoing email. |
+| `MAIL_USE_TLS` | `1` | Enable STARTTLS for SMTP. |
 
 Keep the currency code and the price/estimate rates in the same currency.
 Changing the code does not convert stored values.

@@ -68,6 +68,21 @@ def _reset_github_response_cache():
     github_cache.reset()
 
 
+@pytest.fixture(autouse=True)
+def _reset_marketplace_cache():
+    """Clear the process-local last-known-good marketplace catalog cache.
+
+    The cache is keyed by source but shared across tests, so a successful remote
+    load in one test would otherwise be served as a stale fallback in the next
+    test's failure case.
+    """
+    from app.services import marketplace
+
+    marketplace.reset_marketplace_cache()
+    yield
+    marketplace.reset_marketplace_cache()
+
+
 @pytest.fixture()
 def app():
     """Create a fresh application instance for each test."""
