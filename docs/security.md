@@ -159,7 +159,9 @@ configuration (see "Known limitations / planned hardening").
 ## Marketplace trust model
 
 The marketplace is a distribution surface, not a privilege boundary. Trust is
-established in layers, and every layer fails closed:
+established in layers, and every layer fails closed. The focused threat model,
+including residual risk and out-of-scope items, is documented in
+[Marketplace threat model](marketplace-threat-model.md).
 
 1. **Source.** The catalog is operator-controlled: a local JSON document
    (`PLUGIN_CATALOG_FILE`, or `PLUGIN_MARKETPLACE_CATALOG` for the read-only
