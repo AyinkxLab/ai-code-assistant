@@ -96,14 +96,54 @@ def _run(prompt: str, *, system: str = _SYSTEM) -> str:
 
     try:
         provider = get_provider()
-        return provider.complete(
+        content = provider.complete(
             [
                 {"role": "system", "content": system},
                 {"role": "user", "content": prompt},
             ]
         )
+        _record_analysis_usage(provider)
+        return content
     except LLMProviderError as exc:
         return f"[analysis unavailable: {exc}]"
+
+
+def _record_analysis_usage(provider) -> None:
+    """Record one GitHub-analysis completion in the central usage ledger.
+
+    ``complete()`` returns text only, so token counts are recorded as estimated
+    zeroes rather than guessed. Accounting is best-effort and must never break
+    analysis; anonymous calls and calls outside an app context are not ledgered
+    because they have no owner.
+    """
+    from flask import has_app_context
+
+    if not has_app_context():
+        return
+
+    from flask_login import current_user
+
+    if not getattr(current_user, "is_authenticated", False):
+        return
+
+    from app.services import usage_ledger
+
+    model = getattr(provider, "model", None)
+    if not model:
+        models = getattr(provider, "models", ()) or ()
+        model = models[0] if models else None
+    try:
+        usage_ledger.record_usage(
+            source=usage_ledger.SOURCE_ANALYSIS,
+            user=current_user,
+            provider=getattr(provider, "name", None),
+            model=model,
+            tokens_estimated=True,
+            status=usage_ledger.STATUS_SUCCESS,
+        )
+    except Exception:
+        # Never let accounting change the analysis result.
+        return
 
 
 def _clip(text: str, limit: int = MAX_CONTEXT_CHARS) -> str:
