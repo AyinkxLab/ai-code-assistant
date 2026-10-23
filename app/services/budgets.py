@@ -396,6 +396,37 @@ def _workspace_id_for_request(kwargs: dict) -> int | None:
     return None
 
 
+def _record_refusal(user, workspace_id: int | None) -> None:
+    """Record why a billed call was refused, without ever failing the request."""
+    from flask import request
+
+    from app.services import usage_ledger
+
+    endpoint = (getattr(request, "endpoint", "") or "").lower()
+    if "review" in endpoint:
+        source = usage_ledger.SOURCE_REVIEW
+    elif "tool" in endpoint:
+        source = usage_ledger.SOURCE_TOOLS
+    elif "chat" in endpoint:
+        source = usage_ledger.SOURCE_CHAT
+    elif "workspace" in endpoint or "project" in endpoint:
+        source = usage_ledger.SOURCE_ANALYSIS
+    else:
+        source = usage_ledger.UNKNOWN_SOURCE
+
+    try:
+        usage_ledger.record_usage(
+            source=source,
+            user=user,
+            workspace_id=workspace_id,
+            status=usage_ledger.STATUS_DENIED,
+            tokens_estimated=True,
+        )
+    except Exception:
+        # Audit/accounting must never turn a refusal into a crash.
+        return
+
+
 def budget_refusal(user, workspace_id: int | None = None):
     """Return a refusal response when a billable call cannot proceed.
 
@@ -408,6 +439,7 @@ def budget_refusal(user, workspace_id: int | None = None):
     try:
         decision = check_budgets(user, workspace_id)
     except BudgetCheckError:
+        _record_refusal(user, workspace_id)
         response = jsonify(
             {
                 "error": "Budget check unavailable; refusing the request.",
@@ -419,6 +451,7 @@ def budget_refusal(user, workspace_id: int | None = None):
 
     g.budget_decision = decision
     if not decision.allowed:
+        _record_refusal(user, workspace_id)
         notify_decision(user, decision, level="blocked")
         return budget_error_response(decision)
     if decision.warned:

@@ -87,6 +87,7 @@ EXPORT_CSV_COLUMNS = (
     "project_id",
     "conversation_id",
     "source",
+    "cost_center",
     "provider",
     "model",
     "status",
@@ -223,6 +224,7 @@ def estimate_cost(
 def record_usage(
     *,
     source: str,
+    cost_center: str | None = None,
     prompt_tokens=0,
     completion_tokens=0,
     total_tokens=None,
@@ -257,6 +259,7 @@ def record_usage(
     counts = normalize_usage(prompt_tokens, completion_tokens, total_tokens)
     provider = (str(provider).strip()[:50] or None) if provider else None
     model = (str(model).strip()[:100] or None) if model else None
+    cost_center = _optional_text(cost_center, "cost_center", 100)
     request_id = _optional_text(request_id, "request_id", 64)
     latency_ms = _optional_non_negative_int(latency_ms, "latency_ms")
     status = _optional_text(status, "status", 20)
@@ -297,6 +300,7 @@ def record_usage(
         project_id=resolved_project_id,
         conversation_id=resolved_conversation_id,
         source=normalize_source(source) or UNKNOWN_SOURCE,
+        cost_center=cost_center,
         provider=provider,
         model=model,
         prompt_tokens=counts["prompt_tokens"],

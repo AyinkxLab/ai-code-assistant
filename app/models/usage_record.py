@@ -68,6 +68,8 @@ class UsageRecord(db.Model):
     #: Operation family: chat, analysis, review, tools or project_chat.
     #: Unknown values are preserved so readers can group them safely.
     source = db.Column(db.String(40), nullable=False, default="unknown", index=True)
+    #: Optional cost-center / project tag for chargeback rollups.
+    cost_center = db.Column(db.String(100), nullable=True, index=True)
     provider = db.Column(db.String(50), nullable=True)
     model = db.Column(db.String(100), nullable=True)
     prompt_tokens = db.Column(db.Integer, nullable=False, default=0)
@@ -106,6 +108,7 @@ class UsageRecord(db.Model):
             "project_id": self.project_id,
             "conversation_id": self.conversation_id,
             "source": self.source,
+            "cost_center": self.cost_center,
             "provider": self.provider,
             "model": self.model,
             "prompt_tokens": self.prompt_tokens,
