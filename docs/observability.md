@@ -40,14 +40,19 @@ than `USAGE_RETENTION_DAYS`. Denied calls do not count toward budgets.
 ## Metrics
 
 `GET /metrics` returns Prometheus `text/plain; version=0.0.4` and is bounded by
-`MAX_SERIES_PER_METRIC` (500) per counter; overflow is folded into an `other`
-series so a hostile label cannot grow memory without limit.
+`MAX_SERIES_PER_METRIC` (500) per counter or histogram; overflow is folded into
+an `other` series so a hostile label cannot grow memory without limit.
 
 | Metric | Type | Labels | Meaning |
 | ------ | ---- | ------ | ------- |
 | `http_requests_total` | counter | `method`, `endpoint`, `status` | Requests by route pattern and status class. |
 | `llm_tokens_total` | counter | `provider`, `model`, `direction` | Tokens consumed (`in`/`out`). |
 | `llm_cost_usd_total` | counter | `provider`, `model` | Estimated cost accumulated from ledger writes. |
+| `llm_latency_ms` | histogram | `provider`, `model` | Provider latency in milliseconds; buckets run from 5 ms to 30 s plus `+Inf`. |
+
+Token, cost and latency values are published from `usage_ledger.record_usage`, so
+every instrumented path reports the same numbers. Latency is observed only when
+the provider reports `latency_ms`; a missing value is not recorded as zero.
 
 Endpoint protection:
 

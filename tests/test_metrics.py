@@ -8,6 +8,7 @@ from app.observability.metrics import (
     MAX_SERIES_PER_METRIC,
     REGISTRY,
     Counter,
+    Histogram,
 )
 
 SAMPLE_LINE = re.compile(r"^[a-zA-Z_:][a-zA-Z0-9_:]*(\{[^}]*\})? -?\d+(\.\d+)?([eE][+-]?\d+)?$")
@@ -73,6 +74,39 @@ def test_counter_cardinality_is_bounded():
     assert 'cap_total{kind="other"} 50' in samples
 
 
+def test_histogram_renders_cumulative_buckets_sum_and_count():
+    histogram = Histogram("demo_ms", "A demo.", ("kind",), buckets=(5, 10))
+    histogram.observe(3, kind="a")
+    histogram.observe(7, kind="a")
+
+    lines = histogram.render()
+
+    assert lines[0] == "# HELP demo_ms A demo."
+    assert lines[1] == "# TYPE demo_ms histogram"
+    assert 'demo_ms_bucket{kind="a",le="5"} 1' in lines
+    assert 'demo_ms_bucket{kind="a",le="10"} 2' in lines
+    assert 'demo_ms_bucket{kind="a",le="+Inf"} 2' in lines
+    assert 'demo_ms_sum{kind="a"} 10' in lines
+    assert 'demo_ms_count{kind="a"} 2' in lines
+
+
+def test_histogram_rejects_negative_and_wrong_labels():
+    histogram = Histogram("neg_ms", "Negative.", ("kind",))
+    with pytest.raises(ValueError):
+        histogram.observe(-1, kind="a")
+    with pytest.raises(ValueError):
+        histogram.observe(1, other="a")
+
+
+def test_histogram_cardinality_is_bounded():
+    histogram = Histogram("cap_ms", "Cap.", ("kind",), buckets=(5,))
+    for i in range(MAX_SERIES_PER_METRIC + 25):
+        histogram.observe(i, kind=f"k{i}")
+    samples = [line for line in histogram.render() if not line.startswith("#")]
+    assert 'cap_ms_count{kind="other"} 25' in samples
+    assert 'cap_ms_bucket{kind="other",le="+Inf"} 25' in samples
+
+
 def test_metrics_endpoint_returns_valid_exposition(client):
     client.get("/items/1")
     response = metrics_get(client)
@@ -89,6 +123,7 @@ def test_metrics_declares_all_families(client):
     body = metrics_get(client).get_data(as_text=True)
     for name in ("http_requests_total", "llm_tokens_total", "llm_cost_usd_total"):
         assert f"# TYPE {name} counter" in body
+    assert "# TYPE llm_latency_ms histogram" in body
 
 
 def test_request_counter_uses_route_pattern_not_raw_path(client):
@@ -115,6 +150,38 @@ def test_token_and_cost_counters_are_published(client):
     assert 'llm_tokens_total{provider="openai",model="gpt-x",direction="in"} 12' in body
     assert 'llm_tokens_total{provider="openai",model="gpt-x",direction="out"} 6' in body
     assert 'llm_cost_usd_total{provider="openai",model="gpt-x"} 0.75' in body
+
+
+def test_latency_histogram_is_published(client):
+    record_usage("openai", "gpt-x", 10, 5, 0.25, latency_ms=120)
+    record_usage("openai", "gpt-x", 2, 1, 0.5, latency_ms=80)
+    body = metrics_get(client).get_data(as_text=True)
+    assert 'llm_latency_ms_count{provider="openai",model="gpt-x"} 2' in body
+    assert 'llm_latency_ms_sum{provider="openai",model="gpt-x"} 200' in body
+    assert 'llm_latency_ms_bucket{provider="openai",model="gpt-x",le="100"} 1' in body
+    assert 'llm_latency_ms_bucket{provider="openai",model="gpt-x",le="250"} 2' in body
+    assert 'llm_latency_ms_bucket{provider="openai",model="gpt-x",le="+Inf"} 2' in body
+
+
+def test_ledger_writes_publish_latency(db, make_user):
+    from app.services import usage_ledger
+
+    REGISTRY.reset()
+    user = make_user(username="latency", email="latency@example.com")
+    usage_ledger.record_usage(
+        source="chat",
+        user=user,
+        provider="openai",
+        model="gpt-x",
+        prompt_tokens=3,
+        completion_tokens=4,
+        latency_ms=120,
+    )
+
+    body = REGISTRY.render()
+    assert 'llm_latency_ms_count{provider="openai",model="gpt-x"} 1' in body
+    assert 'llm_latency_ms_sum{provider="openai",model="gpt-x"} 120' in body
+    REGISTRY.reset()
 
 
 def test_record_usage_ignores_missing_values(client):
