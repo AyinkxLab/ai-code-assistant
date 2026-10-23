@@ -331,6 +331,7 @@ def record_usage(
         counts["prompt_tokens"],
         counts["completion_tokens"],
         cost_estimate,
+        latency_ms=latency_ms,
     )
     return record
 
