@@ -199,6 +199,7 @@ def _payload(records: list[UsageRecord]) -> dict:
         "by_source": [{"source": source, **stats} for source, stats in by_source.items()],
         "by_provider": _group(records, "provider", "provider"),
         "by_model": _group(records, "model", "model"),
+        "by_cost_center": _group(records, "cost_center", "cost_center"),
         "daily": _daily(records),
     }
 

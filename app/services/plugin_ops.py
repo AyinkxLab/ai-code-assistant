@@ -590,6 +590,42 @@ def rollback_from_catalog(
     )
 
 
+class PluginReloadDisabledError(PluginError):
+    """Plugin hot reload was requested outside development."""
+
+
+def hot_reload_enabled(config=None) -> bool:
+    """Return whether development-only plugin hot reload is enabled."""
+    cfg = config or current_app.config
+    return bool(cfg.get("DEBUG")) or str(cfg.get("APP_ENV", "")).strip().lower() in {
+        "development",
+        "testing",
+    }
+
+
+def reload_plugin(plugin_id: str, *, config=None) -> Plugin:
+    """Reload a plugin's validated manifest from the discovery directory.
+
+    Strictly development-only: production configuration refuses before any
+    filesystem or database access. The manifest is re-read and applied through
+    the normal identity-bound update path, so entry points cannot change and no
+    capability grant is created.
+    """
+    cfg = config or current_app.config
+    if not hot_reload_enabled(cfg):
+        raise PluginReloadDisabledError("Plugin hot reload is disabled outside development.")
+
+    get_plugin(plugin_id)
+    discovery = Path(cfg.get("PLUGIN_DISCOVERY_DIR", "plugins"))
+    manifest_path = discovery / plugin_id / "manifest.json"
+    manifest = PluginManifest.from_file(manifest_path)
+    if manifest.id != plugin_id:
+        raise PluginUpdateError(
+            f"Manifest id {manifest.id!r} does not match reloaded plugin {plugin_id!r}."
+        )
+    return update_plugin(plugin_id, manifest)
+
+
 __all__ = [
     "AtomicUpdateError",
     "ManifestValidationError",
@@ -597,15 +633,18 @@ __all__ = [
     "PluginError",
     "PluginManifest",
     "PluginNotFoundError",
+    "PluginReloadDisabledError",
     "PluginUpdateError",
     "RemoteInstallError",
     "atomic_rollback",
     "atomic_update_from_catalog",
     "discover_plugins",
     "get_plugin",
+    "hot_reload_enabled",
     "install_from_catalog",
     "install_from_local_dir",
     "list_plugins",
+    "reload_plugin",
     "resolve_plugin_dependencies",
     "rollback_from_catalog",
     "set_plugin_enabled",

@@ -16,7 +16,12 @@ from sqlalchemy import create_engine, inspect
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
-PLUGIN_TABLES = {"plugins", "plugin_installations", "plugin_capability_grants"}
+PLUGIN_TABLES = {
+    "plugins",
+    "plugin_installations",
+    "plugin_capability_grants",
+    "plugin_lock_entries",
+}
 
 # Column set per plugin table as defined by the models.
 EXPECTED_COLUMNS = {
@@ -56,6 +61,17 @@ EXPECTED_COLUMNS = {
         "capability",
         "granted_at",
         "granted_by_id",
+    },
+    "plugin_lock_entries": {
+        "id",
+        "workspace_id",
+        "owner_id",
+        "plugin_id",
+        "version",
+        "source",
+        "integrity",
+        "dependencies",
+        "resolved_at",
     },
 }
 
