@@ -67,6 +67,7 @@ fail-closed, so a fresh install cannot reach a marketplace or the network:
 | `PLUGIN_MARKETPLACE_ENABLED` | `1` | Read-only discovery is available, but the shipped catalog is empty. |
 | `PLUGIN_MARKETPLACE_CATALOG` | `plugins/marketplace.json` | Offline catalog file; entries must validate against `plugins/plugin.schema.json`. |
 | `PLUGIN_MARKETPLACE_URL` | empty | Remote marketplace fetching is disabled; when set it must be HTTPS, allowlisted, timeout/size-bounded, and redirect-free. |
+| `PLUGIN_MARKETPLACE_CACHE_TTL` | `60` | Seconds a parsed catalog is cached in memory per source; `0` disables caching. Call `reset_marketplace_cache()` to bust it. |
 | `PLUGIN_DISCOVERY_DIR` | `plugins` | Read-only directory scanned for manifests by `GET /plugins/discover`; nothing is installed or executed. |
 | `PLUGIN_TRUST_POLICY` | `if-present` | Accepts unsigned local plugins, but always refuses forged or untrusted signatures. Use `required` in production. |
 | `PLUGIN_TRUSTED_KEYS` | `{}` | No publisher is trusted by default; keys are validated at startup. |

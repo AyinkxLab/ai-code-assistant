@@ -53,12 +53,15 @@ def _config(path) -> dict:
         "PLUGIN_MARKETPLACE_ENABLED": True,
         "PLUGIN_MARKETPLACE_CATALOG": str(path),
         "PLUGIN_MARKETPLACE_URL": "",
+        # These tests exercise the last-good fallback, which needs a re-read.
+        "PLUGIN_MARKETPLACE_CACHE_TTL": 0,
     }
 
 
 def _login(app, client, make_user, login):
     make_user(username="member", email="member@example.com")
     app.config["PLUGIN_MARKETPLACE_ENABLED"] = True
+    app.config["PLUGIN_MARKETPLACE_CACHE_TTL"] = 0  # fallback tests re-read the source
     login(email="member@example.com")
 
 

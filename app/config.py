@@ -181,6 +181,10 @@ class Config:
     # Empty by default, so remote fetching stays opt-in and fail closed.
     PLUGIN_MARKETPLACE_URL = os.getenv("PLUGIN_MARKETPLACE_URL", "")
 
+    # Seconds a successfully parsed catalog is served from memory before the
+    # source is read again (#377). ``0`` disables caching.
+    PLUGIN_MARKETPLACE_CACHE_TTL = float(os.getenv("PLUGIN_MARKETPLACE_CACHE_TTL", "60"))
+
     # Directory scanned by the read-only plugin discovery endpoint (#172).
     # Discovery only reads ``manifest.json`` files from plugin subdirectories
     # and never installs, loads, or mutates anything. Defaults to the repo's
