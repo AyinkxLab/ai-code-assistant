@@ -36,6 +36,7 @@ from __future__ import annotations
 
 import json
 import threading
+import time
 from collections.abc import Mapping
 from dataclasses import dataclass
 from functools import lru_cache
@@ -236,10 +237,35 @@ _LAST_GOOD_CATALOGS: dict[tuple[str, str], MarketplaceCatalog] = {}
 _CATALOG_CACHE_LOCK = threading.Lock()
 
 
+#: Default lifetime, in seconds, of a cached lenient catalog load (#377).
+DEFAULT_CACHE_TTL = 60.0
+
+#: Process-local TTL cache of successful lenient loads, keyed by
+#: ``(source kind, source)``. Values are ``(expires_at, result)`` using
+#: :func:`time.monotonic`. Only ``ok``/``empty`` results are cached; stale and
+#: unavailable fallbacks always retry the source.
+_TTL_CACHE: dict[tuple[str, str], tuple[float, MarketplaceLoadResult]] = {}
+
+
+def cache_ttl(config: Mapping[str, Any]) -> float:
+    """Return the configured cache TTL in seconds (``0`` disables caching)."""
+    raw = config.get("PLUGIN_MARKETPLACE_CACHE_TTL", DEFAULT_CACHE_TTL)
+    try:
+        ttl = float(raw)
+    except (TypeError, ValueError):
+        return DEFAULT_CACHE_TTL
+    return ttl if ttl > 0 else 0.0
+
+
 def reset_marketplace_cache() -> None:
-    """Forget cached catalogs (tests and explicit configuration changes)."""
+    """Forget cached catalogs (tests, operators and configuration changes).
+
+    This is the explicit cache-bust path: it clears both the TTL cache and the
+    last-known-good fallbacks.
+    """
     with _CATALOG_CACHE_LOCK:
         _LAST_GOOD_CATALOGS.clear()
+        _TTL_CACHE.clear()
 
 
 def _remember_catalog(kind: str, value: str, catalog: MarketplaceCatalog) -> None:
@@ -376,8 +402,30 @@ def load_marketplace_catalog(
     if not config.get("PLUGIN_MARKETPLACE_ENABLED", True):
         raise MarketplaceDisabledError("The plugin marketplace is disabled.")
 
-    warnings: list[str] = []
     kind, value = _catalog_source(config)
+    ttl = cache_ttl(config)
+    if ttl:
+        with _CATALOG_CACHE_LOCK:
+            hit = _TTL_CACHE.get((kind, value))
+        if hit is not None and time.monotonic() < hit[0]:
+            return hit[1]
+
+    result = _load_marketplace_uncached(kind, value, config, resolver, transport)
+    if ttl and result.state in ("ok", "empty"):
+        with _CATALOG_CACHE_LOCK:
+            _TTL_CACHE[(kind, value)] = (time.monotonic() + ttl, result)
+    return result
+
+
+def _load_marketplace_uncached(
+    kind: str,
+    value: str,
+    config: Mapping[str, Any],
+    resolver: Any,
+    transport: Any,
+) -> MarketplaceLoadResult:
+    """Read and validate the source (the cache-miss path of the lenient loader)."""
+    warnings: list[str] = []
 
     if kind == "remote":
         try:
@@ -439,6 +487,7 @@ def filter_entries(
 
 
 __all__ = [
+    "DEFAULT_CACHE_TTL",
     "DEFAULT_CATALOG_PATH",
     "MANIFEST_SCHEMA_PATH",
     "MAX_MARKETPLACE_WARNINGS",
@@ -449,6 +498,7 @@ __all__ = [
     "MarketplaceError",
     "MarketplaceLoadResult",
     "MarketplaceUnavailableError",
+    "cache_ttl",
     "filter_entries",
     "load_marketplace",
     "load_marketplace_catalog",
