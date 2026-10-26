@@ -9,28 +9,28 @@ Werkzeug==3.1.9
 # Database
 Flask-SQLAlchemy==3.1.1
 Flask-Migrate==4.1.0
-SQLAlchemy==2.0.41
-psycopg2-binary==2.9.10
+SQLAlchemy==2.1.6
+psycopg2-binary==2.9.13
 
 # Authentication
 Flask-Login==0.6.3
-Flask-WTF==1.2.2
-WTForms==3.2.1
-email-validator==2.2.0
+Flask-WTF==1.3.0
+WTForms==3.2.2
+email-validator==2.3.0
 
 # Utilities
 # python-dotenv >= 1.2.2 (PYSEC-2026-2270 / CVE-2026-28684): set_key()/
 # unset_key() must not follow symlinks when rewriting a .env file.
 # requests >= 2.33.0 (PYSEC-2026-2275 / CVE-2026-25645): zip extraction must
 # not reuse a predictable temp-file name.
-python-dotenv==1.2.2
-requests==2.33.0
-cryptography==50.0.0
+python-dotenv==1.2.4
+requests==2.34.2
+cryptography==50.0.2
 packaging==26.3
 
 # Archive extraction for additional import formats (#90). Both read archives
 # in memory; rarfile never shells out (only uncompressed RAR entries are read).
-py7zr==1.1.3
+py7zr==1.1.4
 rarfile==4.5
 
 # Real-time collaboration (issue #50)
@@ -38,11 +38,11 @@ rarfile==4.5
 # `RequestContext.session`, which Flask 3.1 made read-only, so every Socket.IO
 # session copy raises AttributeError. 5.6.1 adds the Flask >= 3.1.3 session
 # fix. This pin must move together with the Flask pin above.
-Flask-SocketIO==5.6.1
+Flask-SocketIO==5.7.0
 simple-websocket==1.1.0
 
 # Production server
-gunicorn==23.0.0
+gunicorn==26.2.0
 
 # Invoice PDF export (issue #483). CSV export works without this dependency;
 # PDF export imports it lazily.

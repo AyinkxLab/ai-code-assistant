@@ -3,7 +3,7 @@
 # Testing
 # pytest >= 9.0.3 (PYSEC-2026-1845 / CVE-2025-71176): the shared
 # /tmp/pytest-of-{user} directory must not be usable by other local users.
-pytest==9.0.3
+pytest==9.1.1
 pytest-cov==7.1.0
 
 # Code quality
