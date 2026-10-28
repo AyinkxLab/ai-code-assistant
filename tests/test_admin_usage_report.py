@@ -206,3 +206,17 @@ class TestAdminUsageReportTableBounds:
         html = response.get_data(as_text=True)
         assert "source=chat" in html
         assert f"user_id={user.id}" in html
+
+    def test_cost_values_are_explicitly_labelled_as_estimates(self, client, login):
+        user = _user("cost-reader", "cost-reader@example.com")
+        _admin()
+        _record(user)
+        login(email="admin@example.com")
+
+        response = client.get("/admin/usage/report")
+
+        assert response.status_code == 200
+        html = response.get_data(as_text=True)
+        assert 'title="Estimated from the configured price table; not a provider-confirmed charge."' in html
+        assert 'aria-label="Estimated cost, USD"' in html
+        assert "<th scope=\"col\" title=\"Estimated from the configured price table; not a provider-confirmed charge.\">Estimated cost</th>" in html
