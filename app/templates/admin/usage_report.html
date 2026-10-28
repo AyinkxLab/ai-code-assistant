@@ -75,7 +75,7 @@
     <div class="metric"><span class="metric-label">Prompt tokens</span><strong>{{ summary.prompt_tokens }}</strong></div>
     <div class="metric"><span class="metric-label">Completion tokens</span><strong>{{ summary.completion_tokens }}</strong></div>
     <div class="metric"><span class="metric-label">Total tokens</span><strong>{{ summary.total_tokens }}</strong></div>
-    <div class="metric"><span class="metric-label">Estimated cost</span><strong>{{ currency.symbol }}{{ '%.6f'|format(summary.cost_estimate) }}</strong></div>
+    <div class="metric"><span class="metric-label" title="Estimated from the configured price table; not a provider-confirmed charge.">Estimated cost</span><strong title="Estimated from the configured price table; not a provider-confirmed charge." aria-label="Estimated cost, {{ currency.code }}">{{ currency.symbol }}{{ '%.6f'|format(summary.cost_estimate) }}</strong></div>
   </div>
   <p class="sidebar-empty">
     {{ summary.priced_records }} of {{ summary['count'] }} rows have a known price.
@@ -97,7 +97,7 @@
         <th scope="col">Model</th>
         <th scope="col">Status</th>
         <th scope="col">Tokens</th>
-        <th scope="col">Estimated cost</th>
+        <th scope="col" title="Estimated from the configured price table; not a provider-confirmed charge.">Estimated cost</th>
       </tr>
     </thead>
     <tbody>
@@ -111,7 +111,7 @@
         <td>{{ row.model or 'unknown' }}</td>
         <td>{{ row.status or 'unknown' }}</td>
         <td>{{ row.total_tokens or 0 }}</td>
-        <td>{% if row.cost_estimate is none %}&mdash;{% else %}{{ currency.symbol }}{{ '%.6f'|format(row.cost_estimate) }}{% endif %}</td>
+        <td title="Estimated from the configured price table; not a provider-confirmed charge.">{% if row.cost_estimate is none %}&mdash;{% else %}{{ currency.symbol }}{{ '%.6f'|format(row.cost_estimate) }}{% endif %}</td>
       </tr>
       {% endfor %}
     </tbody>
