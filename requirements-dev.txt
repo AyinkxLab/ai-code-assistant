@@ -8,4 +8,4 @@ pytest-cov==7.1.0
 
 # Code quality
 ruff==0.16.2
-black==26.5.1
+black==26.10.1
