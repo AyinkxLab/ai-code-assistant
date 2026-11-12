@@ -381,6 +381,13 @@ class Config:
     # (defense-in-depth against SSRF through a misconfigured endpoint).
     STELLAR_STRICT_HOST_VALIDATION = os.getenv("STELLAR_STRICT_HOST_VALIDATION", "1") == "1"
 
+    # Webhooks and event delivery limits (Phase 12, #674).
+    # Bounds payload size to prevent unbounded memory buffering and DoS.
+    # Supported policies for oversized payloads: "reject" (default, fail closed)
+    # or "truncate" (explicit non-silent truncation of non-essential fields).
+    WEBHOOK_MAX_PAYLOAD_BYTES = _positive_int_env("WEBHOOK_MAX_PAYLOAD_BYTES", 256 * 1024)
+    WEBHOOK_OVERSIZED_POLICY = os.getenv("WEBHOOK_OVERSIZED_POLICY", "reject").strip().lower()
+
 
 class DevelopmentConfig(Config):
     """Local development configuration."""
