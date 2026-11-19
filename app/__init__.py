@@ -86,6 +86,11 @@ def create_app(config_name: str | None = None) -> Flask:
 
     init_observability(app)
 
+    # Per-request query counts and the slow-query log (#696).
+    from app.observability.query_profiling import init_query_profiling
+
+    init_query_profiling(app)
+
     # Register blueprints.
     from app.admin import bp as admin_bp
     from app.auth import bp as auth_bp

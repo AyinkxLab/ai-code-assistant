@@ -26,6 +26,7 @@ import json
 
 from flask import Blueprint, Response, current_app, jsonify, request, stream_with_context
 from flask_login import current_user
+from sqlalchemy.orm import selectinload
 
 from app.chat import routes as chat_routes
 from app.collaboration import realtime
@@ -145,6 +146,10 @@ def list_conversations():
     """List the current user's conversations, newest first."""
     conversations = (
         Conversation.query.filter_by(user_id=current_user.id)
+        .options(
+            selectinload(Conversation.messages),
+            selectinload(Conversation.shares),
+        )
         .order_by(Conversation.updated_at.desc())
         .all()
     )

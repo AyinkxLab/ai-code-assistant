@@ -331,6 +331,11 @@ class Config:
     # the registry's per-metric series cap.
     METRICS_ENABLED = os.getenv("METRICS_ENABLED", "1") == "1"
     METRICS_TOKEN = os.getenv("METRICS_TOKEN", "")
+    # Per-request SQL profiling (#696). Every request counts its queries; a query
+    # slower than the threshold is logged as a literal-free statement shape.
+    # Bound parameters, prompts and secrets are never logged.
+    QUERY_PROFILING_ENABLED = os.getenv("QUERY_PROFILING_ENABLED", "1") == "1"
+    QUERY_SLOW_THRESHOLD_MS = float(os.getenv("QUERY_SLOW_THRESHOLD_MS", "200"))
     # Per-user rate limit for AI-powered endpoints (#28): project chat,
     # conversation streaming, and the code tools. Applies per authenticated user
     # (not per IP) and can be switched off entirely (the testing config does).
