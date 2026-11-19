@@ -290,6 +290,18 @@ class Config:
     # ``indexing`` status and the client polls ``progress``. Disabled in the
     # test config for deterministic assertions.
     IMPORT_JOBS_ASYNC = os.getenv("IMPORT_JOBS_ASYNC", "1") == "1"
+    # Durable background job queue (#699). Jobs are persisted, retried with
+    # exponential backoff up to JOB_QUEUE_MAX_ATTEMPTS, and worked by
+    # ``flask jobs worker``. Payloads above JOB_QUEUE_MAX_PAYLOAD_BYTES are
+    # rejected at enqueue time.
+    JOB_QUEUE_ENABLED = os.getenv("JOB_QUEUE_ENABLED", "1") == "1"
+    JOB_QUEUE_MAX_ATTEMPTS = int(os.getenv("JOB_QUEUE_MAX_ATTEMPTS", "5"))
+    JOB_QUEUE_RETRY_BASE_SECONDS = float(os.getenv("JOB_QUEUE_RETRY_BASE_SECONDS", "10"))
+    JOB_QUEUE_RETRY_MAX_SECONDS = float(os.getenv("JOB_QUEUE_RETRY_MAX_SECONDS", "3600"))
+    JOB_QUEUE_BATCH_SIZE = int(os.getenv("JOB_QUEUE_BATCH_SIZE", "50"))
+    JOB_QUEUE_MAX_PAYLOAD_BYTES = int(os.getenv("JOB_QUEUE_MAX_PAYLOAD_BYTES", "16384"))
+    JOB_QUEUE_WORKER_POLL_SECONDS = float(os.getenv("JOB_QUEUE_WORKER_POLL_SECONDS", "5"))
+    JOB_QUEUE_WEBHOOK_TIMEOUT = float(os.getenv("JOB_QUEUE_WEBHOOK_TIMEOUT", "10"))
 
     # AI reviews (Phase 6): caps that keep reviews bounded and predictable.
     # A review never sends more than REVIEW_MAX_CONTEXT_CHARS of repository text

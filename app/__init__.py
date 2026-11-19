@@ -186,4 +186,9 @@ def create_app(config_name: str | None = None) -> Flask:
 
     register_usage_cli(app)
 
+    # Durable background job worker/inspection commands.
+    from app.services.jobs_cli import register_jobs_cli
+
+    register_jobs_cli(app)
+
     return app
