@@ -8,6 +8,10 @@ bounds through environment-backed Flask settings:
 Setting                          Default                    Applies to
 ===============================  =========================  ===============
 ``PLUGIN_EXECUTION_TIMEOUT``     ``5`` seconds              Event handlers / lifecycle hooks
+``PLUGIN_CPU_TIME_SECONDS``      ``5`` seconds              CPU time (thread time) per callback
+``PLUGIN_MAX_MEMORY_BYTES``      ``67108864`` (64 MiB)      Peak allocation per callback
+``PLUGIN_MAX_OUTPUT_BYTES``      ``1048576`` (1 MiB)        Serialized callback result
+``PLUGIN_MAX_FILE_DESCRIPTORS``  ``64``                     Descriptor growth per callback
 ``PLUGIN_CONFIG_MAX_BYTES``      ``65536``                  Stored per-workspace configuration
 ``PLUGIN_CONFIG_MAX_KEYS``       ``200``                    Stored per-workspace configuration
 ``PLUGIN_CONFIG_MAX_DEPTH``      ``8``                      Stored per-workspace configuration
@@ -27,6 +31,14 @@ from typing import Any
 
 #: Fallback execution budget (seconds) when the setting is missing or invalid.
 DEFAULT_EXECUTION_TIMEOUT = 5.0
+#: CPU time (seconds of thread CPU) a callback may consume.
+DEFAULT_CPU_TIME_SECONDS = 5.0
+#: Peak memory a callback may allocate, measured with ``tracemalloc``.
+DEFAULT_MAX_MEMORY_BYTES = 64 * 1024 * 1024
+#: Maximum serialized size of a callback's return value.
+DEFAULT_MAX_OUTPUT_BYTES = 1024 * 1024
+#: Maximum growth in open file descriptors while a callback runs (POSIX only).
+DEFAULT_MAX_FILE_DESCRIPTORS = 64
 #: Maximum serialized size of a stored plugin configuration object.
 DEFAULT_CONFIG_MAX_BYTES = 64 * 1024
 #: Maximum number of top-level keys in a stored plugin configuration.
@@ -44,6 +56,10 @@ class PluginLimits:
     """Resolved plugin resource limits for the current application context."""
 
     execution_timeout: float
+    cpu_time_seconds: float
+    max_memory_bytes: int
+    max_output_bytes: int
+    max_file_descriptors: int
     config_max_bytes: int
     config_max_keys: int
     config_max_depth: int
@@ -83,6 +99,19 @@ def get_plugin_limits() -> PluginLimits:
     """Return the effective plugin limits, falling back to safe defaults."""
     return PluginLimits(
         execution_timeout=_timeout(_setting("PLUGIN_EXECUTION_TIMEOUT", DEFAULT_EXECUTION_TIMEOUT)),
+        cpu_time_seconds=_timeout(_setting("PLUGIN_CPU_TIME_SECONDS", DEFAULT_CPU_TIME_SECONDS)),
+        max_memory_bytes=_positive_int(
+            _setting("PLUGIN_MAX_MEMORY_BYTES", DEFAULT_MAX_MEMORY_BYTES),
+            DEFAULT_MAX_MEMORY_BYTES,
+        ),
+        max_output_bytes=_positive_int(
+            _setting("PLUGIN_MAX_OUTPUT_BYTES", DEFAULT_MAX_OUTPUT_BYTES),
+            DEFAULT_MAX_OUTPUT_BYTES,
+        ),
+        max_file_descriptors=_positive_int(
+            _setting("PLUGIN_MAX_FILE_DESCRIPTORS", DEFAULT_MAX_FILE_DESCRIPTORS),
+            DEFAULT_MAX_FILE_DESCRIPTORS,
+        ),
         config_max_bytes=_positive_int(
             _setting("PLUGIN_CONFIG_MAX_BYTES", DEFAULT_CONFIG_MAX_BYTES),
             DEFAULT_CONFIG_MAX_BYTES,
@@ -109,8 +138,12 @@ __all__ = [
     "DEFAULT_CONFIG_MAX_BYTES",
     "DEFAULT_CONFIG_MAX_DEPTH",
     "DEFAULT_CONFIG_MAX_KEYS",
+    "DEFAULT_CPU_TIME_SECONDS",
     "DEFAULT_ERROR_REPORT_LIMIT",
     "DEFAULT_EXECUTION_TIMEOUT",
+    "DEFAULT_MAX_FILE_DESCRIPTORS",
+    "DEFAULT_MAX_MEMORY_BYTES",
+    "DEFAULT_MAX_OUTPUT_BYTES",
     "MAX_ERROR_REPORT_LIMIT",
     "PluginLimits",
     "get_plugin_limits",

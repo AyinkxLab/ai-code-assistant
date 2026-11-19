@@ -57,6 +57,14 @@ def _positive_int_env(name: str, default: int) -> int:
     return value if value > 0 else default
 
 
+def _float_env(name: str, default: float) -> float:
+    """Read a float environment setting, falling back instead of crashing."""
+    try:
+        return float(os.getenv(name, str(default)))
+    except (TypeError, ValueError):
+        return default
+
+
 def _trusted_plugin_keys() -> dict[str, str]:
     value = os.getenv("PLUGIN_TRUSTED_KEYS", "")
     if not value:
@@ -206,6 +214,17 @@ class Config:
     # bounded error report and dispatch continues with the remaining handlers.
     # Set to 0 (or negative) to disable the bound for local debugging.
     PLUGIN_EXECUTION_TIMEOUT = float(os.getenv("PLUGIN_EXECUTION_TIMEOUT", "5"))
+
+    # Plugin callback resource limits (#408/#409). CPU time is measured per
+    # callback thread; memory is a peak measured with ``tracemalloc``; output is
+    # the serialized result size; descriptor growth is checked on POSIX. The
+    # CPU, memory, and descriptor checks are post-hoc (Python cannot preempt a
+    # thread), while the execution timeout abandons the worker. Invalid values
+    # fall back to the safe default rather than disabling a bound.
+    PLUGIN_CPU_TIME_SECONDS = _float_env("PLUGIN_CPU_TIME_SECONDS", 5.0)
+    PLUGIN_MAX_MEMORY_BYTES = _positive_int_env("PLUGIN_MAX_MEMORY_BYTES", 64 * 1024 * 1024)
+    PLUGIN_MAX_OUTPUT_BYTES = _positive_int_env("PLUGIN_MAX_OUTPUT_BYTES", 1024 * 1024)
+    PLUGIN_MAX_FILE_DESCRIPTORS = _positive_int_env("PLUGIN_MAX_FILE_DESCRIPTORS", 64)
 
     # Plugin resource limits (#409). These bound the data a plugin can persist
     # and the number of error reports an owner can read. Each setting is
