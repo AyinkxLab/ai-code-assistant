@@ -15,7 +15,7 @@ The backend is authoritative and never trusts the UI.
 
 import json
 
-from flask import abort, current_app, jsonify, render_template, request
+from flask import abort, current_app, flash, jsonify, redirect, render_template, request, url_for
 from flask_login import current_user, login_required
 
 from app.extensions import db
@@ -26,6 +26,7 @@ from app.models import (
     Workspace,
     WorkspaceMember,
 )
+from app.models.plugin_install_event import ACTION_INSTALL, ACTION_ROLLBACK, ACTION_UPDATE
 from app.models.workspace_member import STATUS_ACTIVE
 from app.plugins import bp
 from app.services.capabilities import Capability, CapabilityStore
@@ -35,7 +36,24 @@ from app.services.marketplace import (
     MarketplaceError,
     filter_entries,
     load_marketplace_catalog,
+    marketplace_categories,
     marketplace_error_payload,
+    rank_entries,
+)
+from app.services.marketplace_analytics import (
+    aggregate_events,
+    analytics_csv,
+    install_counts,
+    record_plugin_event,
+)
+from app.services.marketplace_reviews import (
+    ReviewError,
+    create_review,
+    list_reviews,
+    report_review,
+    respond_to_review,
+    review_error_payload,
+    update_review,
 )
 from app.services.permissions import (
     can,
@@ -72,6 +90,7 @@ from app.services.plugin_ops import (
     update_plugin,
     validate_catalog_install,
 )
+from app.services.plugin_publishers import publisher_profile
 from app.services.plugin_signatures import (
     VERIFY_IF_PRESENT,
     PublisherSignatureError,
@@ -418,12 +437,76 @@ def _install_in_workspace(manifest: PluginManifest, workspace_id: int) -> Plugin
 # --------------------------------------------------------------------------
 
 
+def plugin_ids() -> list[str]:
+    """Return every registered plugin id, sorted for a stable dashboard."""
+    return [row[0] for row in Plugin.query.with_entities(Plugin.id).order_by(Plugin.id).all()]
+
+
 @bp.route("/")
 @login_required
 def index():
     """Plugin management page (workspace-scoped)."""
     workspaces = _accessible_workspaces(current_user)
     return render_template("plugins/index.html", workspaces=workspaces)
+
+
+@bp.route("/analytics")
+@login_required
+def analytics():
+    """Marketplace install analytics dashboard (aggregate, privacy-safe)."""
+    rows = aggregate_events(plugin_ids())
+    return render_template("plugins/analytics.html", rows=rows)
+
+
+@bp.route("/analytics.csv")
+@login_required
+def analytics_export():
+    """Download the aggregate analytics as CSV (no identity data)."""
+    rows = aggregate_events(plugin_ids())
+    response = current_app.response_class(
+        analytics_csv(rows),
+        mimetype="text/csv",
+        headers={"Content-Disposition": "attachment; filename=marketplace-analytics.csv"},
+    )
+    return response
+
+
+def _publisher_page_args() -> tuple[int, int]:
+    page = request.args.get("page", type=int)
+    limit = request.args.get("limit", type=int)
+    return (page if page and page > 0 else 1, limit or 50)
+
+
+@bp.route("/publishers/<publisher_id>")
+@login_required
+def publisher(publisher_id: str):
+    """Render a publisher profile with trust, plugins and install counts."""
+    profile = publisher_profile(
+        publisher_id,
+        page=_publisher_page_args()[0],
+        limit=_publisher_page_args()[1],
+        trusted_publishers=trusted_publisher_ids(
+            current_app.config.get("PLUGIN_TRUSTED_KEYS") or {}
+        ),
+        install_counts=install_counts(),
+    )
+    return render_template("plugins/publisher.html", **profile)
+
+
+@bp.route("/api/publishers/<publisher_id>", methods=["GET"])
+@login_required
+def api_publisher(publisher_id: str):
+    """Return a publisher profile as JSON (same data as the page)."""
+    profile = publisher_profile(
+        publisher_id,
+        page=_publisher_page_args()[0],
+        limit=_publisher_page_args()[1],
+        trusted_publishers=trusted_publisher_ids(
+            current_app.config.get("PLUGIN_TRUSTED_KEYS") or {}
+        ),
+        install_counts=install_counts(),
+    )
+    return jsonify(profile)
 
 
 @bp.route("/workspaces/<int:workspace_id>/plugins/<plugin_id>")
@@ -557,6 +640,15 @@ def api_browse_catalog(workspace_id: int):
         query=request.args.get("q"),
         capability=request.args.get("capability"),
         tag=request.args.get("tag"),
+        category=request.args.get("category"),
+    )
+    all_entries = rank_entries(
+        all_entries,
+        query=request.args.get("q"),
+        trusted_publishers=trusted_publisher_ids(
+            current_app.config.get("PLUGIN_TRUSTED_KEYS") or {}
+        ),
+        install_counts=install_counts(),
     )
     total = len(all_entries)
     pages = (total + limit - 1) // limit if total else 0
@@ -583,7 +675,7 @@ def api_browse_catalog(workspace_id: int):
                 "has_next": page < pages,
                 "has_prev": page > 1,
             },
-            "ordering": ["id", "version"],
+            "ordering": ["relevance", "trust", "installs", "id", "version"],
         }
     )
 
@@ -689,6 +781,7 @@ def api_install_plugin(workspace_id: int):
     except PluginAlreadyInstalledError:
         return jsonify({"error": "Plugin is already installed in this workspace."}), 409
 
+    record_plugin_event(plugin.id, ACTION_INSTALL)
     return jsonify(_serialize(plugin, workspace_id)), 201
 
 
@@ -912,6 +1005,7 @@ def api_install_plugin_from_catalog(workspace_id: int):
         outcome="success",
         reason="installed from catalog",
     )
+    record_plugin_event(plugin.id, ACTION_INSTALL)
     payload = _serialize(plugin, workspace_id)
     payload["source"] = entry.source
     payload["integrity"] = entry.integrity
@@ -953,6 +1047,7 @@ def api_install_registered_plugin(workspace_id: int, plugin_id: str):
         db.session.rollback()
         return jsonify({"error": "Plugin is already installed in this workspace."}), 409
 
+    record_plugin_event(plugin.id, ACTION_INSTALL)
     return jsonify(_serialize(plugin, workspace_id)), 201
 
 
@@ -1008,6 +1103,7 @@ def api_update_plugin(workspace_id: int, plugin_id: str):
         db.session.rollback()
         return jsonify({"error": "Plugin not found."}), 404
 
+    record_plugin_event(plugin.id, ACTION_UPDATE)
     return jsonify(_serialize(plugin, workspace_id))
 
 
@@ -1110,6 +1206,7 @@ def api_update_from_catalog(workspace_id: int, plugin_id: str):
         workspace_id=workspace_id,
         user_id=current_user.id,
     )
+    record_plugin_event(plugin_id, ACTION_UPDATE)
     return jsonify(_serialize(plugin, workspace_id))
 
 
@@ -1215,6 +1312,7 @@ def api_rollback_plugin(workspace_id: int, plugin_id: str):
         workspace_id=workspace_id,
         user_id=current_user.id,
     )
+    record_plugin_event(plugin_id, ACTION_ROLLBACK)
     return jsonify(_serialize(plugin, workspace_id))
 
 
@@ -1552,13 +1650,19 @@ def api_marketplace():
     """List advertised catalog entries (read-only; any signed-in workspace member).
 
     Query parameters:
-        ``q``             free-text match on id, name, description, author.
+        ``q``             free-text match on id, name, description, author,
+                          category and tags.
         ``capability``    only advertise entries requiring this capability.
+        ``category``      only entries in this category.
+        ``tag``           only entries carrying this tag (or capability).
         ``workspace_id``  optionally resolve the caller's role in a workspace.
         ``page`` / ``limit`` bounded pagination (limit capped at 100).
 
-    The catalog is untrusted metadata. It is never executed and never grants a
-    capability; installation still requires an explicit, validated install.
+    Results are ranked by relevance, verified-publisher trust and install
+    count (:data:`app.services.marketplace.RANKING_WEIGHTS`) with a stable
+    plugin-id tie-break. The catalog is untrusted metadata. It is never
+    executed and never grants a capability; installation still requires an
+    explicit, validated install.
     """
     try:
         workspace = _marketplace_workspace()
@@ -1569,8 +1673,24 @@ def api_marketplace():
 
     query = (request.args.get("q") or "").strip()
     capability = (request.args.get("capability") or "").strip()
-    filtered = filter_entries(catalog, query=query, capability=capability)
-    page_entries, pagination = _marketplace_page(filtered)
+    category = (request.args.get("category") or "").strip()
+    tag = (request.args.get("tag") or "").strip()
+    filtered = filter_entries(
+        catalog,
+        query=query,
+        capability=capability,
+        category=category,
+        tag=tag,
+    )
+    ranked = rank_entries(
+        filtered,
+        query=query,
+        trusted_publishers=trusted_publisher_ids(
+            current_app.config.get("PLUGIN_TRUSTED_KEYS") or {}
+        ),
+        install_counts=install_counts(),
+    )
+    page_entries, pagination = _marketplace_page(ranked)
     plugins = [entry.to_dict() for entry in page_entries]
     return jsonify(
         {
@@ -1581,9 +1701,36 @@ def api_marketplace():
             "entries": plugins,
             "plugins": plugins,
             "pagination": pagination,
-            "filters": {"q": query or None, "capability": capability or None},
+            "filters": {
+                "q": query or None,
+                "capability": capability or None,
+                **{
+                    key: value
+                    for key, value in (("category", category or None), ("tag", tag or None))
+                    if value is not None
+                },
+            },
             "warnings": list(loaded.warnings),
-            "ordering": ["id", "version"],
+            "ordering": ["relevance", "trust", "installs", "id", "version"],
+        }
+    )
+
+
+@bp.route("/api/marketplace/categories", methods=["GET"])
+@login_required
+def api_marketplace_categories():
+    """Return category and tag facets for the advertised catalog."""
+    try:
+        loaded = load_marketplace_catalog(current_app.config)
+    except MarketplaceError as exc:
+        return _marketplace_error(exc)
+    categories, tags = marketplace_categories(loaded.catalog.list_entries())
+    return jsonify(
+        {
+            "state": loaded.state,
+            "categories": categories,
+            "tags": tags,
+            "warnings": list(loaded.warnings),
         }
     )
 
@@ -1611,3 +1758,113 @@ def api_marketplace_entry(plugin_id: str):
             "warnings": list(loaded.warnings),
         }
     )
+
+
+# --------------------------------------------------------------------------
+# Marketplace ratings and reviews (#692)
+# --------------------------------------------------------------------------
+
+
+def _review_page_args() -> tuple[int, int]:
+    page = request.args.get("page", type=int)
+    limit = request.args.get("limit", type=int)
+    return (page if page and page > 0 else 1, limit or 20)
+
+
+def _review_error(exc: ReviewError):
+    """Map typed review errors to a stable JSON shape (never leak details)."""
+    return jsonify(review_error_payload(exc)), exc.status
+
+
+@bp.route("/marketplace/<plugin_id>/reviews", methods=["GET", "POST"])
+@login_required
+def marketplace_reviews(plugin_id: str):
+    """Render reviews for a plugin and accept the HTML review form."""
+    plugin = Plugin.query.filter_by(id=plugin_id).first()
+    if plugin is None:
+        abort(404)
+
+    if request.method == "POST":
+        rating = request.form.get("rating", type=int)
+        try:
+            create_review(
+                current_user,
+                plugin_id,
+                {
+                    "rating": rating,
+                    "title": request.form.get("title"),
+                    "body": request.form.get("body"),
+                },
+            )
+            flash("Your review was saved.", "success")
+        except ReviewError as exc:
+            db.session.rollback()
+            flash(exc.user_message, "error")
+        return redirect(url_for("plugins.marketplace_reviews", plugin_id=plugin_id))
+
+    page, limit = _review_page_args()
+    return render_template(
+        "plugins/reviews.html",
+        plugin=plugin,
+        **list_reviews(plugin_id, page=page, limit=limit),
+    )
+
+
+@bp.route("/api/marketplace/<plugin_id>/reviews", methods=["GET"])
+@login_required
+def api_list_reviews(plugin_id: str):
+    """Return paginated reviews with the average and star distribution."""
+    if Plugin.query.filter_by(id=plugin_id).first() is None:
+        return jsonify({"error": "Plugin not found.", "code": "not_found"}), 404
+    page, limit = _review_page_args()
+    return jsonify(list_reviews(plugin_id, page=page, limit=limit))
+
+
+@bp.route("/api/marketplace/<plugin_id>/reviews", methods=["POST"])
+@login_required
+def api_create_review(plugin_id: str):
+    """Create the caller's review (requires an installation)."""
+    try:
+        review = create_review(current_user, plugin_id, request.get_json(silent=True) or {})
+    except ReviewError as exc:
+        db.session.rollback()
+        return _review_error(exc)
+    return jsonify(review.to_dict()), 201
+
+
+@bp.route("/api/marketplace/reviews/<int:review_id>", methods=["PUT"])
+@login_required
+def api_update_review(review_id: int):
+    """Re-rate or edit the caller's own review."""
+    try:
+        review = update_review(current_user, review_id, request.get_json(silent=True) or {})
+    except ReviewError as exc:
+        db.session.rollback()
+        return _review_error(exc)
+    return jsonify(review.to_dict())
+
+
+@bp.route("/api/marketplace/reviews/<int:review_id>/report", methods=["POST"])
+@login_required
+def api_report_review(review_id: int):
+    """Report a review for moderation (once, with a reason)."""
+    data = request.get_json(silent=True) or {}
+    try:
+        review = report_review(current_user, review_id, data.get("reason"))
+    except ReviewError as exc:
+        db.session.rollback()
+        return _review_error(exc)
+    return jsonify(review.to_dict())
+
+
+@bp.route("/api/marketplace/reviews/<int:review_id>/response", methods=["POST"])
+@login_required
+def api_respond_to_review(review_id: int):
+    """Post the publisher/admin owner response to a review."""
+    data = request.get_json(silent=True) or {}
+    try:
+        review = respond_to_review(current_user, review_id, data.get("response"))
+    except ReviewError as exc:
+        db.session.rollback()
+        return _review_error(exc)
+    return jsonify(review.to_dict())

@@ -1,0 +1,67 @@
+{% extends "base.html" %}
+
+{% block title %}{{ publisher.name }} - {{ config.APP_NAME }}{% endblock %}
+
+{% block content %}
+<div class="github-header">
+  <div>
+    <h1>{{ publisher.name }}</h1>
+    <p class="repo-meta">Publisher id: <code>{{ publisher.id }}</code></p>
+  </div>
+  <div class="repo-toolbar">
+    {% if publisher.verified %}
+      <span class="project-status project-status-ready">Verified publisher</span>
+    {% else %}
+      <span class="project-status project-status-pending">Unverified publisher</span>
+    {% endif %}
+    <a class="btn btn-ghost" href="{{ url_for('plugins.index') }}">Back to plugins</a>
+  </div>
+</div>
+
+{% if publisher.verified %}
+<p class="field-hint">Verified with configured trusted key{% if publisher.verified_key_ids|length != 1 %}s{% endif %}:
+  {% for key_id in publisher.verified_key_ids %}<code>{{ key_id }}</code>{% if not loop.last %}, {% endif %}{% endfor %}
+</p>
+{% else %}
+<p class="field-hint">This publisher is not in the operator's trusted key set. Plugins are shown without a verified badge.</p>
+{% endif %}
+
+{% if plugins %}
+<table class="billing-table" aria-label="Plugins by {{ publisher.name }}">
+  <thead>
+    <tr>
+      <th scope="col">Plugin</th>
+      <th scope="col">Version</th>
+      <th scope="col">Trust</th>
+      <th scope="col">Installs</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for plugin in plugins %}
+    <tr>
+      <td>
+        <strong>{{ plugin.name }}</strong><br>
+        <code>{{ plugin.id }}</code>
+        {% if plugin.description %}<div class="repo-meta">{{ plugin.description }}</div>{% endif %}
+      </td>
+      <td>{{ plugin.version }}</td>
+      <td>{{ plugin.trust_state }}</td>
+      <td>{{ plugin.installs }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+<div class="plugin-catalog-pagination" aria-label="Publisher pagination">
+  {% if pagination.has_prev %}
+    <a class="btn btn-ghost btn-sm" href="{{ url_for('plugins.publisher', publisher_id=publisher.id, page=pagination.page - 1, limit=pagination.limit) }}">Previous</a>
+  {% endif %}
+  <span class="activity-meta">Page {{ pagination.page }} of {{ pagination.pages }} ({{ pagination.total }} plugins)</span>
+  {% if pagination.has_next %}
+    <a class="btn btn-ghost btn-sm" href="{{ url_for('plugins.publisher', publisher_id=publisher.id, page=pagination.page + 1, limit=pagination.limit) }}">Next</a>
+  {% endif %}
+</div>
+{% else %}
+<p class="empty-note">This publisher has not published any plugins yet.</p>
+{% endif %}
+{% endblock %}

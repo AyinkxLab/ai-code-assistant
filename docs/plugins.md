@@ -480,6 +480,70 @@ timeout states (shared with `plugin_marketplace.js`), and owner-only
 install/update/rollback buttons with surfaced errors. Catalog text is escaped
 before rendering.
 
+### Marketplace search ranking, categories and tags (#693)
+
+Marketplace manifests may declare a `category` (string), `categories` (array)
+and `tags` (array); all are optional and advertised as metadata only. The
+catalog browser supports `category` and `tag` filters alongside `q` and
+`capability`. A tag also matches an identical capability, matching the
+installer catalog convention. `GET /plugins/api/marketplace/categories`
+returns the category and tag facets with entry counts.
+
+Search results are ranked by a documented weighted score
+(`app/services/marketplace.py::RANKING_WEIGHTS`):
+
+| Signal | Weight | Measurement |
+| ------ | ------ | ----------- |
+| Relevance | 0.55 | Mean match over query terms: id 1.0, name 0.8, category/tag 0.7, description 0.4, author 0.3. |
+| Trust | 0.25 | 1.0 when the entry signature names a publisher in `PLUGIN_TRUSTED_KEYS`, otherwise 0.0. |
+| Installs | 0.20 | `log1p(plugin installs)` normalized against the most-installed result. |
+
+Ties are broken by plugin id and then catalog order, so paging is stable even
+when two entries have identical scores. An empty result is a normal `200` with
+`entries: []`; ranking never invents entries or scores.
+
+### Marketplace install analytics (#695)
+
+Installs, updates and rollbacks append an anonymous row to
+`plugin_install_events` (`plugin_id`, `action`, `created_at`). The table has
+**no user id, workspace id, IP address or user agent**, so counts cannot be
+traced to a person. The dashboard is `GET /plugins/analytics` and exports the
+same aggregates from `GET /plugins/analytics.csv` with the stable header
+`plugin_id,installs,updates,rollbacks,total`. Registered plugins appear with a
+zero row even before their first event. Install counts also feed the search
+ranking signal above.
+
+### Publisher profiles (#691)
+
+`GET /plugins/publishers/<publisher_id>` renders a publisher page and
+`GET /plugins/api/publishers/<publisher_id>` returns the same data as JSON:
+publisher identity, verified badge, plugin list, per-plugin install counts and
+bounded pagination (`page`, `limit` clamped to 100, stable id order). A plugin's
+publisher is its verified `trust_publisher` when set, otherwise a slug of the
+manifest author. Verification reuses `PLUGIN_TRUSTED_KEYS` from Phase 9; the
+page exposes configured publisher key ids only (never key material). Unknown or
+publisher-less profiles render an explicit empty state instead of a 404.
+
+### Ratings and reviews (#692)
+
+Ratings require an installation in a workspace the reviewer owns or actively
+belongs to. One review per user per plugin is enforced by a unique constraint;
+the author can re-rate with `PUT /plugins/api/marketplace/reviews/<id>`.
+Moderation is minimal and auditable: any signed-in user can report a review
+once with a reason, and the plugin publisher (or a platform admin) can post an
+owner response. Permission and validation failures return structured errors
+(`{"error": ..., "code": ...}`) with `invalid`, `forbidden`, `not_found`,
+`duplicate_review`, `install_required` or `already_reported` codes.
+
+| Route | Description |
+| ----- | ----------- |
+| `GET/POST /plugins/marketplace/<plugin_id>/reviews` | Server-rendered review page and HTML review form. |
+| `GET /plugins/api/marketplace/<plugin_id>/reviews` | Paginated reviews, average and star distribution. |
+| `POST /plugins/api/marketplace/<plugin_id>/reviews` | Create the caller's review (install required). |
+| `PUT /plugins/api/marketplace/reviews/<id>` | Re-rate/edit the caller's own review. |
+| `POST /plugins/api/marketplace/reviews/<id>/report` | Report a review once with a reason. |
+| `POST /plugins/api/marketplace/reviews/<id>/response` | Publisher/admin owner response. |
+
 ### Marketplace discovery API (#360)
 
 The read-only discovery API advertises catalog entries without installing

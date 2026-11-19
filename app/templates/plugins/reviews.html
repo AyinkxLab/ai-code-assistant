@@ -1,0 +1,78 @@
+{% extends "base.html" %}
+
+{% block title %}Reviews for {{ plugin.name }} - {{ config.APP_NAME }}{% endblock %}
+
+{% block content %}
+<div class="github-header">
+  <div>
+    <h1>{{ plugin.name }} reviews</h1>
+    <p class="repo-meta"><code>{{ plugin.id }}</code> &middot; v{{ plugin.version }}</p>
+  </div>
+  <div class="repo-toolbar">
+    <a class="btn btn-ghost" href="{{ url_for('plugins.index') }}">Back to plugins</a>
+  </div>
+</div>
+
+{% if summary.count %}
+<p class="repo-meta">
+  {{ summary.average }} / 5 from {{ summary.count }} review{% if summary.count != 1 %}s{% endif %}
+</p>
+{% else %}
+<p class="empty-note">No reviews yet. Be the first to review this plugin after installing it.</p>
+{% endif %}
+
+{% if reviews %}
+<div class="project-list">
+  {% for review in reviews %}
+  <article class="plugin-catalog-card">
+    <div class="plugin-catalog-heading">
+      <div>
+        <h3 class="plugin-catalog-name">{{ review.title or "Review" }}</h3>
+        <p class="repo-meta">
+          {{ review.rating }} / 5 by {{ review.username or "unknown" }}
+          {% if review.reported %}&middot; <strong>reported</strong>{% endif %}
+        </p>
+      </div>
+    </div>
+    {% if review.body %}<p>{{ review.body }}</p>{% endif %}
+    {% if review.owner_response %}
+    <p class="flash flash-info"><strong>Publisher response:</strong> {{ review.owner_response }}</p>
+    {% endif %}
+  </article>
+  {% endfor %}
+</div>
+
+{% if pagination.pages > 1 %}
+<div class="plugin-catalog-pagination" aria-label="Review pagination">
+  {% if pagination.has_prev %}
+    <a class="btn btn-ghost btn-sm" href="{{ url_for('plugins.marketplace_reviews', plugin_id=plugin.id, page=pagination.page - 1, limit=pagination.limit) }}">Previous</a>
+  {% endif %}
+  <span class="activity-meta">Page {{ pagination.page }} of {{ pagination.pages }}</span>
+  {% if pagination.has_next %}
+    <a class="btn btn-ghost btn-sm" href="{{ url_for('plugins.marketplace_reviews', plugin_id=plugin.id, page=pagination.page + 1, limit=pagination.limit) }}">Next</a>
+  {% endif %}
+</div>
+{% endif %}
+{% endif %}
+
+<div class="project-list">
+  <h2>Rate this plugin</h2>
+  <p class="field-hint">You must have the plugin installed in a workspace you own or belong to. One review per user per plugin; submit again through the API to edit.</p>
+  <form method="post" action="{{ url_for('plugins.marketplace_reviews', plugin_id=plugin.id) }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <label class="field-label" for="review-rating">Rating</label>
+    <select id="review-rating" name="rating" class="field-input" required>
+      {% for star in [5, 4, 3, 2, 1] %}
+        <option value="{{ star }}">{{ star }} / 5</option>
+      {% endfor %}
+    </select>
+    <label class="field-label" for="review-title">Title</label>
+    <input id="review-title" name="title" class="field-input" type="text" maxlength="200" autocomplete="off">
+    <label class="field-label" for="review-body">Review</label>
+    <textarea id="review-body" name="body" class="field-input" rows="4" maxlength="4000"></textarea>
+    <div class="prompt-editor-actions">
+      <button class="btn btn-primary" type="submit">Submit review</button>
+    </div>
+  </form>
+</div>
+{% endblock %}

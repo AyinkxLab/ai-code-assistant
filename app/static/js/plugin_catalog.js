@@ -212,6 +212,12 @@
       " with app " +
       escapeHtml(entry.app_version || "") +
       "</div>" +
+      "<div><strong>Categories:</strong> " +
+      chips(entry.categories) +
+      "</div>" +
+      "<div><strong>Tags:</strong> " +
+      chips(entry.tags) +
+      "</div>" +
       "<div><strong>Capabilities:</strong> " +
       chips(entry.capabilities) +
       "</div>" +
@@ -399,9 +405,13 @@
   function currentFilters() {
     var search = document.getElementById("plugin-catalog-search");
     var capability = document.getElementById("plugin-catalog-capability");
+    var category = document.getElementById("plugin-catalog-category");
+    var tag = document.getElementById("plugin-catalog-tag");
     return {
       q: search ? String(search.value || "").trim() : "",
       capability: capability ? String(capability.value || "") : "",
+      category: category ? String(category.value || "") : "",
+      tag: tag ? String(tag.value || "") : "",
     };
   }
 
@@ -421,17 +431,20 @@
         }, 250);
       });
     }
-    var capability = document.getElementById("plugin-catalog-capability");
-    if (capability && !capability.dataset.bound) {
-      capability.dataset.bound = "1";
-      capability.addEventListener("change", function () {
-        loadCatalog(state.workspaceId, {
-          page: 1,
-          canManage: state.canManage,
-          onChanged: state.onChanged,
+    ["plugin-catalog-capability", "plugin-catalog-category", "plugin-catalog-tag"].forEach(
+      function (id) {
+        var input = document.getElementById(id);
+        if (!input || input.dataset.bound) return;
+        input.dataset.bound = "1";
+        input.addEventListener("change", function () {
+          loadCatalog(state.workspaceId, {
+            page: 1,
+            canManage: state.canManage,
+            onChanged: state.onChanged,
+          });
         });
-      });
-    }
+      }
+    );
   }
 
   function loadCatalog(workspaceId, options) {
@@ -473,7 +486,11 @@
       "&q=" +
       encodeURIComponent(filters.q) +
       "&capability=" +
-      encodeURIComponent(filters.capability);
+      encodeURIComponent(filters.capability) +
+      "&category=" +
+      encodeURIComponent(filters.category) +
+      "&tag=" +
+      encodeURIComponent(filters.tag);
 
     api(url)
       .then(function (data) {

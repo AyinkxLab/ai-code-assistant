@@ -444,6 +444,7 @@ def filter_catalog_entries(
     query: str | None = None,
     capability: str | None = None,
     tag: str | None = None,
+    category: str | None = None,
 ):
     """Filter catalog entries by free-text query, capability, and/or tag (#378).
 
@@ -456,14 +457,25 @@ def filter_catalog_entries(
     needle = (query or "").strip().lower()
     wanted_capability = (capability or "").strip().lower()
     wanted_tag = (tag or "").strip().lower()
+    wanted_category = (category or "").strip().lower()
 
     matches = []
     for entry in entries:
         manifest = entry.manifest or {}
         capabilities = {str(item).strip().lower() for item in (manifest.get("capabilities") or [])}
         tags = {str(item).strip().lower() for item in (manifest.get("tags") or [])} | capabilities
+        categories = {
+            str(item).strip().lower()
+            for item in (
+                *(manifest.get("categories") or []),
+                manifest.get("category") or "",
+            )
+            if str(item).strip()
+        }
 
         if wanted_capability and wanted_capability not in capabilities:
+            continue
+        if wanted_category and wanted_category not in categories:
             continue
         if wanted_tag and wanted_tag not in tags:
             continue
@@ -474,6 +486,8 @@ def filter_catalog_entries(
                     str(manifest.get("name") or ""),
                     str(manifest.get("description") or ""),
                     str(manifest.get("author") or ""),
+                    *sorted(categories),
+                    *sorted(tags),
                 ]
             ).lower()
             if needle not in haystack:

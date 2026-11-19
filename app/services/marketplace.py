@@ -35,6 +35,7 @@ allowlisted, integrity-checked install path.
 from __future__ import annotations
 
 import json
+import math
 import threading
 import time
 from collections.abc import Mapping
@@ -128,6 +129,8 @@ class MarketplaceEntry:
     integrity: str
     source: str
     signature: Mapping[str, str] | None = None
+    categories: tuple[str, ...] = ()
+    tags: tuple[str, ...] = ()
 
     def to_dict(self) -> dict[str, Any]:
         """Return the public entry shape (never includes executable content)."""
@@ -144,6 +147,11 @@ class MarketplaceEntry:
             "integrity": self.integrity,
             "source": self.source,
         }
+        if self.categories:
+            data["categories"] = list(self.categories)
+            data["category"] = self.categories[0]
+        if self.tags:
+            data["tags"] = list(self.tags)
         if self.signature is not None:
             data["signature"] = dict(self.signature)
         return data
@@ -203,6 +211,19 @@ def _flatten(entry: CatalogEntry, index: int) -> MarketplaceEntry:
         raise MarketplaceError("; ".join(errors))
 
     manifest = entry.manifest
+
+    def _string_list(*values: Any) -> tuple[str, ...]:
+        items: list[str] = []
+        for value in values:
+            if isinstance(value, str):
+                value = [value]
+            if not isinstance(value, (list, tuple)):
+                continue
+            for item in value:
+                if isinstance(item, str) and item.strip() and item.strip() not in items:
+                    items.append(item.strip())
+        return tuple(items)
+
     return MarketplaceEntry(
         plugin_id=entry.plugin_id,
         name=str(manifest["name"]),
@@ -216,6 +237,8 @@ def _flatten(entry: CatalogEntry, index: int) -> MarketplaceEntry:
         integrity=entry.integrity,
         source=entry.source,
         signature=entry.signature,
+        categories=_string_list(manifest.get("category"), manifest.get("categories")),
+        tags=_string_list(manifest.get("tags")),
     )
 
 
@@ -465,20 +488,39 @@ def filter_entries(
     *,
     query: str | None = None,
     capability: str | None = None,
+    category: str | None = None,
+    tag: str | None = None,
 ) -> list[MarketplaceEntry]:
-    """Filter entries by free-text query and/or required capability.
+    """Filter entries by free-text query, capability, category and/or tag.
 
-    Filtering is case-insensitive and only inspects advertised metadata.
+    Filtering is case-insensitive and only inspects advertised metadata. A tag
+    also matches an identical capability, mirroring the installer catalog.
     """
     needle = (query or "").strip().lower()
     wanted = (capability or "").strip().upper()
+    wanted_category = (category or "").strip().lower()
+    wanted_tag = (tag or "").strip().lower()
     matches = []
     for entry in catalog.list_entries():
-        if wanted and wanted not in {item.upper() for item in entry.capabilities}:
+        capabilities = {item.upper() for item in entry.capabilities}
+        if wanted and wanted not in capabilities:
+            continue
+        if wanted_category and wanted_category not in {item.lower() for item in entry.categories}:
+            continue
+        if wanted_tag and wanted_tag not in {
+            item.lower() for item in (*entry.tags, *entry.capabilities)
+        }:
             continue
         if needle:
             haystack = " ".join(
-                [entry.plugin_id, entry.name, entry.description, entry.author]
+                [
+                    entry.plugin_id,
+                    entry.name,
+                    entry.description,
+                    entry.author,
+                    *entry.categories,
+                    *entry.tags,
+                ]
             ).lower()
             if needle not in haystack:
                 continue
@@ -486,11 +528,129 @@ def filter_entries(
     return matches
 
 
+#: Documented ranking weights for marketplace search (#693). They sum to 1.
+#: Relevance dominates; verified publisher trust breaks ties between equally
+#: relevant entries, and install popularity is the final signal. Ordering is
+#: deterministic: score descending, then plugin id, then catalog order.
+RANKING_WEIGHTS = {
+    "relevance": 0.55,
+    "trust": 0.25,
+    "installs": 0.20,
+}
+
+
+def _entry_metadata(entry) -> dict[str, Any]:
+    """Return ranking fields for a marketplace or installer catalog entry."""
+    manifest = getattr(entry, "manifest", None) or {}
+    categories = getattr(entry, "categories", None)
+    if categories is None:
+        categories = manifest.get("categories") or []
+        if manifest.get("category"):
+            categories = [manifest["category"], *categories]
+    tags = getattr(entry, "tags", None)
+    if tags is None:
+        tags = manifest.get("tags") or []
+    signature = getattr(entry, "signature", None) or {}
+    return {
+        "name": getattr(entry, "name", None) or manifest.get("name") or "",
+        "description": getattr(entry, "description", None) or manifest.get("description") or "",
+        "author": getattr(entry, "author", None) or manifest.get("author") or "",
+        "categories": list(categories),
+        "tags": list(tags),
+        "publisher": signature.get("publisher") if isinstance(signature, Mapping) else None,
+    }
+
+
+def _relevance(entry, terms: list[str]) -> float:
+    """Score free-text relevance in ``[0, 1]`` from advertised metadata only.
+
+    A term scores the strongest field it matches: id 1.0, name 0.8,
+    category/tag 0.7, description 0.4, author 0.3. The score is the mean over
+    query terms, so an entry matching more of the query ranks higher.
+    """
+    if not terms:
+        return 0.0
+    meta = _entry_metadata(entry)
+    fields = (
+        (1.0, entry.plugin_id.lower()),
+        (0.8, str(meta["name"]).lower()),
+        (0.7, " ".join(meta["categories"] + meta["tags"]).lower()),
+        (0.4, str(meta["description"]).lower()),
+        (0.3, str(meta["author"]).lower()),
+    )
+    total = 0.0
+    for term in terms:
+        total += max((weight for weight, value in fields if term in value), default=0.0)
+    return total / len(terms)
+
+
+def rank_entries(
+    entries,
+    *,
+    query: str | None = None,
+    trusted_publishers=(),
+    install_counts: Mapping[str, int] | None = None,
+) -> list[MarketplaceEntry]:
+    """Rank entries deterministically by relevance, trust and install count.
+
+    Weights are :data:`RANKING_WEIGHTS`. Trust is binary: an entry whose
+    signature names a configured trusted publisher scores 1. Install counts
+    are normalized with ``log1p`` against the largest count in the result, so a
+    single very popular plugin cannot drown out relevance. Ties are broken by
+    plugin id and then by the input (catalog) order, which makes every page
+    stable across requests and across databases. Empty input returns ``[]``.
+    """
+    entries = list(entries)
+    if not entries:
+        return []
+    trusted = set(trusted_publishers or ())
+    counts = install_counts or {}
+    terms = [term for term in (query or "").lower().split() if term]
+    max_installs = max((int(counts.get(entry.plugin_id, 0) or 0) for entry in entries), default=0)
+    scale = math.log1p(max_installs) if max_installs > 0 else 0.0
+
+    scored = []
+    for index, entry in enumerate(entries):
+        relevance = _relevance(entry, terms)
+        publisher = _entry_metadata(entry)["publisher"]
+        trust = 1.0 if publisher and publisher in trusted else 0.0
+        installs = int(counts.get(entry.plugin_id, 0) or 0)
+        popularity = math.log1p(installs) / scale if scale else 0.0
+        score = (
+            RANKING_WEIGHTS["relevance"] * relevance
+            + RANKING_WEIGHTS["trust"] * trust
+            + RANKING_WEIGHTS["installs"] * popularity
+        )
+        scored.append((-score, entry.plugin_id, index, entry))
+
+    scored.sort(key=lambda row: row[:3])
+    return [row[3] for row in scored]
+
+
+def marketplace_categories(
+    entries,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """Return sorted category and tag facets with entry counts."""
+    categories: dict[str, int] = {}
+    tags: dict[str, int] = {}
+    for entry in entries:
+        for category in entry.categories:
+            key = category.lower()
+            categories[key] = categories.get(key, 0) + 1
+        for tag in entry.tags:
+            key = tag.lower()
+            tags[key] = tags.get(key, 0) + 1
+    return [{"name": name, "count": count} for name, count in sorted(categories.items())], [
+        {"name": name, "count": count} for name, count in sorted(tags.items())
+    ]
+
+
 __all__ = [
     "DEFAULT_CACHE_TTL",
     "DEFAULT_CATALOG_PATH",
     "MANIFEST_SCHEMA_PATH",
     "MAX_MARKETPLACE_WARNINGS",
+    "RANKING_WEIGHTS",
     "MarketplaceCatalog",
     "MarketplaceDisabledError",
     "MarketplaceEntry",
@@ -502,6 +662,8 @@ __all__ = [
     "filter_entries",
     "load_marketplace",
     "load_marketplace_catalog",
+    "marketplace_categories",
     "marketplace_error_payload",
+    "rank_entries",
     "reset_marketplace_cache",
 ]
