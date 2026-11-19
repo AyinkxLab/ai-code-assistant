@@ -9,6 +9,14 @@ from datetime import UTC, datetime
 
 from app.extensions import db
 
+#: The stored token is believed to be usable.
+CONNECTION_CONNECTED = "connected"
+#: GitHub rejected the stored token (expired, revoked, or scopes changed).
+#: The account row is retained so the dashboard can show who was connected and
+#: offer a Reconnect action instead of silently forgetting the connection.
+CONNECTION_BROKEN = "broken"
+CONNECTION_STATUSES = (CONNECTION_CONNECTED, CONNECTION_BROKEN)
+
 
 class GithubAccount(db.Model):
     """A user's connected GitHub account.
@@ -31,6 +39,16 @@ class GithubAccount(db.Model):
     token_expires_at = db.Column(db.DateTime(timezone=True), nullable=True)
     token_type = db.Column(db.String(32), nullable=False, default="bearer")
     scopes = db.Column(db.String(255), nullable=False, default="")
+    # Connection health is persisted so a token rejected by GitHub remains
+    # visible on the dashboard as "broken" until the user reconnects. Only the
+    # sanitized state is stored; never the token or GitHub's raw error response.
+    connection_status = db.Column(
+        db.String(20),
+        nullable=False,
+        default=CONNECTION_CONNECTED,
+        server_default=CONNECTION_CONNECTED,
+    )
+    connection_error_at = db.Column(db.DateTime(timezone=True), nullable=True)
     created_at = db.Column(
         db.DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC)
     )
@@ -52,6 +70,21 @@ class GithubAccount(db.Model):
         from app.services.crypto import encrypt_secret
 
         self.refresh_token_encrypted = encrypt_secret(plaintext) if plaintext else None
+
+    def mark_broken(self) -> None:
+        """Record that GitHub rejected the stored token (expired/revoked)."""
+        self.connection_status = CONNECTION_BROKEN
+        self.connection_error_at = datetime.now(UTC)
+
+    def mark_connected(self) -> None:
+        """Clear a previous broken state after a successful (re)connect."""
+        self.connection_status = CONNECTION_CONNECTED
+        self.connection_error_at = None
+
+    @property
+    def reconnect_required(self) -> bool:
+        """Whether the user must reconnect before GitHub calls can succeed."""
+        return self.connection_status == CONNECTION_BROKEN
 
     @property
     def granted_scopes(self) -> list[str]:
@@ -75,6 +108,11 @@ class GithubAccount(db.Model):
             "github_user_id": self.github_user_id,
             "github_username": self.github_username,
             "scopes": self.granted_scopes,
+            "connection_status": self.connection_status,
+            "reconnect_required": self.reconnect_required,
+            "connection_error_at": (
+                self.connection_error_at.isoformat() if self.connection_error_at else None
+            ),
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "updated_at": self.updated_at.isoformat() if self.updated_at else None,
         }

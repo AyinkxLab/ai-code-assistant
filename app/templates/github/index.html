@@ -8,6 +8,25 @@
 </div>
 
 {% if account %}
+  {% if connection and connection.status == 'broken' %}
+  <div class="github-connection github-connection-broken">
+    <div class="github-connection-status">
+      <span class="status-dot status-broken"></span>
+      GitHub connection broken for <strong>@{{ account.github_username }}</strong>
+    </div>
+    <div class="github-connection-actions">
+      <a class="btn btn-primary" href="{{ url_for('github.connect') }}">Reconnect</a>
+      <form class="inline-form" method="POST" action="{{ url_for('github.disconnect') }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button class="btn btn-ghost btn-danger" type="submit">Disconnect</button>
+      </form>
+    </div>
+  </div>
+  <div class="github-warning" role="alert">
+    <strong>Reconnect required.</strong> The stored GitHub token expired or was revoked.
+    Reconnect to keep browsing repositories, issues, and pull requests.
+  </div>
+  {% else %}
   <div class="github-connection">
     <div class="github-connection-status">
       <span class="status-dot status-connected"></span>
@@ -33,6 +52,7 @@
       Private repositories will not load until you reconnect and grant it.
       <a href="{{ url_for('github.connect') }}">Reconnect GitHub</a>.
     </div>
+  {% endif %}
   {% endif %}
 
   <div id="github-rate-limit" class="github-rate-limit" role="status" aria-live="polite" hidden></div>

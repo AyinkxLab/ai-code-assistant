@@ -1043,3 +1043,124 @@ class TestCompareRoute:
         assert filenames == {"app/py.py", "README.md"}
         assert data["additions"] == 15
         assert data["deletions"] == 2
+
+
+class TestTokenExpiryAndRevoke:
+    """Issue #56: expired, revoked, or scope-changed tokens reconnect gracefully."""
+
+    def _revoked_session(self, monkeypatch):
+        monkeypatch.setattr(
+            "app.services.github.requests.Session",
+            lambda: _make_fake_session([("GET", "*", 401, {"message": "Bad credentials"})]),
+        )
+
+    def test_revoked_token_is_auth_error_and_marks_broken(self, client, app, monkeypatch):
+        _logged_in_client(client)
+        account = _create_account(app)
+        self._revoked_session(monkeypatch)
+
+        response = client.get("/github/api/repos")
+        assert response.status_code == 401
+        body = response.get_json()
+        assert body["kind"] == "auth"
+        assert "reconnect" in body["error"].lower()
+
+        db.session.refresh(account)
+        assert account.connection_status == "broken"
+        assert account.reconnect_required is True
+
+        raw = response.get_data(as_text=True)
+        assert "gho_test_token" not in raw
+        assert "access_token_encrypted" not in raw
+        assert "Traceback" not in raw
+
+    def test_dashboard_shows_broken_connection_with_reconnect(self, client, app, monkeypatch):
+        _logged_in_client(client)
+        _create_account(app)
+        self._revoked_session(monkeypatch)
+        assert client.get("/github/api/repos").status_code == 401
+
+        body = client.get("/github/").get_data(as_text=True)
+        assert "GitHub connection broken for" in body
+        assert "Reconnect required" in body
+        assert ">Reconnect<" in body
+        assert "gho_test_token" not in body
+
+    def test_dashboard_live_probe_detects_revoked_token(self, client, app, monkeypatch):
+        _logged_in_client(client)
+        account = _create_account(app)
+        self._revoked_session(monkeypatch)
+
+        body = client.get("/github/").get_data(as_text=True)
+        assert "GitHub connection broken for" in body
+        assert "Reconnect required" in body
+
+        db.session.refresh(account)
+        assert account.connection_status == "broken"
+
+    def test_status_reports_broken_connection(self, client, app, monkeypatch):
+        _logged_in_client(client)
+        _create_account(app)
+        self._revoked_session(monkeypatch)
+        assert client.get("/github/api/repos").status_code == 401
+
+        data = client.get("/github/api/status").get_json()
+        assert data["connected"] is True
+        assert data["status"] == "broken"
+        assert data["connection_status"] == "broken"
+        assert data["reconnect_required"] is True
+        assert data["rate_limit"] == {"available": False}
+        assert "gho_test_token" not in json.dumps(data)
+
+    def test_expired_token_without_refresh_is_reconnectable(self, client, app):
+        _logged_in_client(client)
+        account = _create_account(app)
+        account.token_expires_at = datetime.now(UTC) - timedelta(minutes=1)
+        account.set_refresh_token(None)
+        db.session.commit()
+
+        response = client.get("/github/api/repos")
+        assert response.status_code == 401
+        assert response.get_json()["kind"] == "auth"
+
+        db.session.refresh(account)
+        assert account.connection_status == "broken"
+        assert GithubAccount.query.filter_by(user_id=account.user_id).first() is not None
+
+    def test_reconnect_replaces_encrypted_token_and_clears_broken_state(
+        self, client, app, monkeypatch
+    ):
+        app.config["GITHUB_CLIENT_ID"] = "client-id"
+        app.config["GITHUB_CLIENT_SECRET"] = "client-secret"
+        _logged_in_client(client)
+        account = _create_account(app)
+        account.mark_broken()
+        db.session.commit()
+        assert account.reconnect_required is True
+
+        client.get("/github/connect")
+        state = _last_session_state(client)
+        monkeypatch.setattr(
+            "app.github.routes.requests.post",
+            lambda *a, **k: FakeResponse(
+                200,
+                {
+                    "access_token": "gho_reconnected",
+                    "token_type": "bearer",
+                    "scope": "read:user repo",
+                },
+            ),
+        )
+        monkeypatch.setattr(
+            "app.services.github.requests.Session",
+            lambda: _make_fake_session([("GET", "/user", 200, {"id": 42, "login": "ghuser"})]),
+        )
+
+        response = client.get(f"/github/callback?code=abc&state={state}")
+        assert response.status_code == 302
+
+        db.session.refresh(account)
+        assert decrypt_secret(account.access_token_encrypted) == "gho_reconnected"
+        assert account.connection_status == "connected"
+        assert account.reconnect_required is False
+        assert account.connection_error_at is None

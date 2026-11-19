@@ -1048,9 +1048,15 @@ def get_github_client(user=None) -> GitHubClient:
     if expires_at and expires_at <= datetime.now(UTC):
         refreshed = _refresh_github_token(refresh_token) if refresh_token else None
         if refreshed is None:
-            db.session.delete(account)
+            # Keep the account row (and username) so the dashboard can show the
+            # connection as broken and offer Reconnect instead of silently
+            # deleting the user's connection. The rejected token never leaves
+            # the encrypted column and is never surfaced to the client.
+            account.mark_broken()
             db.session.commit()
-            raise GitHubNotConnectedError("Connect your GitHub account to use this feature.")
+            raise GitHubAuthError(
+                "Your GitHub connection is no longer valid. Reconnect your account."
+            )
         account.set_access_token(refreshed["access_token"])
         if "refresh_token" in refreshed:
             account.set_refresh_token(refreshed["refresh_token"])
