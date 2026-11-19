@@ -8,8 +8,9 @@ return a structured 400 instead of a stack trace.
 import time
 
 from app.extensions import db
-from app.models import Workspace
+from app.models import ActivityEvent, Workspace
 from app.models import Plugin as PluginRow
+from app.models.activity_event import EVENT_PLUGIN_EXECUTED
 from app.services.pagination import encode_cursor
 
 PLUGIN_COUNT = 1200
@@ -146,3 +147,36 @@ class TestPluginListPagination:
         assert payload["pagination"]["total"] == PLUGIN_COUNT
         assert payload["pagination"]["next_cursor"]
         assert elapsed < 10.0
+
+
+class TestExecutionLogPaginationAtScale:
+    def test_many_audit_rows_are_bounded(self, client, make_user, login):
+        owner = make_user()
+        login()
+        workspace = _workspace(owner)
+        db.session.bulk_save_objects(
+            [
+                ActivityEvent(
+                    workspace_id=workspace.id,
+                    event_type=EVENT_PLUGIN_EXECUTED,
+                    event_metadata={
+                        "plugin_id": f"p-{index}",
+                        "version": "1.0.0",
+                        "capability": "PROJECT_READ",
+                        "outcome": "success",
+                        "duration_ms": 1,
+                    },
+                )
+                for index in range(1000)
+            ]
+        )
+        db.session.commit()
+
+        response = client.get(
+            f"/plugins/api/workspaces/{workspace.id}/plugin-executions?limit=999999"
+        )
+
+        assert response.status_code == 200
+        payload = response.get_json()
+        assert len(payload["items"]) == 100
+        assert payload["total"] == 1000

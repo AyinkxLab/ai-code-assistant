@@ -75,6 +75,11 @@
     if (meta.from_username && meta.to_username) parts.push(meta.from_username + " -> " + meta.to_username);
     if (meta.reactivated) parts.push("reactivated");
     if (meta.idempotent) parts.push("idempotent");
+    if (meta.plugin_id) parts.push("plugin: " + meta.plugin_id);
+    if (meta.version) parts.push("v" + meta.version);
+    if (meta.capability) parts.push("capability: " + meta.capability);
+    if (meta.outcome) parts.push("outcome: " + meta.outcome);
+    if (meta.duration_ms != null) parts.push(meta.duration_ms + " ms");
     return parts.length ? '<div class="audit-metadata">' + escapeHtml(parts.join(" &middot; ")) + "</div>" : "";
   }
 

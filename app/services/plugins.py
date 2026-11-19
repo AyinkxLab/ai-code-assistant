@@ -11,6 +11,7 @@ import importlib
 import json
 import logging
 import re
+import time
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -22,7 +23,11 @@ from typing import Any
 from app.services.plugin_base import PLUGIN_SDK_VERSION, PluginBase  # noqa: F401
 from app.services.plugin_compat import is_valid_compatibility
 from app.services.plugin_deps import PluginRef
-from app.services.plugin_execution import run_with_timeout
+from app.services.plugin_execution import (
+    PluginResourceLimitError,
+    PluginTimeoutError,
+    run_with_timeout,
+)
 from app.services.plugin_signatures import (
     TRUSTED,
     UNVERIFIED,
@@ -871,17 +876,58 @@ class PluginRegistry:
                         workspace_id,
                     )
                     continue
+            started = time.perf_counter()
+            outcome = "success"
             try:
                 run_with_timeout(
                     partial(handler, event_type=event_type, data=data),
                     operation=f"registry-dispatch:{event_type}",
                 )
             except Exception as e:
+                outcome = (
+                    "timeout"
+                    if isinstance(e, PluginTimeoutError)
+                    else "limit_exceeded" if isinstance(e, PluginResourceLimitError) else "error"
+                )
                 logger.error(
                     f"Error dispatching event {event_type} for plugin {plugin_id}: {e}",
                     exc_info=True,
                 )
                 self._record_dispatch_error(plugin_id, event_type, e)
+            finally:
+                if workspace_id is not None:
+                    self._record_execution(
+                        plugin_id,
+                        workspace_id,
+                        required_capability,
+                        outcome,
+                        (time.perf_counter() - started) * 1000.0,
+                    )
+
+    def _record_execution(
+        self,
+        plugin_id: str,
+        workspace_id: int,
+        capability: str | None,
+        outcome: str,
+        duration_ms: float,
+    ) -> None:
+        """Best-effort, payload-free execution audit for a registry callback."""
+        try:
+            from app.services.plugin_audit import record_plugin_execution
+
+            plugin = self._plugins.get(plugin_id)
+            version = plugin.manifest.version if plugin is not None else None
+            record_plugin_execution(
+                workspace_id,
+                plugin_id,
+                version=version,
+                capability=capability,
+                outcome=outcome,
+                duration_ms=duration_ms,
+            )
+        except Exception:  # pragma: no cover - audit must never break dispatch
+            logger.debug("Could not record plugin execution audit", exc_info=True)
 
     @staticmethod
     def _record_dispatch_error(plugin_id: str, event_type: str, exc: BaseException) -> None:

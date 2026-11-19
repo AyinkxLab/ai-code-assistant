@@ -764,7 +764,7 @@ export PLUGIN_CONFIG_MAX_DEPTH=8
 export PLUGIN_ERROR_REPORT_LIMIT=100
 ```
 
-## Audit trail (capabilities & state)
+## Audit trail (capabilities, state & execution)
 
 Security-relevant plugin actions are recorded in the shared, append-only
 workspace audit log (`ActivityEvent`, via `app/services/plugin_audit.py`):
@@ -775,18 +775,25 @@ workspace audit log (`ActivityEvent`, via `app/services/plugin_audit.py`):
 - `plugin.denied` — a rejected capability request (e.g. not declared by the
   manifest) or a workspace-scoped dispatch-time denial (plugin disabled /
   not installed / missing capability grant).
+- `plugin.executed` — one row per workspace-scoped plugin callback with
+  `plugin_id`, `version`, `capability`, `outcome`
+  (`success` / `error` / `timeout` / `limit_exceeded`), and `duration_ms`.
 
 Each entry carries only safe facts — actor, workspace, `plugin_id`, capability
 name, action, outcome, a static reason, and (for dispatch denials) the refused
-event type. **Secrets and event payloads are never stored.** Grant/revoke rows
-are only appended on an actual change (repeat grants are not duplicated), and
-dispatch-time denial recording is best-effort and never changes the fail-closed
-delivery decision.
+event type. **Secrets and event payloads are never stored.** Execution rows
+never include event data, configuration, return values, or exception messages.
+Grant/revoke rows are only appended on an actual change (repeat grants are not
+duplicated), and dispatch-time denial recording is best-effort and never
+changes the fail-closed delivery decision.
 
 Entries are owner-visible through the workspace audit view (`GET
-/workspaces/api/workspaces/<id>/audit`); the member activity feed always
-excludes this audit subset, and cross-workspace records are never readable
-outside the workspace they belong to (non-members receive 404).
+/workspaces/api/workspaces/<id>/audit`) and the dedicated execution-log endpoint
+(`GET /plugins/api/workspaces/<id>/plugin-executions`). The dedicated endpoint
+returns a structured `403` (`{"error": ..., "code": "forbidden"}`) to members
+without `view_audit`, and the uniform `404` to non-members. The member activity
+feed always excludes this audit subset, and cross-workspace records are never
+readable outside the workspace they belong to.
 
 ## Writing a plugin
 

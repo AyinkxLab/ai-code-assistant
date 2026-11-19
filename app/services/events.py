@@ -25,6 +25,7 @@ handlers from running or crashes the request.
 """
 
 import logging
+import time
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -35,8 +36,12 @@ from app.extensions import db
 from app.models import Plugin, PluginInstallation, Project, User, Workspace
 from app.services.capabilities import Capability, CapabilityStore
 from app.services.permissions import role_for
-from app.services.plugin_audit import record_plugin_audit
-from app.services.plugin_execution import run_with_timeout
+from app.services.plugin_audit import record_plugin_audit, record_plugin_execution
+from app.services.plugin_execution import (
+    PluginResourceLimitError,
+    PluginTimeoutError,
+    run_with_timeout,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -320,6 +325,10 @@ class EventDispatcher:
                         reason,
                     )
                     continue
+            plugin_row = db.session.get(Plugin, plugin_id) if plugin_id is not None else None
+            capability = EVENT_CAPABILITY_MAP.get(event.event_type)
+            started = time.perf_counter()
+            outcome = "success"
             try:
                 run_with_timeout(
                     partial(handler, event=event),
@@ -327,6 +336,11 @@ class EventDispatcher:
                 )
                 results["successful"] += 1
             except Exception as e:
+                outcome = (
+                    "timeout"
+                    if isinstance(e, PluginTimeoutError)
+                    else "limit_exceeded" if isinstance(e, PluginResourceLimitError) else "error"
+                )
                 results["failed"] += 1
                 results["errors"].append((plugin_id or "unknown", e))
                 logger.error(
@@ -337,8 +351,52 @@ class EventDispatcher:
                     self._record_handler_error(plugin_id, event, e)
                 if raise_on_error:
                     raise
+            finally:
+                if plugin_id is not None:
+                    self._record_execution(
+                        plugin_id,
+                        event,
+                        plugin_row.version if plugin_row is not None else None,
+                        capability.value if capability is not None else None,
+                        outcome,
+                        (time.perf_counter() - started) * 1000.0,
+                    )
 
         return results
+
+    def _record_execution(
+        self,
+        plugin_id: str,
+        event: Event,
+        version: str | None,
+        capability: str | None,
+        outcome: str,
+        duration_ms: float,
+    ) -> None:
+        """Record one bounded execution audit row for a plugin callback.
+
+        Only the plugin id, version, capability, outcome, and duration are
+        stored. Event payloads and return values are never recorded. Recording
+        is best-effort and can never change the dispatch result.
+        """
+        if event.workspace_id is None:
+            return
+        try:
+            record_plugin_execution(
+                event.workspace_id,
+                plugin_id,
+                version=version,
+                capability=capability,
+                outcome=outcome,
+                duration_ms=duration_ms,
+            )
+        except Exception:  # pragma: no cover - audit must never fail dispatch
+            logger.warning(
+                "Could not record plugin execution audit for %s on %s",
+                plugin_id,
+                event.event_type,
+                exc_info=True,
+            )
 
     def _record_handler_error(self, plugin_id: str, event: Event, exc: Exception) -> None:
         """Best-effort, bounded error report for a failing plugin handler."""
