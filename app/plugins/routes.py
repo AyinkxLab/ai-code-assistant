@@ -55,6 +55,7 @@ from app.services.marketplace_reviews import (
     review_error_payload,
     update_review,
 )
+from app.services.pagination import PaginationError, encode_cursor, parse_page_request
 from app.services.permissions import (
     can,
     require_workspace_capability,
@@ -562,26 +563,38 @@ def api_list_workspaces():
 @bp.route("/api/workspaces/<int:workspace_id>/plugins", methods=["GET"])
 @login_required
 def api_list_plugins(workspace_id: int):
-    """List registered plugins with stable, bounded pagination (#379).
+    """List registered plugins with bounded pages and a stable cursor (#379/#700).
 
-    Query params: ``page`` (1-based) and ``limit``. ``limit`` is clamped to
-    :data:`MAX_PAGE_LIMIT`, so an oversized request never returns an unbounded
-    page. Ordering is by plugin id, making pages stable across requests.
+    Query params: ``page`` (1-based), ``limit`` (clamped to
+    :data:`MAX_PAGE_LIMIT`), and an optional opaque ``cursor`` returned as
+    ``next_cursor``. Ordering is by plugin id, so the cursor continues after the
+    last id and is unaffected by rows inserted between requests. Malformed page
+    sizes or cursors return a structured ``400``.
     """
     resolve_workspace(workspace_id)
+    try:
+        page_request = parse_page_request(
+            request.args, default_limit=DEFAULT_PAGE_LIMIT, max_limit=MAX_PAGE_LIMIT
+        )
+    except PaginationError as exc:
+        return jsonify({"error": str(exc), "code": exc.code}), 400
 
-    page = request.args.get("page", type=int)
-    if page is None or page < 1:
-        page = 1
-    limit = request.args.get("limit", type=int)
-    if limit is None:
-        limit = DEFAULT_PAGE_LIMIT
-    limit = max(1, min(limit, MAX_PAGE_LIMIT))
+    page, limit = page_request.page, page_request.limit
+    query = Plugin.query.order_by(Plugin.id)
+    if page_request.cursor is not None:
+        cursor_id = page_request.cursor.get("id")
+        if not isinstance(cursor_id, str) or not cursor_id:
+            return jsonify({"error": "Invalid cursor.", "code": "invalid_pagination"}), 400
+        query = query.filter(Plugin.id > cursor_id)
+    else:
+        query = query.offset((page - 1) * limit)
 
     total = Plugin.query.count()
     pages = (total + limit - 1) // limit if total else 0
-    offset = (page - 1) * limit
-    rows = Plugin.query.order_by(Plugin.id).offset(offset).limit(limit).all()
+    rows = query.limit(limit + 1).all()
+    has_more = len(rows) > limit
+    rows = rows[:limit]
+    next_cursor = encode_cursor({"id": rows[-1].id}) if has_more and rows else None
 
     return jsonify(
         {
@@ -593,8 +606,9 @@ def api_list_plugins(workspace_id: int):
                 "max_limit": MAX_PAGE_LIMIT,
                 "total": total,
                 "pages": pages,
-                "has_next": page < pages,
+                "has_next": page < pages or has_more,
                 "has_prev": page > 1,
+                "next_cursor": next_cursor,
             },
             "ordering": ["id"],
         }
