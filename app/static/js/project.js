@@ -542,12 +542,16 @@
     return "Estimated: ~" + tokens.toLocaleString() + " tokens (~$" + cost.toFixed(4) + " USD; estimate)";
   }
 
+  var ESTIMATE_HINT =
+    "Pre-flight estimate from the configured price table; the actual charge may differ.";
+
   var chatEstimateTimer = null;
   function estimateChat() {
     if (!chatEstimateEl) return;
     var content = chatInputEl.value.trim();
     if (!content) {
       chatEstimateEl.textContent = "";
+      chatEstimateEl.removeAttribute("title");
       return;
     }
     window.clearTimeout(chatEstimateTimer);
@@ -559,9 +563,11 @@
       })
         .then(function (estimate) {
           chatEstimateEl.textContent = formatEstimate(estimate);
+          chatEstimateEl.setAttribute("title", ESTIMATE_HINT);
         })
         .catch(function () {
           chatEstimateEl.textContent = "";
+          chatEstimateEl.removeAttribute("title");
         });
     }, 400);
   }
@@ -669,7 +675,7 @@
         body: JSON.stringify({ mode: "analysis", kind: kind }),
       });
       output.innerHTML =
-        '<p class="chat-hint">' + escapeHtml(formatEstimate(estimate)) + "</p>" +
+        '<p class="chat-hint" title="' + escapeHtml(ESTIMATE_HINT) + '">' + escapeHtml(formatEstimate(estimate)) + "</p>" +
         '<p class="sidebar-empty">Analyzing project (bounded context), please wait...</p>';
     } catch (error) {
       /* estimation is best-effort; continue with the analysis */

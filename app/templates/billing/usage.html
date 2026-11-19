@@ -62,7 +62,7 @@
     <div class="metric"><span class="metric-label">Prompt tokens</span><strong>{{ dashboard.totals.prompt_tokens }}</strong></div>
     <div class="metric"><span class="metric-label">Completion tokens</span><strong>{{ dashboard.totals.completion_tokens }}</strong></div>
     <div class="metric"><span class="metric-label">Operations</span><strong>{{ dashboard.totals['count'] }}</strong></div>
-    <div class="metric"><span class="metric-label">Estimated cost</span><strong>{{ dashboard.currency.symbol }}{{ '%.6f'|format(dashboard.totals.cost_estimate) }}</strong></div>
+    <div class="metric"><span class="metric-label"><abbr title="Estimated from recorded token counts and the configured price table; not a provider bill or an exact charge.">Estimated cost</abbr></span><strong>{{ dashboard.currency.symbol }}{{ '%.6f'|format(dashboard.totals.cost_estimate) }}</strong></div>
   </div>
   <p class="sidebar-empty">
     {{ dashboard.totals.priced_records }} of {{ dashboard.totals['count'] }} operations have a known price.
@@ -81,7 +81,7 @@
         <th scope="col">Prompt</th>
         <th scope="col">Completion</th>
         <th scope="col">Total tokens</th>
-        <th scope="col">Estimated cost</th>
+        <th scope="col"><abbr title="Estimated from recorded token counts and the configured price table; not a provider bill or an exact charge.">Estimated cost</abbr></th>
       </tr>
     </thead>
     <tbody>
@@ -118,7 +118,7 @@
         <th scope="col">Prompt</th>
         <th scope="col">Completion</th>
         <th scope="col">Total tokens</th>
-        <th scope="col">Estimated cost</th>
+        <th scope="col"><abbr title="Estimated from recorded token counts and the configured price table; not a provider bill or an exact charge.">Estimated cost</abbr></th>
       </tr>
     </thead>
     <tbody>

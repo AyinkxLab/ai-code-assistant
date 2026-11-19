@@ -75,7 +75,7 @@
     <div class="metric"><span class="metric-label">Prompt tokens</span><strong>{{ summary.prompt_tokens }}</strong></div>
     <div class="metric"><span class="metric-label">Completion tokens</span><strong>{{ summary.completion_tokens }}</strong></div>
     <div class="metric"><span class="metric-label">Total tokens</span><strong>{{ summary.total_tokens }}</strong></div>
-    <div class="metric"><span class="metric-label">Estimated cost</span><strong>{{ currency.symbol }}{{ '%.6f'|format(summary.cost_estimate) }}</strong></div>
+    <div class="metric"><span class="metric-label"><abbr title="Estimated from recorded token counts and the configured price table; not a provider bill or an exact charge.">Estimated cost</abbr></span><strong>{{ currency.symbol }}{{ '%.6f'|format(summary.cost_estimate) }}</strong></div>
   </div>
   <p class="sidebar-empty">
     {{ summary.priced_records }} of {{ summary['count'] }} rows have a known price.
@@ -97,7 +97,7 @@
         <th scope="col">Model</th>
         <th scope="col">Status</th>
         <th scope="col">Tokens</th>
-        <th scope="col">Estimated cost</th>
+        <th scope="col"><abbr title="Estimated from recorded token counts and the configured price table; not a provider bill or an exact charge.">Estimated cost</abbr></th>
       </tr>
     </thead>
     <tbody>

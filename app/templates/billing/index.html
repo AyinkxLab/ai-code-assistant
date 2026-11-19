@@ -51,7 +51,7 @@
       <tr>
         <th scope="col">Scope</th>
         <th scope="col">Tokens</th>
-        <th scope="col">Cost</th>
+        <th scope="col"><abbr title="Estimated from recorded token counts and the configured price table; not a provider bill or an exact charge.">Cost (est.)</abbr></th>
         <th scope="col">Status</th>
         <th scope="col"><span class="visually-hidden">Actions</span></th>
       </tr>
@@ -83,7 +83,7 @@
             {{ '%.4f'|format(budget.cost_used) }}
             {% if budget.cost_limit is not none %}/ {{ '%.4f'|format(budget.cost_limit) }}{% else %}<span class="chat-hint">no limit</span>{% endif %}
           </div>
-          <span class="chat-hint">estimated</span>
+          <span class="chat-hint" title="Estimated from recorded token counts and the configured price table; not a provider bill or an exact charge.">estimated</span>
           {% if budget.cost_limit is not none %}
           <div class="usage-bar" role="img" aria-label="{{ cost_pct|round(0)|int }}% of cost limit used">
             <span style="width: {{ cost_pct|round(0)|int }}%"></span>
@@ -121,9 +121,9 @@
 <section aria-labelledby="reconciliation-heading">
   <h2 id="reconciliation-heading">Reconciliation</h2>
   <p>
-    Reported total: <strong>${{ '%.6f'|format(report.reported_total_usd) }}</strong> ·
-    Estimated total: <strong>${{ '%.6f'|format(report.estimated_total_usd) }}</strong> ·
-    Variance: <strong>${{ '%.6f'|format(report.variance_usd) }}</strong>
+    Reported total: <strong><abbr title="Imported from the provider's billing CSV — a provider-reported amount, not calculated by this app.">Reported total</abbr>: ${{ '%.6f'|format(report.reported_total_usd) }}</strong> ·
+    Estimated total: <strong><abbr title="Estimated from recorded token counts and the configured price table; not a provider bill or an exact charge.">Estimated total</abbr>: ${{ '%.6f'|format(report.estimated_total_usd) }}</strong> ·
+    Variance: <strong><abbr title="Difference between the provider-reported amount and this app's estimate.">Variance</abbr>: ${{ '%.6f'|format(report.variance_usd) }}</strong>
   </p>
   {% if report.rows %}
   <table class="billing-table">
@@ -131,9 +131,9 @@
       <tr>
         <th scope="col">Provider</th>
         <th scope="col">Period</th>
-        <th scope="col">Reported (USD)</th>
-        <th scope="col">Estimated (USD)</th>
-        <th scope="col">Variance (USD)</th>
+        <th scope="col"><abbr title="Imported from the provider's billing CSV — a provider-reported amount, not calculated by this app.">Reported (USD)</abbr></th>
+        <th scope="col"><abbr title="Estimated from recorded token counts and the configured price table; not a provider bill or an exact charge.">Estimated (USD)</abbr></th>
+        <th scope="col"><abbr title="Difference between the provider-reported amount and this app's estimate.">Variance (USD)</abbr></th>
         <th scope="col">Variance (%)</th>
       </tr>
     </thead>
