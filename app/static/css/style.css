@@ -1181,6 +1181,15 @@ a:hover {
   box-shadow: 0 0 8px var(--success);
 }
 
+.status-broken {
+  background: var(--error);
+  box-shadow: 0 0 8px var(--error);
+}
+
+.github-connection-broken {
+  border-color: var(--error);
+}
+
 .github-scopes {
   color: var(--text-muted);
   font-size: 0.85rem;
