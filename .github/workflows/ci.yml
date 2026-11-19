@@ -69,6 +69,39 @@ jobs:
       - name: Black format check
         run: black --check .
 
+  perf-budgets:
+    name: Performance budgets (advisory)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: |
+            requirements.txt
+            requirements-dev.txt
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-dev.txt
+
+      # Advisory until the baseline is stable (#702). The script exits 0 and
+      # prints any regression; flip to --enforce once maintainers agree.
+      - name: Run deterministic benchmark
+        env:
+          APP_ENV: testing
+        run: python scripts/perf_budget.py --advisory
+
   asset-guard:
     name: Asset & VS Code guard
     runs-on: ubuntu-latest
