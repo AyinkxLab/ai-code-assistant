@@ -73,6 +73,11 @@ def create_app(config_name: str | None = None) -> Flask:
 
     configure_github_cache(app)
 
+    # Bounded cache for hot, non-secret reads (#698).
+    from app.services.read_cache import configure_read_cache
+
+    configure_read_cache(app)
+
     # Validate the optional LLM_PRICE_TABLE override at startup (#438). Invalid
     # configuration is logged and falls back to the shipped estimates instead of
     # breaking pricing or request handling.

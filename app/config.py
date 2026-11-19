@@ -111,6 +111,14 @@ class Config:
     LLM_CACHE_ENABLED = os.getenv("LLM_CACHE_ENABLED", "1") == "1"
     LLM_CACHE_TTL = int(os.getenv("LLM_CACHE_TTL", "300"))
     LLM_CACHE_MAX_ENTRIES = int(os.getenv("LLM_CACHE_MAX_ENTRIES", "256"))
+
+    # Bounded read cache for hot, non-secret data (#698). Keys live under
+    # READ_CACHE_NAMESPACE; entries expire after READ_CACHE_TTL seconds and the
+    # LRU store keeps at most READ_CACHE_MAX_ENTRIES.
+    READ_CACHE_ENABLED = os.getenv("READ_CACHE_ENABLED", "1") == "1"
+    READ_CACHE_TTL = int(os.getenv("READ_CACHE_TTL", "30"))
+    READ_CACHE_MAX_ENTRIES = int(os.getenv("READ_CACHE_MAX_ENTRIES", "128"))
+    READ_CACHE_NAMESPACE = os.getenv("READ_CACHE_NAMESPACE", "app.read")
     # Pre-flight token/cost estimate (issue #104). The rate is only used to turn
     # an estimated token count into a rough figure shown before sending.
     LLM_ESTIMATE_USD_PER_1K_TOKENS = float(os.getenv("LLM_ESTIMATE_USD_PER_1K_TOKENS", "0.002"))

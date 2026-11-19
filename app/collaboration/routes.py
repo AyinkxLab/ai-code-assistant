@@ -86,6 +86,10 @@ from app.services.permissions import (
     resolve_workspace,
     role_for,
 )
+from app.services.workspace_settings_cache import (
+    get_workspace_settings_snapshot,
+    invalidate_workspace_settings,
+)
 
 _PER_PAGE_DEFAULT = 20
 _PER_PAGE_MAX = 100
@@ -118,20 +122,12 @@ def _settings(workspace: Workspace) -> WorkspaceSettings:
         row = WorkspaceSettings(workspace_id=workspace.id)
         db.session.add(row)
         db.session.flush()
+        invalidate_workspace_settings(workspace.id)
     return row
 
 
 def _settings_or_default(workspace_id: int) -> dict:
-    row = WorkspaceSettings.query.filter_by(workspace_id=workspace_id).first()
-    if row is not None:
-        return row.to_dict()
-    return {
-        "workspace_id": workspace_id,
-        "invitations_enabled": True,
-        "default_member_role": "viewer",
-        "created_at": None,
-        "updated_at": None,
-    }
+    return get_workspace_settings_snapshot(workspace_id)
 
 
 def _encode_cursor(event) -> str:
@@ -1113,4 +1109,5 @@ def api_update_settings(workspace_id: int):
         },
     )
     db.session.commit()
+    invalidate_workspace_settings(workspace.id)
     return jsonify(settings.to_dict())
