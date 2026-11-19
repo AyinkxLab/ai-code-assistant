@@ -26,6 +26,7 @@ from app.models import (
     Workspace,
     WorkspaceMember,
 )
+from app.models.plugin_install_event import ACTION_INSTALL, ACTION_ROLLBACK, ACTION_UPDATE
 from app.models.workspace_member import STATUS_ACTIVE
 from app.plugins import bp
 from app.services.capabilities import Capability, CapabilityStore
@@ -38,6 +39,12 @@ from app.services.marketplace import (
     marketplace_categories,
     marketplace_error_payload,
     rank_entries,
+)
+from app.services.marketplace_analytics import (
+    aggregate_events,
+    analytics_csv,
+    install_counts,
+    record_plugin_event,
 )
 from app.services.permissions import (
     can,
@@ -420,12 +427,38 @@ def _install_in_workspace(manifest: PluginManifest, workspace_id: int) -> Plugin
 # --------------------------------------------------------------------------
 
 
+def plugin_ids() -> list[str]:
+    """Return every registered plugin id, sorted for a stable dashboard."""
+    return [row[0] for row in Plugin.query.with_entities(Plugin.id).order_by(Plugin.id).all()]
+
+
 @bp.route("/")
 @login_required
 def index():
     """Plugin management page (workspace-scoped)."""
     workspaces = _accessible_workspaces(current_user)
     return render_template("plugins/index.html", workspaces=workspaces)
+
+
+@bp.route("/analytics")
+@login_required
+def analytics():
+    """Marketplace install analytics dashboard (aggregate, privacy-safe)."""
+    rows = aggregate_events(plugin_ids())
+    return render_template("plugins/analytics.html", rows=rows)
+
+
+@bp.route("/analytics.csv")
+@login_required
+def analytics_export():
+    """Download the aggregate analytics as CSV (no identity data)."""
+    rows = aggregate_events(plugin_ids())
+    response = current_app.response_class(
+        analytics_csv(rows),
+        mimetype="text/csv",
+        headers={"Content-Disposition": "attachment; filename=marketplace-analytics.csv"},
+    )
+    return response
 
 
 @bp.route("/workspaces/<int:workspace_id>/plugins/<plugin_id>")
@@ -567,6 +600,7 @@ def api_browse_catalog(workspace_id: int):
         trusted_publishers=trusted_publisher_ids(
             current_app.config.get("PLUGIN_TRUSTED_KEYS") or {}
         ),
+        install_counts=install_counts(),
     )
     total = len(all_entries)
     pages = (total + limit - 1) // limit if total else 0
@@ -699,6 +733,7 @@ def api_install_plugin(workspace_id: int):
     except PluginAlreadyInstalledError:
         return jsonify({"error": "Plugin is already installed in this workspace."}), 409
 
+    record_plugin_event(plugin.id, ACTION_INSTALL)
     return jsonify(_serialize(plugin, workspace_id)), 201
 
 
@@ -922,6 +957,7 @@ def api_install_plugin_from_catalog(workspace_id: int):
         outcome="success",
         reason="installed from catalog",
     )
+    record_plugin_event(plugin.id, ACTION_INSTALL)
     payload = _serialize(plugin, workspace_id)
     payload["source"] = entry.source
     payload["integrity"] = entry.integrity
@@ -963,6 +999,7 @@ def api_install_registered_plugin(workspace_id: int, plugin_id: str):
         db.session.rollback()
         return jsonify({"error": "Plugin is already installed in this workspace."}), 409
 
+    record_plugin_event(plugin.id, ACTION_INSTALL)
     return jsonify(_serialize(plugin, workspace_id)), 201
 
 
@@ -1018,6 +1055,7 @@ def api_update_plugin(workspace_id: int, plugin_id: str):
         db.session.rollback()
         return jsonify({"error": "Plugin not found."}), 404
 
+    record_plugin_event(plugin.id, ACTION_UPDATE)
     return jsonify(_serialize(plugin, workspace_id))
 
 
@@ -1120,6 +1158,7 @@ def api_update_from_catalog(workspace_id: int, plugin_id: str):
         workspace_id=workspace_id,
         user_id=current_user.id,
     )
+    record_plugin_event(plugin_id, ACTION_UPDATE)
     return jsonify(_serialize(plugin, workspace_id))
 
 
@@ -1225,6 +1264,7 @@ def api_rollback_plugin(workspace_id: int, plugin_id: str):
         workspace_id=workspace_id,
         user_id=current_user.id,
     )
+    record_plugin_event(plugin_id, ACTION_ROLLBACK)
     return jsonify(_serialize(plugin, workspace_id))
 
 
@@ -1600,6 +1640,7 @@ def api_marketplace():
         trusted_publishers=trusted_publisher_ids(
             current_app.config.get("PLUGIN_TRUSTED_KEYS") or {}
         ),
+        install_counts=install_counts(),
     )
     page_entries, pagination = _marketplace_page(ranked)
     plugins = [entry.to_dict() for entry in page_entries]

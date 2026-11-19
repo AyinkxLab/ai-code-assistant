@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+
+{% block title %}Marketplace analytics - {{ config.APP_NAME }}{% endblock %}
+
+{% block content %}
+<div class="github-header">
+  <div>
+    <h1>Marketplace analytics</h1>
+    <p class="repo-meta">Anonymous install, update and rollback counts per plugin. No user, workspace, IP address or user agent is recorded.</p>
+  </div>
+  <div class="repo-toolbar">
+    <a class="btn btn-ghost" href="{{ url_for('plugins.analytics_export') }}">Export CSV</a>
+    <a class="btn btn-ghost" href="{{ url_for('plugins.index') }}">Back to plugins</a>
+  </div>
+</div>
+
+{% if rows %}
+<table class="billing-table">
+  <thead>
+    <tr>
+      <th scope="col">Plugin</th>
+      <th scope="col">Installs</th>
+      <th scope="col">Updates</th>
+      <th scope="col">Rollbacks</th>
+      <th scope="col">Total</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for row in rows %}
+    <tr>
+      <td><code>{{ row.plugin_id }}</code></td>
+      <td>{{ row.installs }}</td>
+      <td>{{ row.updates }}</td>
+      <td>{{ row.rollbacks }}</td>
+      <td>{{ row.total }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p class="empty-note">No plugins have registered analytics events yet.</p>
+{% endif %}
+{% endblock %}

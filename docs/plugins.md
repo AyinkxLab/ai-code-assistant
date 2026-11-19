@@ -502,6 +502,17 @@ Ties are broken by plugin id and then catalog order, so paging is stable even
 when two entries have identical scores. An empty result is a normal `200` with
 `entries: []`; ranking never invents entries or scores.
 
+### Marketplace install analytics (#695)
+
+Installs, updates and rollbacks append an anonymous row to
+`plugin_install_events` (`plugin_id`, `action`, `created_at`). The table has
+**no user id, workspace id, IP address or user agent**, so counts cannot be
+traced to a person. The dashboard is `GET /plugins/analytics` and exports the
+same aggregates from `GET /plugins/analytics.csv` with the stable header
+`plugin_id,installs,updates,rollbacks,total`. Registered plugins appear with a
+zero row even before their first event. Install counts also feed the search
+ranking signal above.
+
 ### Marketplace discovery API (#360)
 
 The read-only discovery API advertises catalog entries without installing

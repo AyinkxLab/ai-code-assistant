@@ -20,6 +20,7 @@ from app.models.notification import Notification
 from app.models.notification_preference import NotificationPreference
 from app.models.plugin import CapabilityGrant, Plugin, PluginInstallation, PluginLockEntry
 from app.models.plugin_error_report import PluginErrorReport
+from app.models.plugin_install_event import PluginInstallEvent
 from app.models.project import Project
 from app.models.project_chat_session import ProjectChatSession
 from app.models.project_comment import ProjectComment
@@ -58,6 +59,7 @@ __all__ = [
     "NotificationPreference",
     "Plugin",
     "PluginErrorReport",
+    "PluginInstallEvent",
     "PluginInstallation",
     "PluginLockEntry",
     "PriceOverride",
