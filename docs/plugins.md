@@ -480,6 +480,28 @@ timeout states (shared with `plugin_marketplace.js`), and owner-only
 install/update/rollback buttons with surfaced errors. Catalog text is escaped
 before rendering.
 
+### Marketplace search ranking, categories and tags (#693)
+
+Marketplace manifests may declare a `category` (string), `categories` (array)
+and `tags` (array); all are optional and advertised as metadata only. The
+catalog browser supports `category` and `tag` filters alongside `q` and
+`capability`. A tag also matches an identical capability, matching the
+installer catalog convention. `GET /plugins/api/marketplace/categories`
+returns the category and tag facets with entry counts.
+
+Search results are ranked by a documented weighted score
+(`app/services/marketplace.py::RANKING_WEIGHTS`):
+
+| Signal | Weight | Measurement |
+| ------ | ------ | ----------- |
+| Relevance | 0.55 | Mean match over query terms: id 1.0, name 0.8, category/tag 0.7, description 0.4, author 0.3. |
+| Trust | 0.25 | 1.0 when the entry signature names a publisher in `PLUGIN_TRUSTED_KEYS`, otherwise 0.0. |
+| Installs | 0.20 | `log1p(plugin installs)` normalized against the most-installed result. |
+
+Ties are broken by plugin id and then catalog order, so paging is stable even
+when two entries have identical scores. An empty result is a normal `200` with
+`entries: []`; ranking never invents entries or scores.
+
 ### Marketplace discovery API (#360)
 
 The read-only discovery API advertises catalog entries without installing

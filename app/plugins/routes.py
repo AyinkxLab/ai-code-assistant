@@ -35,7 +35,9 @@ from app.services.marketplace import (
     MarketplaceError,
     filter_entries,
     load_marketplace_catalog,
+    marketplace_categories,
     marketplace_error_payload,
+    rank_entries,
 )
 from app.services.permissions import (
     can,
@@ -557,6 +559,14 @@ def api_browse_catalog(workspace_id: int):
         query=request.args.get("q"),
         capability=request.args.get("capability"),
         tag=request.args.get("tag"),
+        category=request.args.get("category"),
+    )
+    all_entries = rank_entries(
+        all_entries,
+        query=request.args.get("q"),
+        trusted_publishers=trusted_publisher_ids(
+            current_app.config.get("PLUGIN_TRUSTED_KEYS") or {}
+        ),
     )
     total = len(all_entries)
     pages = (total + limit - 1) // limit if total else 0
@@ -583,7 +593,7 @@ def api_browse_catalog(workspace_id: int):
                 "has_next": page < pages,
                 "has_prev": page > 1,
             },
-            "ordering": ["id", "version"],
+            "ordering": ["relevance", "trust", "installs", "id", "version"],
         }
     )
 
@@ -1552,13 +1562,19 @@ def api_marketplace():
     """List advertised catalog entries (read-only; any signed-in workspace member).
 
     Query parameters:
-        ``q``             free-text match on id, name, description, author.
+        ``q``             free-text match on id, name, description, author,
+                          category and tags.
         ``capability``    only advertise entries requiring this capability.
+        ``category``      only entries in this category.
+        ``tag``           only entries carrying this tag (or capability).
         ``workspace_id``  optionally resolve the caller's role in a workspace.
         ``page`` / ``limit`` bounded pagination (limit capped at 100).
 
-    The catalog is untrusted metadata. It is never executed and never grants a
-    capability; installation still requires an explicit, validated install.
+    Results are ranked by relevance, verified-publisher trust and install
+    count (:data:`app.services.marketplace.RANKING_WEIGHTS`) with a stable
+    plugin-id tie-break. The catalog is untrusted metadata. It is never
+    executed and never grants a capability; installation still requires an
+    explicit, validated install.
     """
     try:
         workspace = _marketplace_workspace()
@@ -1569,8 +1585,23 @@ def api_marketplace():
 
     query = (request.args.get("q") or "").strip()
     capability = (request.args.get("capability") or "").strip()
-    filtered = filter_entries(catalog, query=query, capability=capability)
-    page_entries, pagination = _marketplace_page(filtered)
+    category = (request.args.get("category") or "").strip()
+    tag = (request.args.get("tag") or "").strip()
+    filtered = filter_entries(
+        catalog,
+        query=query,
+        capability=capability,
+        category=category,
+        tag=tag,
+    )
+    ranked = rank_entries(
+        filtered,
+        query=query,
+        trusted_publishers=trusted_publisher_ids(
+            current_app.config.get("PLUGIN_TRUSTED_KEYS") or {}
+        ),
+    )
+    page_entries, pagination = _marketplace_page(ranked)
     plugins = [entry.to_dict() for entry in page_entries]
     return jsonify(
         {
@@ -1581,9 +1612,36 @@ def api_marketplace():
             "entries": plugins,
             "plugins": plugins,
             "pagination": pagination,
-            "filters": {"q": query or None, "capability": capability or None},
+            "filters": {
+                "q": query or None,
+                "capability": capability or None,
+                **{
+                    key: value
+                    for key, value in (("category", category or None), ("tag", tag or None))
+                    if value is not None
+                },
+            },
             "warnings": list(loaded.warnings),
-            "ordering": ["id", "version"],
+            "ordering": ["relevance", "trust", "installs", "id", "version"],
+        }
+    )
+
+
+@bp.route("/api/marketplace/categories", methods=["GET"])
+@login_required
+def api_marketplace_categories():
+    """Return category and tag facets for the advertised catalog."""
+    try:
+        loaded = load_marketplace_catalog(current_app.config)
+    except MarketplaceError as exc:
+        return _marketplace_error(exc)
+    categories, tags = marketplace_categories(loaded.catalog.list_entries())
+    return jsonify(
+        {
+            "state": loaded.state,
+            "categories": categories,
+            "tags": tags,
+            "warnings": list(loaded.warnings),
         }
     )
 

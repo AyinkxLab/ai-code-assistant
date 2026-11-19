@@ -97,6 +97,24 @@
       "uniqueItems": true,
       "description": "Required Python dependencies (PEP 508 format)"
     },
+    "category": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64,
+      "description": "Primary marketplace category (e.g. 'stellar' or 'developer-tools')"
+    },
+    "categories": {
+      "type": "array",
+      "items": {"type": "string", "minLength": 1, "maxLength": 64},
+      "uniqueItems": true,
+      "description": "Marketplace categories this plugin belongs to"
+    },
+    "tags": {
+      "type": "array",
+      "items": {"type": "string", "minLength": 1, "maxLength": 64},
+      "uniqueItems": true,
+      "description": "Free-form marketplace tags used by search"
+    },
     "configuration": {
       "type": "object",
       "default": {},
