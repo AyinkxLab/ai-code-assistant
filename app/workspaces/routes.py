@@ -60,6 +60,8 @@ from app.extensions import db
 from app.models import Project, ProjectChatSession, ProjectMessage, User, Workspace, WorkspaceMember
 from app.models.activity_event import (
     EVENT_AI_ANALYSIS_RUN,
+    EVENT_CONVERSATION_CREATED,
+    EVENT_FILE_UPLOADED,
     EVENT_MEMBER_ADDED,
     EVENT_MEMBER_REMOVED,
     EVENT_PROJECT_EXPORTED,
@@ -106,7 +108,7 @@ from app.services.importing import (
 from app.services.invitations import cancel_pending_for_user
 from app.services.llm import LLMProviderError, get_provider
 from app.services.notifications import notify
-from app.services.permissions import require_workspace_capability
+from app.services.permissions import require_workspace_capability, resolve_workspace, role_for
 from app.services.ratelimit import per_user_limit
 from app.services.search import SearchQueryError, search_project
 from app.services.stellar_detection import project_stellar_metadata
@@ -143,6 +145,13 @@ def _get_chat_session(project: Project, session_id: int | None = None) -> Projec
         session = ProjectChatSession(project=project, title="General")
         db.session.add(session)
         db.session.flush()
+        record_activity(
+            project.workspace_id,
+            EVENT_CONVERSATION_CREATED,
+            actor=current_user,
+            target=session,
+            metadata={"title": session.title, "project_id": project.id, "project": project.name},
+        )
     return session
 
 
@@ -233,9 +242,18 @@ def index():
 @bp.route("/<int:workspace_id>")
 @login_required
 def detail(workspace_id: int):
-    """Workspace detail page showing its projects."""
-    workspace = _get_workspace(workspace_id)
-    return render_template("workspaces/detail.html", workspace=workspace)
+    """Workspace detail page: projects for owners, activity feed for members.
+
+    Any active member may open the page so they can read the workspace activity
+    feed; project import, project browsing, and workspace administration stay
+    owner-only (the template hides those panels and the backing APIs enforce it).
+    """
+    workspace = resolve_workspace(workspace_id)
+    return render_template(
+        "workspaces/detail.html",
+        workspace=workspace,
+        my_role=role_for(workspace_id, current_user),
+    )
 
 
 @bp.route("/<int:workspace_id>/projects/<int:project_id>")
@@ -592,6 +610,17 @@ def _record_import_side_effects(workspace: Workspace, project: Project, source: 
         target=project,
         metadata={"source": source, "file_count": project.file_count},
     )
+    if source == SOURCE_ARCHIVE:
+        # An archive or dragged-in manifest is the user-uploaded-file path. GitHub
+        # and scaffold imports are fetched/generated instead, so they only emit
+        # the project.imported event.
+        record_activity(
+            workspace.id,
+            EVENT_FILE_UPLOADED,
+            actor=user,
+            target=project,
+            metadata={"source": source, "file_count": project.file_count},
+        )
     db.session.commit()
     emit_event(
         "project.created",
@@ -1218,6 +1247,14 @@ def api_project_chat_sessions(project_id: int):
             return jsonify({"error": "Session titles must be 200 characters or fewer."}), 400
         session = ProjectChatSession(project=project, title=title)
         db.session.add(session)
+        db.session.flush()
+        record_activity(
+            project.workspace_id,
+            EVENT_CONVERSATION_CREATED,
+            actor=current_user,
+            target=session,
+            metadata={"title": title, "project_id": project.id, "project": project.name},
+        )
         db.session.commit()
         return jsonify(session.to_dict()), 201
 

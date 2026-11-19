@@ -13,11 +13,17 @@
   </div>
   <div class="repo-toolbar">
     <a class="btn btn-ghost btn-sm" href="{{ url_for('collaboration.members_page', workspace_id=workspace.id) }}">Team</a>
-    <button id="rename-workspace" class="btn btn-ghost btn-sm" type="button">Rename</button>
-    <button id="delete-workspace" class="btn btn-ghost btn-sm btn-danger" type="button">Delete</button>
+    {% if my_role == 'owner' %}
+      <a class="btn btn-ghost btn-sm" href="{{ url_for('collaboration.audit_page', workspace_id=workspace.id) }}">Audit log</a>
+      <button id="rename-workspace" class="btn btn-ghost btn-sm" type="button">Rename</button>
+      <button id="delete-workspace" class="btn btn-ghost btn-sm btn-danger" type="button">Delete</button>
+    {% else %}
+      <span class="role-pill role-{{ my_role }}">{{ my_role }}</span>
+    {% endif %}
   </div>
 </div>
 
+{% if my_role == 'owner' %}
 <div class="prompt-editor">
   <h2>Import a project</h2>
   <p class="field-hint">Upload an archive (.zip, .tar, .tar.gz, .tgz, .7z or .rar) of your code, drag &amp; drop a single file or a folder, or import a public/accessible GitHub repository you are connected to. Imports are scanned in-memory: traversal paths and symlinks are rejected, size caps are enforced, and obvious secret files are skipped.</p>
@@ -64,15 +70,17 @@
 <div id="workspace-metrics" class="metrics-strip">
   <p class="empty-note">Loading quality metrics...</p>
 </div>
+{% endif %}
 
 <div class="collab-panel activity-feed" style="margin-top: 32px;">
   <div class="collab-header">
     <h2>Activity</h2>
-    <a class="btn btn-ghost btn-sm" href="{{ url_for('collaboration.members_page', workspace_id=workspace.id) }}">Manage team</a>
+    <a class="btn btn-ghost btn-sm" href="{{ url_for('collaboration.members_page', workspace_id=workspace.id) }}">Team</a>
   </div>
   <div id="activity-list">
     <p class="empty-note">Loading activity...</p>
   </div>
+  <button id="activity-more" class="btn btn-ghost btn-sm" type="button" hidden>Load more</button>
 </div>
 {% endblock %}
 
