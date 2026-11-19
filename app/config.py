@@ -111,6 +111,14 @@ class Config:
     LLM_CACHE_ENABLED = os.getenv("LLM_CACHE_ENABLED", "1") == "1"
     LLM_CACHE_TTL = int(os.getenv("LLM_CACHE_TTL", "300"))
     LLM_CACHE_MAX_ENTRIES = int(os.getenv("LLM_CACHE_MAX_ENTRIES", "256"))
+
+    # Bounded read cache for hot, non-secret data (#698). Keys live under
+    # READ_CACHE_NAMESPACE; entries expire after READ_CACHE_TTL seconds and the
+    # LRU store keeps at most READ_CACHE_MAX_ENTRIES.
+    READ_CACHE_ENABLED = os.getenv("READ_CACHE_ENABLED", "1") == "1"
+    READ_CACHE_TTL = int(os.getenv("READ_CACHE_TTL", "30"))
+    READ_CACHE_MAX_ENTRIES = int(os.getenv("READ_CACHE_MAX_ENTRIES", "128"))
+    READ_CACHE_NAMESPACE = os.getenv("READ_CACHE_NAMESPACE", "app.read")
     # Pre-flight token/cost estimate (issue #104). The rate is only used to turn
     # an estimated token count into a rough figure shown before sending.
     LLM_ESTIMATE_USD_PER_1K_TOKENS = float(os.getenv("LLM_ESTIMATE_USD_PER_1K_TOKENS", "0.002"))
@@ -282,6 +290,18 @@ class Config:
     # ``indexing`` status and the client polls ``progress``. Disabled in the
     # test config for deterministic assertions.
     IMPORT_JOBS_ASYNC = os.getenv("IMPORT_JOBS_ASYNC", "1") == "1"
+    # Durable background job queue (#699). Jobs are persisted, retried with
+    # exponential backoff up to JOB_QUEUE_MAX_ATTEMPTS, and worked by
+    # ``flask jobs worker``. Payloads above JOB_QUEUE_MAX_PAYLOAD_BYTES are
+    # rejected at enqueue time.
+    JOB_QUEUE_ENABLED = os.getenv("JOB_QUEUE_ENABLED", "1") == "1"
+    JOB_QUEUE_MAX_ATTEMPTS = int(os.getenv("JOB_QUEUE_MAX_ATTEMPTS", "5"))
+    JOB_QUEUE_RETRY_BASE_SECONDS = float(os.getenv("JOB_QUEUE_RETRY_BASE_SECONDS", "10"))
+    JOB_QUEUE_RETRY_MAX_SECONDS = float(os.getenv("JOB_QUEUE_RETRY_MAX_SECONDS", "3600"))
+    JOB_QUEUE_BATCH_SIZE = int(os.getenv("JOB_QUEUE_BATCH_SIZE", "50"))
+    JOB_QUEUE_MAX_PAYLOAD_BYTES = int(os.getenv("JOB_QUEUE_MAX_PAYLOAD_BYTES", "16384"))
+    JOB_QUEUE_WORKER_POLL_SECONDS = float(os.getenv("JOB_QUEUE_WORKER_POLL_SECONDS", "5"))
+    JOB_QUEUE_WEBHOOK_TIMEOUT = float(os.getenv("JOB_QUEUE_WEBHOOK_TIMEOUT", "10"))
 
     # AI reviews (Phase 6): caps that keep reviews bounded and predictable.
     # A review never sends more than REVIEW_MAX_CONTEXT_CHARS of repository text
@@ -331,6 +351,11 @@ class Config:
     # the registry's per-metric series cap.
     METRICS_ENABLED = os.getenv("METRICS_ENABLED", "1") == "1"
     METRICS_TOKEN = os.getenv("METRICS_TOKEN", "")
+    # Per-request SQL profiling (#696). Every request counts its queries; a query
+    # slower than the threshold is logged as a literal-free statement shape.
+    # Bound parameters, prompts and secrets are never logged.
+    QUERY_PROFILING_ENABLED = os.getenv("QUERY_PROFILING_ENABLED", "1") == "1"
+    QUERY_SLOW_THRESHOLD_MS = float(os.getenv("QUERY_SLOW_THRESHOLD_MS", "200"))
     # Per-user rate limit for AI-powered endpoints (#28): project chat,
     # conversation streaming, and the code tools. Applies per authenticated user
     # (not per IP) and can be switched off entirely (the testing config does).

@@ -14,6 +14,7 @@ from app.models.conversation_share import ConversationShare
 from app.models.file_analysis import FileAnalysis
 from app.models.github_account import GithubAccount
 from app.models.invitation import WorkspaceInvitation
+from app.models.job import Job
 from app.models.message import Message
 from app.models.message_attachment import MessageAttachment
 from app.models.notification import Notification
@@ -54,6 +55,7 @@ __all__ = [
     "ConversationShare",
     "FileAnalysis",
     "GithubAccount",
+    "Job",
     "Message",
     "MessageAttachment",
     "Notification",

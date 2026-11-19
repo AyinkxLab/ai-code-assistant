@@ -73,6 +73,11 @@ def create_app(config_name: str | None = None) -> Flask:
 
     configure_github_cache(app)
 
+    # Bounded cache for hot, non-secret reads (#698).
+    from app.services.read_cache import configure_read_cache
+
+    configure_read_cache(app)
+
     # Validate the optional LLM_PRICE_TABLE override at startup (#438). Invalid
     # configuration is logged and falls back to the shipped estimates instead of
     # breaking pricing or request handling.
@@ -85,6 +90,11 @@ def create_app(config_name: str | None = None) -> Flask:
     from app.observability import init_observability
 
     init_observability(app)
+
+    # Per-request query counts and the slow-query log (#696).
+    from app.observability.query_profiling import init_query_profiling
+
+    init_query_profiling(app)
 
     # Register blueprints.
     from app.admin import bp as admin_bp
@@ -175,5 +185,10 @@ def create_app(config_name: str | None = None) -> Flask:
     from app.services.usage_cli import register_usage_cli
 
     register_usage_cli(app)
+
+    # Durable background job worker/inspection commands.
+    from app.services.jobs_cli import register_jobs_cli
+
+    register_jobs_cli(app)
 
     return app

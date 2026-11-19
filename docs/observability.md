@@ -136,10 +136,40 @@ can only be lowered). When rows are omitted the response sets
 `X-Export-Truncated: true`; `X-Export-Rows` reports the emitted row count. The
 column order is stable (`EXPORT_CSV_COLUMNS` in `app/services/usage_ledger.py`).
 
+## Query profiling and the slow-query log
+
+Each request counts the SQL statements it executes and accumulates their time
+(`app/observability/query_profiling.py`). Statements at or above
+`QUERY_SLOW_THRESHOLD_MS` are written to the `app.observability.query` logger as
+one line:
+
+```text
+slow_query duration_ms=412.51 queries=7 method=GET endpoint=/api/chat/conversations request_id=... statement=SELECT ... WHERE messages.conversation_id = ? ORDER BY messages.created_at
+```
+
+The logged statement is a **shape**, not the executed SQL: string and numeric
+literals are replaced with `?`, whitespace is collapsed, and the value is capped
+at 200 characters. Bound parameters are never read from SQLAlchemy, so API keys,
+prompts, tokens, and message content cannot leak into the slow-query log. The
+line carries the correlation id from `X-Request-ID` and the query count so far,
+which is enough to spot an N+1 pattern without storing user data.
+
+`QUERY_PROFILING_ENABLED=0` removes both listeners. Profiling is per request and
+per process; it adds one `perf_counter()` pair and two integer additions per
+statement. Calls outside a request (CLI commands, workers) are not counted.
+
+`tests/test_query_profiling.py` pins the literal stripping and logs a slow query
+whose bound parameter is a secret, asserting the secret never appears in the
+output. The same file guards the conversation-list endpoint against N+1
+regressions by counting statements for a fixed number of conversations.
+
 ## Configuration
 
 | Setting | Default | Purpose |
 | ------- | ------- | ------- |
+| `QUERY_PROFILING_ENABLED` | `1` | Enables per-request query counting and the slow-query log. |
+| `QUERY_SLOW_THRESHOLD_MS` | `200` | Statements at or above this duration are logged (shape only). |
+
 | `METRICS_ENABLED` | `1` | Hides `/metrics` (404) when disabled. |
 | `METRICS_TOKEN` | empty | Bearer token for scrapers. Empty falls back to admin-session auth. |
 | `USAGE_RETENTION_DAYS` | `365` | Minimum age before `flask usage purge` may delete ledger rows. |

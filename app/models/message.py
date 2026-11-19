@@ -14,6 +14,11 @@ class Message(db.Model):
     """
 
     __tablename__ = "messages"
+    __table_args__ = (
+        # Conversation history is always filtered by conversation and ordered
+        # by creation time; the composite index serves both in one scan.
+        db.Index("ix_messages_conversation_created", "conversation_id", "created_at"),
+    )
 
     id = db.Column(db.Integer, primary_key=True)
     conversation_id = db.Column(
