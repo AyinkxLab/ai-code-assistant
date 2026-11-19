@@ -16,6 +16,11 @@ class AuditLog(db.Model):
     """A single append-only audit entry."""
 
     __tablename__ = "audit_logs"
+    __table_args__ = (
+        # Admin filters by actor or action and always orders by created_at.
+        db.Index("ix_audit_logs_user_created", "user_id", "created_at"),
+        db.Index("ix_audit_logs_action_created", "action", "created_at"),
+    )
 
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(

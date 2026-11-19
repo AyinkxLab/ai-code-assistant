@@ -14,6 +14,10 @@ class ProjectMessage(db.Model):
     """A single user/assistant message within a project chat."""
 
     __tablename__ = "project_messages"
+    __table_args__ = (
+        # Project chat history: filter by session and order by created_at.
+        db.Index("ix_project_messages_session_created", "session_id", "created_at"),
+    )
 
     id = db.Column(db.Integer, primary_key=True)
     project_id = db.Column(

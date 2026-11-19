@@ -13,6 +13,11 @@ class Conversation(db.Model):
     """
 
     __tablename__ = "conversations"
+    __table_args__ = (
+        # Sidebar and JSON list: filter by owner/workspace, newest activity first.
+        db.Index("ix_conversations_user_updated", "user_id", "updated_at"),
+        db.Index("ix_conversations_workspace_updated", "workspace_id", "updated_at"),
+    )
 
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(
