@@ -81,6 +81,7 @@ from app.services.plugin_ops import (
     update_plugin,
     validate_catalog_install,
 )
+from app.services.plugin_publishers import publisher_profile
 from app.services.plugin_signatures import (
     VERIFY_IF_PRESENT,
     PublisherSignatureError,
@@ -459,6 +460,44 @@ def analytics_export():
         headers={"Content-Disposition": "attachment; filename=marketplace-analytics.csv"},
     )
     return response
+
+
+def _publisher_page_args() -> tuple[int, int]:
+    page = request.args.get("page", type=int)
+    limit = request.args.get("limit", type=int)
+    return (page if page and page > 0 else 1, limit or 50)
+
+
+@bp.route("/publishers/<publisher_id>")
+@login_required
+def publisher(publisher_id: str):
+    """Render a publisher profile with trust, plugins and install counts."""
+    profile = publisher_profile(
+        publisher_id,
+        page=_publisher_page_args()[0],
+        limit=_publisher_page_args()[1],
+        trusted_publishers=trusted_publisher_ids(
+            current_app.config.get("PLUGIN_TRUSTED_KEYS") or {}
+        ),
+        install_counts=install_counts(),
+    )
+    return render_template("plugins/publisher.html", **profile)
+
+
+@bp.route("/api/publishers/<publisher_id>", methods=["GET"])
+@login_required
+def api_publisher(publisher_id: str):
+    """Return a publisher profile as JSON (same data as the page)."""
+    profile = publisher_profile(
+        publisher_id,
+        page=_publisher_page_args()[0],
+        limit=_publisher_page_args()[1],
+        trusted_publishers=trusted_publisher_ids(
+            current_app.config.get("PLUGIN_TRUSTED_KEYS") or {}
+        ),
+        install_counts=install_counts(),
+    )
+    return jsonify(profile)
 
 
 @bp.route("/workspaces/<int:workspace_id>/plugins/<plugin_id>")

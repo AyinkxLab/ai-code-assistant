@@ -513,6 +513,17 @@ same aggregates from `GET /plugins/analytics.csv` with the stable header
 zero row even before their first event. Install counts also feed the search
 ranking signal above.
 
+### Publisher profiles (#691)
+
+`GET /plugins/publishers/<publisher_id>` renders a publisher page and
+`GET /plugins/api/publishers/<publisher_id>` returns the same data as JSON:
+publisher identity, verified badge, plugin list, per-plugin install counts and
+bounded pagination (`page`, `limit` clamped to 100, stable id order). A plugin's
+publisher is its verified `trust_publisher` when set, otherwise a slug of the
+manifest author. Verification reuses `PLUGIN_TRUSTED_KEYS` from Phase 9; the
+page exposes configured publisher key ids only (never key material). Unknown or
+publisher-less profiles render an explicit empty state instead of a 404.
+
 ### Marketplace discovery API (#360)
 
 The read-only discovery API advertises catalog entries without installing

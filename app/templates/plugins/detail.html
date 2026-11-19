@@ -45,7 +45,7 @@
       <dt>Trust</dt>
       <dd>
         {{ plugin.trust_state or "Unverified" }}
-        {% if plugin.trust_publisher %}(publisher: {{ plugin.trust_publisher }}){% endif %}
+        {% if plugin.trust_publisher %}(publisher: <a href="{{ url_for('plugins.publisher', publisher_id=plugin.trust_publisher) }}">{{ plugin.trust_publisher }}</a>){% endif %}
       </dd>
       <dt>Compatibility</dt>
       <dd>
