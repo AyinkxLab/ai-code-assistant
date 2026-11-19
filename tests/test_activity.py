@@ -4,14 +4,18 @@ Covers role scoping (members never see the audit-sensitive subset), cursor
 pagination, filters, and the uniform no-existence-oracle behavior.
 """
 
+import io
+import zipfile
 from datetime import UTC, datetime, timedelta
 
 from app.extensions import db
-from app.models import User, Workspace, WorkspaceMember
+from app.models import Project, User, Workspace, WorkspaceMember
 from app.models.activity_event import (
     AUDIT_EVENT_TYPES,
     EVENT_AI_ANALYSIS_RUN,
     EVENT_COMMENT_ADDED,
+    EVENT_CONVERSATION_CREATED,
+    EVENT_FILE_UPLOADED,
     EVENT_MEMBER_ADDED,
     EVENT_MEMBER_REMOVED,
     ActivityEvent,
@@ -178,3 +182,139 @@ class TestAuditLog:
         ).get_json()
         assert data["total"] == 5
         assert len(data["items"]) == 2
+
+
+def _zip_bytes(entries):
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as archive:
+        for name, data in entries:
+            archive.writestr(name, data)
+    return buffer.getvalue()
+
+
+def _project(workspace, owner, name="Activity project"):
+    project = Project(
+        workspace_id=workspace.id,
+        user_id=owner.id,
+        name=name,
+        source="archive",
+        status="ready",
+    )
+    db.session.add(project)
+    db.session.commit()
+    return project
+
+
+class TestActivityEventRecording:
+    """The four workspace actions from #55 must append feed events."""
+
+    def test_conversation_created_is_recorded(self, client, make_user, login):
+        owner = make_user(username="owner", email="owner@example.com")
+        member = _create_user("member", "member@example.com")
+        workspace = _setup(owner, member)
+        login(email="owner@example.com")
+
+        response = client.post(
+            "/chat/conversations",
+            json={"title": "Filed conversation", "workspace_id": workspace.id},
+            headers={"X-CSRFToken": "ignored"},
+        )
+        assert response.status_code == 201
+
+        event = ActivityEvent.query.filter_by(
+            workspace_id=workspace.id, event_type=EVENT_CONVERSATION_CREATED
+        ).one()
+        assert event.actor_id == owner.id
+        assert event.target_type == "conversations"
+        assert event.target_id == response.get_json()["id"]
+
+    def test_uploaded_archive_is_recorded(self, client, make_user, login):
+        owner = make_user(username="owner", email="owner@example.com")
+        member = _create_user("member", "member@example.com")
+        workspace = _setup(owner, member)
+        login(email="owner@example.com")
+
+        response = client.post(
+            f"/workspaces/api/workspaces/{workspace.id}/projects",
+            data={"file": (io.BytesIO(_zip_bytes([("main.py", "print('hi')")])), "project.zip")},
+            content_type="multipart/form-data",
+        )
+        assert response.status_code == 201
+
+        event = ActivityEvent.query.filter_by(
+            workspace_id=workspace.id, event_type=EVENT_FILE_UPLOADED
+        ).one()
+        assert event.actor_id == owner.id
+        assert event.target_id == response.get_json()["id"]
+
+    def test_analysis_and_comment_are_recorded(self, client, make_user, login):
+        owner = make_user(username="owner", email="owner@example.com")
+        member = _create_user("member", "member@example.com")
+        workspace = _setup(owner, member)
+        project = _project(workspace, owner)
+        login(email="owner@example.com")
+
+        assert (
+            client.post(
+                f"/workspaces/api/projects/{project.id}/analyze",
+                json={"kind": "architecture"},
+            ).status_code
+            == 200
+        )
+        assert (
+            client.post(
+                f"/workspaces/api/projects/{project.id}/comments",
+                json={"content": "Looks good"},
+            ).status_code
+            == 201
+        )
+
+        recorded = {
+            event.event_type
+            for event in ActivityEvent.query.filter_by(workspace_id=workspace.id).all()
+        }
+        assert EVENT_AI_ANALYSIS_RUN in recorded
+        assert EVENT_COMMENT_ADDED in recorded
+
+    def test_member_sees_recorded_events_and_page(self, client, make_user, login):
+        owner = make_user(username="owner", email="owner@example.com")
+        member = _create_user("member", "member@example.com")
+        workspace = _setup(owner, member)
+        login(email="owner@example.com")
+        client.post(
+            "/chat/conversations",
+            json={"title": "Member-visible", "workspace_id": workspace.id},
+            headers={"X-CSRFToken": "ignored"},
+        )
+
+        login(email="member@example.com")
+        data = client.get(f"/workspaces/api/workspaces/{workspace.id}/activity").get_json()
+        assert [item["event_type"] for item in data["items"]] == [EVENT_CONVERSATION_CREATED]
+
+        page = client.get(f"/workspaces/{workspace.id}")
+        assert page.status_code == 200
+        assert b"Activity" in page.data
+        assert b"Import a project" not in page.data
+
+
+class TestActivityPagePagination:
+    def test_page_pagination_is_scoped_to_workspace(self, client, make_user, login):
+        owner = make_user(username="owner", email="owner@example.com")
+        member = _create_user("member", "member@example.com")
+        workspace = _setup(owner, member)
+        other_owner = _create_user("otherowner", "otherowner@example.com")
+        other = _setup(other_owner, _create_user("other", "other@example.com"))
+        for i in range(5):
+            _add_event(workspace.id, owner.id, EVENT_COMMENT_ADDED, minutes_ago=i)
+        _add_event(other.id, owner.id, EVENT_COMMENT_ADDED)
+
+        login(email="member@example.com")
+        data = client.get(
+            f"/workspaces/api/workspaces/{workspace.id}/activity",
+            query_string={"page": 2, "per_page": 2},
+        ).get_json()
+        assert data["total"] == 5
+        assert data["page"] == 2
+        assert data["per_page"] == 2
+        assert len(data["items"]) == 2
+        assert all(item["workspace_id"] == workspace.id for item in data["items"])

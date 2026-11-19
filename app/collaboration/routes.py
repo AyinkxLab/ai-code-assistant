@@ -595,7 +595,13 @@ def invitation_decline(token: str):
 @login_required
 @require_workspace_capability("view_activity")
 def api_activity_feed(workspace_id: int):
-    """Member-scoped activity feed with cursor pagination and filters."""
+    """Member-scoped activity feed with cursor or page pagination and filters.
+
+    Members receive the newest-first workspace history (minus the audit-only
+    subset); ``before`` continues a cursor walk and ``page`` selects an offset
+    page. Both modes return the same envelope so the web UI and API clients can
+    paginate without over-fetching.
+    """
     workspace = resolve_workspace(workspace_id)
     role = role_for(workspace_id, current_user)
     query = ActivityEvent.query.filter_by(workspace_id=workspace.id)
@@ -610,9 +616,12 @@ def api_activity_feed(workspace_id: int):
     if actor_name:
         actor_ids = [u.id for u in User.query.filter_by(username=actor_name).all()]
         if not actor_ids:
-            return jsonify({"items": [], "next_cursor": None})
+            empty = {"items": [], "next_cursor": None, "total": 0}
+            empty.update({"page": _page(), "per_page": _per_page()})
+            return jsonify(empty)
         query = query.filter(ActivityEvent.actor_id.in_(actor_ids))
 
+    total = query.count()
     cursor = request.args.get("before")
     if cursor:
         decoded = _decode_cursor(cursor)
@@ -627,17 +636,27 @@ def api_activity_feed(workspace_id: int):
         else:
             return jsonify({"error": "Invalid cursor."}), 400
 
-    events = (
-        query.order_by(ActivityEvent.created_at.desc(), ActivityEvent.id.desc())
-        .limit(_per_page() + 1)
-        .all()
-    )
-    has_more = len(events) > _per_page()
-    events = events[: _per_page()]
+    per_page = _per_page()
+    page = _page()
+    ordered = query.order_by(ActivityEvent.created_at.desc(), ActivityEvent.id.desc())
+    if cursor:
+        events = ordered.limit(per_page + 1).all()
+    else:
+        events = ordered.offset((page - 1) * per_page).limit(per_page + 1).all()
+    has_more = len(events) > per_page
+    events = events[:per_page]
     users = _users_by_id({e.actor_id for e in events if e.actor_id})
     items = [e.to_dict(actor_username=users.get(e.actor_id)) for e in events]
     next_cursor = _encode_cursor(events[-1]) if events and has_more else None
-    return jsonify({"items": items, "next_cursor": next_cursor})
+    return jsonify(
+        {
+            "items": items,
+            "next_cursor": next_cursor,
+            "total": total,
+            "page": page,
+            "per_page": per_page,
+        }
+    )
 
 
 @bp.route("/api/workspaces/<int:workspace_id>/usage", methods=["GET"])

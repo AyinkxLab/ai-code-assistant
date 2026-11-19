@@ -28,6 +28,8 @@ EVENT_INVITATION_CREATED = "invitation.created"
 EVENT_INVITATION_ACCEPTED = "invitation.accepted"
 EVENT_INVITATION_DECLINED = "invitation.declined"
 EVENT_INVITATION_CANCELLED = "invitation.cancelled"
+EVENT_CONVERSATION_CREATED = "conversation.created"
+EVENT_FILE_UPLOADED = "file.uploaded"
 EVENT_PROJECT_IMPORTED = "project.imported"
 EVENT_PROJECT_EXPORTED = "project.exported"
 EVENT_PROJECT_DELETED = "project.deleted"
@@ -73,6 +75,8 @@ EVENT_LABELS = {
     EVENT_INVITATION_ACCEPTED: "accepted an invitation",
     EVENT_INVITATION_DECLINED: "declined an invitation",
     EVENT_INVITATION_CANCELLED: "cancelled an invitation",
+    EVENT_CONVERSATION_CREATED: "started a conversation",
+    EVENT_FILE_UPLOADED: "uploaded files",
     EVENT_PROJECT_IMPORTED: "imported a project",
     EVENT_PROJECT_EXPORTED: "exported a project snapshot",
     EVENT_PROJECT_DELETED: "deleted a project",

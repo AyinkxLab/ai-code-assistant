@@ -454,32 +454,52 @@
       });
   }
 
-  function loadActivity() {
+  var ACTIVITY_CURSOR = null;
+  var ACTIVITY_PER_PAGE = 10;
+
+  function activityRow(event) {
+    var actor = event.actor_username ? event.actor_username : "system";
+    return (
+      '<div class="activity-row">' +
+      '<span class="activity-dot"></span>' +
+      '<div class="activity-body">' +
+      '<div><strong>' + actor.replace(/[<>&"]/g, "") + "</strong> " + (event.label || "").replace(/[<>&"]/g, "") + "</div>" +
+      '<div class="activity-meta">' + event.event_type + "</div>" +
+      "</div>" +
+      '<div class="activity-time">' + formatActivityTime(event.created_at) + "</div>" +
+      "</div>"
+    );
+  }
+
+  function loadActivity(reset) {
     var list = document.getElementById("activity-list");
     if (!list) return;
-    api("/workspaces/api/workspaces/" + WORKSPACE_ID + "/activity?per_page=10")
+    var more = document.getElementById("activity-more");
+    if (reset) {
+      list.innerHTML = '<p class="empty-note">Loading activity...</p>';
+      ACTIVITY_CURSOR = null;
+    }
+    var query = "?per_page=" + ACTIVITY_PER_PAGE;
+    if (!reset && ACTIVITY_CURSOR) {
+      query += "&before=" + encodeURIComponent(ACTIVITY_CURSOR);
+    }
+    api("/workspaces/api/workspaces/" + WORKSPACE_ID + "/activity" + query)
       .then(function (data) {
-        if (!data.items.length) {
-          list.innerHTML = '<p class="empty-note">No activity yet.</p>';
-          return;
+        var html = data.items.map(activityRow).join("");
+        if (reset) {
+          list.innerHTML = html || '<p class="empty-note">No activity yet.</p>';
+        } else if (html) {
+          list.insertAdjacentHTML("beforeend", html);
         }
-        var html = "";
-        data.items.forEach(function (event) {
-          var actor = event.actor_username ? event.actor_username : "system";
-          html +=
-            '<div class="activity-row">' +
-            '<span class="activity-dot"></span>' +
-            '<div class="activity-body">' +
-            '<div><strong>' + actor.replace(/[<>&"]/g, "") + "</strong> " + (event.label || "").replace(/[<>&"]/g, "") + "</div>" +
-            '<div class="activity-meta">' + event.event_type + "</div>" +
-            "</div>" +
-            '<div class="activity-time">' + formatActivityTime(event.created_at) + "</div>" +
-            "</div>";
-        });
-        list.innerHTML = html;
+        ACTIVITY_CURSOR = data.next_cursor || null;
+        if (more) more.hidden = !ACTIVITY_CURSOR;
       })
       .catch(function (error) {
-        list.innerHTML = '<p class="empty-note">' + error.message + "</p>";
+        if (reset) {
+          list.innerHTML = '<p class="empty-note">' + error.message + "</p>";
+        } else {
+          flash(error.message, "error");
+        }
       });
   }
 
@@ -489,43 +509,62 @@
     var urlParts = window.location.pathname.split("/").filter(Boolean);
     WORKSPACE_ID = parseInt(urlParts[urlParts.length - 1], 10) || 0;
 
-    document.getElementById("import-archive-btn").addEventListener("click", function () {
-      importArchive(false);
-    });
-    document.getElementById("import-github-btn").addEventListener("click", function () {
-      importGithub(false);
-    });
-    wireDropzone();
-    loadConnectedRepos();
-    loadActivity();
-    loadWorkspaceMetrics();
+    var importArchiveBtn = document.getElementById("import-archive-btn");
+    if (importArchiveBtn) {
+      importArchiveBtn.addEventListener("click", function () {
+        importArchive(false);
+      });
+    }
+    var importGithubBtn = document.getElementById("import-github-btn");
+    if (importGithubBtn) {
+      importGithubBtn.addEventListener("click", function () {
+        importGithub(false);
+      });
+    }
+    if (document.getElementById("import-dropzone")) wireDropzone();
+    if (document.getElementById("connected-repos")) loadConnectedRepos();
+    loadActivity(true);
+    if (document.getElementById("workspace-metrics")) loadWorkspaceMetrics();
 
-    document.getElementById("rename-workspace").addEventListener("click", function () {
-      var name = prompt("Rename workspace:", wsName.textContent.trim());
-      if (name === null) return;
-      api("/workspaces/api/workspaces/" + WORKSPACE_ID, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: name }),
-      })
-        .then(function (workspace) {
-          wsName.textContent = workspace.name;
-        })
-        .catch(function (error) {
-          flash(error.message, "error");
-        });
-    });
+    var activityMore = document.getElementById("activity-more");
+    if (activityMore) {
+      activityMore.addEventListener("click", function () {
+        loadActivity(false);
+      });
+    }
 
-    document.getElementById("delete-workspace").addEventListener("click", function () {
-      if (!confirm("Delete this workspace and all of its projects?")) return;
-      api("/workspaces/api/workspaces/" + WORKSPACE_ID, { method: "DELETE" })
-        .then(function () {
-          window.location.href = "/workspaces/";
+    var renameBtn = document.getElementById("rename-workspace");
+    if (renameBtn) {
+      renameBtn.addEventListener("click", function () {
+        var name = prompt("Rename workspace:", wsName.textContent.trim());
+        if (name === null) return;
+        api("/workspaces/api/workspaces/" + WORKSPACE_ID, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name: name }),
         })
-        .catch(function (error) {
-          flash(error.message, "error");
-        });
-    });
+          .then(function (workspace) {
+            wsName.textContent = workspace.name;
+          })
+          .catch(function (error) {
+            flash(error.message, "error");
+          });
+      });
+    }
+
+    var deleteBtn = document.getElementById("delete-workspace");
+    if (deleteBtn) {
+      deleteBtn.addEventListener("click", function () {
+        if (!confirm("Delete this workspace and all of its projects?")) return;
+        api("/workspaces/api/workspaces/" + WORKSPACE_ID, { method: "DELETE" })
+          .then(function () {
+            window.location.href = "/workspaces/";
+          })
+          .catch(function (error) {
+            flash(error.message, "error");
+          });
+      });
+    }
 
     document.querySelectorAll(".delete-project").forEach(function (btn) {
       btn.addEventListener("click", function () {

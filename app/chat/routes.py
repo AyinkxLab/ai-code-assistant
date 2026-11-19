@@ -32,9 +32,11 @@ from app.models import (
     User,
     Workspace,
 )
+from app.models.activity_event import EVENT_CONVERSATION_CREATED, EVENT_FILE_UPLOADED
 from app.models.message_attachment import ALLOWED_IMAGE_TYPES
 from app.models.project import STATUS_READY
 from app.services import audit, budgets, chat_export, token_usage, usage_ledger
+from app.services.activity import record_activity
 from app.services.conversation_search import search_conversations
 from app.services.github import (
     GitHubError,
@@ -421,6 +423,15 @@ def create_conversation():
     except ProviderSettingsError as exc:
         return jsonify({"error": str(exc)}), 400
     db.session.add(conversation)
+    db.session.flush()
+    if conversation.workspace_id is not None:
+        record_activity(
+            conversation.workspace_id,
+            EVENT_CONVERSATION_CREATED,
+            actor=current_user,
+            target=conversation,
+            metadata={"title": conversation.title},
+        )
     db.session.commit()
     return jsonify(conversation.to_dict()), 201
 
@@ -777,6 +788,19 @@ def upload_attachment(conversation_id: int):
         data=data,
     )
     db.session.add(attachment)
+    db.session.flush()
+    if conversation.workspace_id is not None:
+        record_activity(
+            conversation.workspace_id,
+            EVENT_FILE_UPLOADED,
+            actor=current_user,
+            target=attachment,
+            metadata={
+                "filename": attachment.filename,
+                "content_type": attachment.content_type,
+                "size": attachment.size,
+            },
+        )
     db.session.commit()
     return jsonify(attachment.to_dict()), 201
 
