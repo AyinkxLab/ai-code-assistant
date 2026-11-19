@@ -22,6 +22,7 @@
     {% else %}
       <span class="project-status project-status-pending">not installed</span>
     {% endif %}
+    <a class="btn btn-ghost" href="{{ url_for('plugins.marketplace_reviews', plugin_id=plugin.id) }}">Reviews</a>
   </div>
 </div>
 

@@ -15,7 +15,7 @@ The backend is authoritative and never trusts the UI.
 
 import json
 
-from flask import abort, current_app, jsonify, render_template, request
+from flask import abort, current_app, flash, jsonify, redirect, render_template, request, url_for
 from flask_login import current_user, login_required
 
 from app.extensions import db
@@ -45,6 +45,15 @@ from app.services.marketplace_analytics import (
     analytics_csv,
     install_counts,
     record_plugin_event,
+)
+from app.services.marketplace_reviews import (
+    ReviewError,
+    create_review,
+    list_reviews,
+    report_review,
+    respond_to_review,
+    review_error_payload,
+    update_review,
 )
 from app.services.permissions import (
     can,
@@ -1749,3 +1758,113 @@ def api_marketplace_entry(plugin_id: str):
             "warnings": list(loaded.warnings),
         }
     )
+
+
+# --------------------------------------------------------------------------
+# Marketplace ratings and reviews (#692)
+# --------------------------------------------------------------------------
+
+
+def _review_page_args() -> tuple[int, int]:
+    page = request.args.get("page", type=int)
+    limit = request.args.get("limit", type=int)
+    return (page if page and page > 0 else 1, limit or 20)
+
+
+def _review_error(exc: ReviewError):
+    """Map typed review errors to a stable JSON shape (never leak details)."""
+    return jsonify(review_error_payload(exc)), exc.status
+
+
+@bp.route("/marketplace/<plugin_id>/reviews", methods=["GET", "POST"])
+@login_required
+def marketplace_reviews(plugin_id: str):
+    """Render reviews for a plugin and accept the HTML review form."""
+    plugin = Plugin.query.filter_by(id=plugin_id).first()
+    if plugin is None:
+        abort(404)
+
+    if request.method == "POST":
+        rating = request.form.get("rating", type=int)
+        try:
+            create_review(
+                current_user,
+                plugin_id,
+                {
+                    "rating": rating,
+                    "title": request.form.get("title"),
+                    "body": request.form.get("body"),
+                },
+            )
+            flash("Your review was saved.", "success")
+        except ReviewError as exc:
+            db.session.rollback()
+            flash(exc.user_message, "error")
+        return redirect(url_for("plugins.marketplace_reviews", plugin_id=plugin_id))
+
+    page, limit = _review_page_args()
+    return render_template(
+        "plugins/reviews.html",
+        plugin=plugin,
+        **list_reviews(plugin_id, page=page, limit=limit),
+    )
+
+
+@bp.route("/api/marketplace/<plugin_id>/reviews", methods=["GET"])
+@login_required
+def api_list_reviews(plugin_id: str):
+    """Return paginated reviews with the average and star distribution."""
+    if Plugin.query.filter_by(id=plugin_id).first() is None:
+        return jsonify({"error": "Plugin not found.", "code": "not_found"}), 404
+    page, limit = _review_page_args()
+    return jsonify(list_reviews(plugin_id, page=page, limit=limit))
+
+
+@bp.route("/api/marketplace/<plugin_id>/reviews", methods=["POST"])
+@login_required
+def api_create_review(plugin_id: str):
+    """Create the caller's review (requires an installation)."""
+    try:
+        review = create_review(current_user, plugin_id, request.get_json(silent=True) or {})
+    except ReviewError as exc:
+        db.session.rollback()
+        return _review_error(exc)
+    return jsonify(review.to_dict()), 201
+
+
+@bp.route("/api/marketplace/reviews/<int:review_id>", methods=["PUT"])
+@login_required
+def api_update_review(review_id: int):
+    """Re-rate or edit the caller's own review."""
+    try:
+        review = update_review(current_user, review_id, request.get_json(silent=True) or {})
+    except ReviewError as exc:
+        db.session.rollback()
+        return _review_error(exc)
+    return jsonify(review.to_dict())
+
+
+@bp.route("/api/marketplace/reviews/<int:review_id>/report", methods=["POST"])
+@login_required
+def api_report_review(review_id: int):
+    """Report a review for moderation (once, with a reason)."""
+    data = request.get_json(silent=True) or {}
+    try:
+        review = report_review(current_user, review_id, data.get("reason"))
+    except ReviewError as exc:
+        db.session.rollback()
+        return _review_error(exc)
+    return jsonify(review.to_dict())
+
+
+@bp.route("/api/marketplace/reviews/<int:review_id>/response", methods=["POST"])
+@login_required
+def api_respond_to_review(review_id: int):
+    """Post the publisher/admin owner response to a review."""
+    data = request.get_json(silent=True) or {}
+    try:
+        review = respond_to_review(current_user, review_id, data.get("response"))
+    except ReviewError as exc:
+        db.session.rollback()
+        return _review_error(exc)
+    return jsonify(review.to_dict())

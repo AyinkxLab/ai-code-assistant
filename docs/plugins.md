@@ -524,6 +524,26 @@ manifest author. Verification reuses `PLUGIN_TRUSTED_KEYS` from Phase 9; the
 page exposes configured publisher key ids only (never key material). Unknown or
 publisher-less profiles render an explicit empty state instead of a 404.
 
+### Ratings and reviews (#692)
+
+Ratings require an installation in a workspace the reviewer owns or actively
+belongs to. One review per user per plugin is enforced by a unique constraint;
+the author can re-rate with `PUT /plugins/api/marketplace/reviews/<id>`.
+Moderation is minimal and auditable: any signed-in user can report a review
+once with a reason, and the plugin publisher (or a platform admin) can post an
+owner response. Permission and validation failures return structured errors
+(`{"error": ..., "code": ...}`) with `invalid`, `forbidden`, `not_found`,
+`duplicate_review`, `install_required` or `already_reported` codes.
+
+| Route | Description |
+| ----- | ----------- |
+| `GET/POST /plugins/marketplace/<plugin_id>/reviews` | Server-rendered review page and HTML review form. |
+| `GET /plugins/api/marketplace/<plugin_id>/reviews` | Paginated reviews, average and star distribution. |
+| `POST /plugins/api/marketplace/<plugin_id>/reviews` | Create the caller's review (install required). |
+| `PUT /plugins/api/marketplace/reviews/<id>` | Re-rate/edit the caller's own review. |
+| `POST /plugins/api/marketplace/reviews/<id>/report` | Report a review once with a reason. |
+| `POST /plugins/api/marketplace/reviews/<id>/response` | Publisher/admin owner response. |
+
 ### Marketplace discovery API (#360)
 
 The read-only discovery API advertises catalog entries without installing
