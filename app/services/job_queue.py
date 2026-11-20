@@ -44,6 +44,7 @@ from app.models.job import (
     STATUS_RUNNING,
     STATUS_SUCCEEDED,
 )
+from app.observability.metrics import JOBS_QUEUE_DEPTH, WEBHOOK_DELIVERIES
 
 logger = logging.getLogger(__name__)
 
@@ -191,6 +192,7 @@ def run_job(job: Job) -> Job:
 
 def run_due(*, limit: int | None = None) -> dict:
     """Process due jobs in order and return per-outcome counts."""
+    refresh_queue_metrics()
     batch = int(limit if limit is not None else _config("JOB_QUEUE_BATCH_SIZE", DEFAULT_BATCH_SIZE))
     batch = max(1, batch)
     counts = {"processed": 0, "succeeded": 0, "retried": 0, "failed": 0}
@@ -206,7 +208,22 @@ def run_due(*, limit: int | None = None) -> dict:
             counts["failed"] += 1
         else:
             counts["retried"] += 1
+    refresh_queue_metrics()
     return counts
+
+
+def refresh_queue_metrics() -> None:
+    """Publish current job counts per status for the queue-depth alert.
+
+    Called by the worker and by the ``/metrics`` scrape. It is a single grouped
+    count, not one query per status.
+    """
+    from sqlalchemy import func
+
+    rows = db.session.query(Job.status, func.count(Job.id)).group_by(Job.status).all()
+    counts = {status: int(count) for status, count in rows}
+    for status in (STATUS_QUEUED, STATUS_RUNNING, STATUS_SUCCEEDED, STATUS_FAILED):
+        JOBS_QUEUE_DEPTH.set(counts.get(status, 0), status=status)
 
 
 def list_jobs(*, status: str | None = None, limit: int = 50) -> list[Job]:
@@ -288,18 +305,23 @@ def validate_webhook_url(url: str) -> str:
 @register_handler("webhook.deliver")
 def deliver_webhook(payload: dict) -> dict:
     """POST ``payload`` to a validated webhook URL without following redirects."""
-    url = validate_webhook_url(payload.get("url"))
-    body = payload.get("payload")
-    if not isinstance(body, dict):
-        raise JobQueueError("webhook payload must be a JSON object")
-    response = requests.post(
-        url,
-        json=body,
-        timeout=float(_config("JOB_QUEUE_WEBHOOK_TIMEOUT", 10)),
-        allow_redirects=False,
-    )
-    if response.status_code >= 400:
-        raise RuntimeError(f"webhook returned HTTP {response.status_code}")
+    try:
+        url = validate_webhook_url(payload.get("url"))
+        body = payload.get("payload")
+        if not isinstance(body, dict):
+            raise JobQueueError("webhook payload must be a JSON object")
+        response = requests.post(
+            url,
+            json=body,
+            timeout=float(_config("JOB_QUEUE_WEBHOOK_TIMEOUT", 10)),
+            allow_redirects=False,
+        )
+        if response.status_code >= 400:
+            raise RuntimeError(f"webhook returned HTTP {response.status_code}")
+    except Exception:
+        WEBHOOK_DELIVERIES.inc(result="failure")
+        raise
+    WEBHOOK_DELIVERIES.inc(result="success")
     return {"status_code": response.status_code}
 
 
@@ -311,6 +333,7 @@ __all__ = [
     "export_project",
     "get_handler",
     "list_jobs",
+    "refresh_queue_metrics",
     "register_handler",
     "registered_kinds",
     "retry_delay_seconds",

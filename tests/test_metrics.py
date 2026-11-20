@@ -8,6 +8,7 @@ from app.observability.metrics import (
     MAX_SERIES_PER_METRIC,
     REGISTRY,
     Counter,
+    Gauge,
     Histogram,
 )
 
@@ -72,6 +73,21 @@ def test_counter_cardinality_is_bounded():
     samples = [line for line in counter.render() if not line.startswith("#")]
     assert len(samples) == MAX_SERIES_PER_METRIC + 1
     assert 'cap_total{kind="other"} 50' in samples
+
+
+def test_gauge_renders_and_rejects_unknown_labels():
+    gauge = Gauge("demo_depth", "A demo depth.", ("status",))
+    gauge.set(3, status="queued")
+    gauge.set(0, status="succeeded")
+
+    lines = gauge.render()
+
+    assert lines[0] == "# HELP demo_depth A demo depth."
+    assert lines[1] == "# TYPE demo_depth gauge"
+    assert 'demo_depth{status="queued"} 3' in lines
+    assert 'demo_depth{status="succeeded"} 0' in lines
+    with pytest.raises(ValueError):
+        gauge.set(1, other="queued")
 
 
 def test_histogram_renders_cumulative_buckets_sum_and_count():

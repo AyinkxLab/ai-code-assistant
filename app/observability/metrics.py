@@ -96,6 +96,42 @@ class Counter:
         return lines
 
 
+class Gauge:
+    """A value that can go up or down. Label combinations are capped like counters."""
+
+    def __init__(self, name: str, help_text: str, label_names: tuple[str, ...] = ()):
+        self.name = name
+        self.help_text = help_text
+        self.label_names = label_names
+        self._values: dict[tuple[str, ...], float] = {}
+        self._lock = threading.Lock()
+
+    def set(self, value: float, **labels: object) -> None:
+        if set(labels) != set(self.label_names):
+            raise ValueError(f"{self.name} expects labels {self.label_names}")
+        key = tuple(_clean(labels[name]) for name in self.label_names)
+        with self._lock:
+            if key not in self._values and len(self._values) >= MAX_SERIES_PER_METRIC:
+                key = tuple(OVERFLOW_LABEL for _ in self.label_names)
+            self._values[key] = float(value)
+
+    def reset(self) -> None:
+        with self._lock:
+            self._values.clear()
+
+    def render(self) -> list[str]:
+        lines = [
+            f"# HELP {self.name} {self.help_text}",
+            f"# TYPE {self.name} gauge",
+        ]
+        with self._lock:
+            items = sorted(self._values.items())
+        for key, value in items:
+            labels = _labels(self.label_names, key)
+            lines.append(f"{self.name}{labels} {_format_value(value)}")
+        return lines
+
+
 class Histogram:
     """A cumulative histogram. The number of label combinations is capped."""
 
@@ -173,6 +209,7 @@ def _labels_with_le(
 class Registry:
     def __init__(self) -> None:
         self._counters: list[Counter] = []
+        self._gauges: list[Gauge] = []
         self._histograms: list[Histogram] = []
 
     def counter(self, name: str, help_text: str, label_names: tuple[str, ...] = ()) -> Counter:
@@ -191,20 +228,35 @@ class Registry:
         self._histograms.append(histogram)
         return histogram
 
+    def gauge(self, name: str, help_text: str, label_names: tuple[str, ...] = ()) -> Gauge:
+        gauge = Gauge(name, help_text, label_names)
+        self._gauges.append(gauge)
+        return gauge
+
     def reset(self) -> None:
         for counter in self._counters:
             counter.reset()
+        for gauge in self._gauges:
+            gauge.reset()
         for histogram in self._histograms:
             histogram.reset()
 
     def names(self) -> tuple[str, ...]:
         """Return every emitted metric family name (sorted)."""
-        return tuple(sorted([c.name for c in self._counters] + [h.name for h in self._histograms]))
+        return tuple(
+            sorted(
+                [c.name for c in self._counters]
+                + [g.name for g in self._gauges]
+                + [h.name for h in self._histograms]
+            )
+        )
 
     def render(self) -> str:
         lines: list[str] = []
         for counter in self._counters:
             lines.extend(counter.render())
+        for gauge in self._gauges:
+            lines.extend(gauge.render())
         for histogram in self._histograms:
             lines.extend(histogram.render())
         return "\n".join(lines) + "\n"
@@ -231,6 +283,16 @@ LLM_LATENCY = REGISTRY.histogram(
     "llm_latency_ms",
     "LLM provider latency in milliseconds.",
     ("provider", "model"),
+)
+JOBS_QUEUE_DEPTH = REGISTRY.gauge(
+    "job_queue_depth",
+    "Jobs currently stored, by status.",
+    ("status",),
+)
+WEBHOOK_DELIVERIES = REGISTRY.counter(
+    "webhook_deliveries_total",
+    "Webhook delivery attempts by result.",
+    ("result",),
 )
 
 

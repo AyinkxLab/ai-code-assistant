@@ -1,0 +1,22 @@
+# Copy to terraform.tfvars and replace every placeholder.
+# Never commit a populated terraform.tfvars.
+
+aws_region   = "us-east-1"
+name_prefix  = "aica"
+vpc_id       = "vpc-0123456789abcdef0"
+app_image    = "ghcr.io/ayinkxlab/ai-code-assistant:0.1.0"
+
+private_subnet_ids = [
+  "subnet-0123456789abcdef0",
+  "subnet-0fedcba9876543210",
+]
+
+allowed_ingress_cidrs = ["10.20.0.0/16"]
+
+# Create these out of band with `aws secretsmanager create-secret`.
+app_secret_key_secret_arn = "arn:aws:secretsmanager:us-east-1:123456789012:secret:aica/secret-key"
+database_url_secret_arn   = "arn:aws:secretsmanager:us-east-1:123456789012:secret:aica/database-url"
+
+db_instance_class = "db.t4g.medium"
+web_desired_count = 2
+worker_desired_count = 1

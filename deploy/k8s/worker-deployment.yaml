@@ -1,0 +1,67 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: aica-worker
+  labels:
+    app.kubernetes.io/name: aica-worker
+    app.kubernetes.io/component: worker
+    app.kubernetes.io/part-of: ai-code-assistant
+spec:
+  replicas: 1
+  revisionHistoryLimit: 5
+  strategy:
+    type: RollingUpdate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: aica-worker
+      app.kubernetes.io/component: worker
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: aica-worker
+        app.kubernetes.io/component: worker
+        app.kubernetes.io/part-of: ai-code-assistant
+    spec:
+      terminationGracePeriodSeconds: 60
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: worker
+          image: ghcr.io/ayinkxlab/ai-code-assistant:0.1.0
+          imagePullPolicy: IfNotPresent
+          command: ["flask"]
+          args: ["jobs", "worker"]
+          env:
+            - name: APP_ENV
+              value: production
+            - name: PYTHONUNBUFFERED
+              value: "1"
+          envFrom:
+            - secretRef:
+                name: aica-secrets
+                optional: false
+          resources:
+            requests:
+              cpu: 250m
+              memory: 512Mi
+            limits:
+              cpu: "1"
+              memory: 1Gi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: false
+            capabilities:
+              drop: ["ALL"]
+          # The worker serves no HTTP. This probe proves the process can import
+          # the app and reach the database, which is what claiming a job needs.
+          livenessProbe:
+            exec:
+              command: ["flask", "jobs", "list", "--limit", "1"]
+            initialDelaySeconds: 30
+            periodSeconds: 60
+            timeoutSeconds: 10
+            failureThreshold: 3

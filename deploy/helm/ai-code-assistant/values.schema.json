@@ -1,0 +1,89 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "ai-code-assistant chart values",
+  "type": "object",
+  "required": ["image", "secrets", "web", "worker"],
+  "additionalProperties": true,
+  "properties": {
+    "image": {
+      "type": "object",
+      "required": ["repository", "tag"],
+      "properties": {
+        "repository": {"type": "string", "minLength": 1},
+        "tag": {"type": "string", "minLength": 1},
+        "pullPolicy": {"enum": ["Always", "IfNotPresent", "Never"]}
+      }
+    },
+    "secrets": {
+      "type": "object",
+      "required": ["existingSecret"],
+      "properties": {
+        "existingSecret": {"type": "string", "minLength": 1}
+      }
+    },
+    "web": {
+      "type": "object",
+      "required": ["replicaCount", "resources"],
+      "properties": {
+        "replicaCount": {"type": "integer", "minimum": 1, "maximum": 50},
+        "resources": {"type": "object", "required": ["requests", "limits"]}
+      }
+    },
+    "worker": {
+      "type": "object",
+      "required": ["replicaCount", "resources"],
+      "properties": {
+        "replicaCount": {"type": "integer", "minimum": 0, "maximum": 50},
+        "resources": {"type": "object", "required": ["requests", "limits"]}
+      }
+    },
+    "ingress": {
+      "type": "object",
+      "properties": {
+        "enabled": {"type": "boolean"},
+        "host": {"type": "string", "minLength": 1},
+        "tls": {
+          "type": "object",
+          "properties": {
+            "enabled": {"type": "boolean"},
+            "secretName": {"type": "string"}
+          }
+        }
+      }
+    },
+    "database": {
+      "type": "object",
+      "properties": {
+        "enabled": {"type": "boolean"},
+        "auth": {
+          "type": "object",
+          "properties": {
+            "existingSecret": {"type": "string"},
+            "usernameKey": {"type": "string"},
+            "passwordKey": {"type": "string"}
+          }
+        }
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": {"properties": {"database": {"properties": {"enabled": {"const": true}}}}},
+      "then": {
+        "properties": {
+          "database": {
+            "required": ["auth"],
+            "properties": {
+              "auth": {
+                "required": ["existingSecret", "usernameKey", "passwordKey"],
+                "properties": {
+                  "existingSecret": {"type": "string", "minLength": 1}
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  ]
+}

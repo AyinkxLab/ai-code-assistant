@@ -1,0 +1,51 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: aica-migrate
+  labels:
+    app.kubernetes.io/name: aica-migrate
+    app.kubernetes.io/component: migration
+    app.kubernetes.io/part-of: ai-code-assistant
+spec:
+  backoffLimit: 3
+  activeDeadlineSeconds: 900
+  ttlSecondsAfterFinished: 86400
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: aica-migrate
+        app.kubernetes.io/component: migration
+        app.kubernetes.io/part-of: ai-code-assistant
+    spec:
+      restartPolicy: Never
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: migrate
+          image: ghcr.io/ayinkxlab/ai-code-assistant:0.1.0
+          imagePullPolicy: IfNotPresent
+          command: ["flask"]
+          args: ["db", "upgrade"]
+          env:
+            - name: APP_ENV
+              value: production
+          envFrom:
+            - secretRef:
+                name: aica-secrets
+                optional: false
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: false
+            capabilities:
+              drop: ["ALL"]

@@ -9,3 +9,7 @@ pytest-cov==7.1.0
 # Code quality
 ruff==0.17.4
 black==26.5.1
+
+# Deployment manifest tests (#707/#706). YAML is parsed as data; no cluster or
+# helm binary is required.
+PyYAML==6.0.3
