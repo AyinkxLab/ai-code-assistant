@@ -255,14 +255,28 @@ def send_message(conversation_id: int):
     if error:
         db.session.rollback()
         return _problem(400, "Invalid attachment.", error)
+    # Persist the user turn before calling the provider so a reload cannot lose it.
+    db.session.commit()
+    realtime.broadcast_message(conversation, user_message, sender=current_user)
 
     messages = chat_routes._conversation_messages(conversation, context_messages)
     try:
         provider = RetryingProvider(build_provider(current_user, conversation.provider))
         completion = provider.chat(messages, **chat_routes._generation_kwargs(conversation))
     except LLMProviderError as exc:
-        db.session.rollback()
-        return _problem(502, "Provider error.", str(exc))
+        interrupted = Message(
+            role="assistant",
+            content=str(exc) or "The response was interrupted.",
+            interrupted=True,
+        )
+        conversation.messages.append(interrupted)
+        db.session.commit()
+        return _problem(
+            502,
+            "Provider error.",
+            str(exc),
+            assistant_message=interrupted.to_dict(),
+        )
 
     assistant_message = Message(role="assistant", content=completion.content)
     usage = getattr(completion, "usage", None)

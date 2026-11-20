@@ -648,6 +648,21 @@ a:hover {
   margin-bottom: 8px;
 }
 
+.message-interrupted-badge {
+  margin-left: 8px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: #fef3c7;
+  color: #92400e;
+  font-size: 0.65rem;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.chat-interrupted {
+  border-style: dashed;
+}
+
 .message-body h1, .message-body h2, .message-body h3, .message-body h4 {
   margin: 12px 0 6px;
 }

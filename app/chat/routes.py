@@ -888,6 +888,10 @@ def send_message(conversation_id: int):
     if error:
         db.session.rollback()
         return jsonify({"error": error}), 400
+    # Persist the user message before any provider call so a reload never loses
+    # it, even when generation fails (#24).
+    db.session.commit()
+    realtime.broadcast_message(conversation, user_message, sender=current_user)
 
     messages = _conversation_messages(conversation, context_messages)
 
@@ -903,8 +907,24 @@ def send_message(conversation_id: int):
             no_cache=no_cache,
         )
     except LLMProviderError as exc:
-        db.session.rollback()
-        return jsonify({"error": str(exc)}), 502
+        # Keep the user message; record an interrupted assistant reply so the
+        # failure is visible after a reload instead of silently vanishing.
+        interrupted = Message(
+            role="assistant",
+            content=str(exc) or "The response was interrupted.",
+            interrupted=True,
+        )
+        conversation.messages.append(interrupted)
+        db.session.commit()
+        return (
+            jsonify(
+                {
+                    "error": str(exc),
+                    "assistant_message": interrupted.to_dict(),
+                }
+            ),
+            502,
+        )
 
     usage = token_usage.usage_from_response(response, messages)
     conversation.messages.append(Message(role="assistant", content=response.content, **usage))
@@ -912,7 +932,6 @@ def send_message(conversation_id: int):
     if conversation.title == "New conversation":
         conversation.title = content.strip()[:60] or "New conversation"
     db.session.commit()
-    realtime.broadcast_message(conversation, user_message, sender=current_user)
     realtime.broadcast_message(conversation, conversation.messages[-1])
     return jsonify({"assistant_message": conversation.messages[-1].to_dict()}), 201
 
@@ -957,17 +976,25 @@ def stream_message(conversation_id: int):
     messages = _conversation_messages(conversation, context_messages)
     generation = _generation_kwargs(conversation)
 
-    def persist_assistant(reply: str, usage: dict | None = None):
+    def persist_assistant(reply: str, usage: dict | None = None, *, interrupted: bool = False):
         """Persist an assistant message, or return ``None`` when empty.
 
         Used both for the completed reply and for the partial text kept when
         the client cancels mid-stream (issue #11). ``usage`` records the token
-        counts for the message (issue #13).
+        counts for the message (issue #13). ``interrupted`` flags a partial
+        reply so a reload can show it without pretending generation finished.
         """
         reply = reply or ""
         if not reply.strip():
-            return None
-        message = Message(role="assistant", content=reply, **(usage or {}))
+            if not interrupted:
+                return None
+            reply = "The response was interrupted."
+        message = Message(
+            role="assistant",
+            content=reply,
+            interrupted=interrupted,
+            **(usage or {}),
+        )
         conversation.messages.append(message)
         # One ledger row per persisted reply (streamed, cancelled or fallback).
         _record_chat_ledger(conversation, usage)
@@ -990,15 +1017,16 @@ def stream_message(conversation_id: int):
         except GeneratorExit:
             # The client disconnected (Stop button or closed tab). Persist the
             # partial reply so the user keeps what was generated, then stop.
+            # It is marked interrupted: the model never finished this turn.
             partial = "".join(chunks)
-            persist_assistant(partial, stream_usage(partial))
+            persist_assistant(partial, stream_usage(partial), interrupted=True)
             raise
         except OSError as exc:
             # The transport dropped (connection reset, broken pipe, timeout).
             # Keep the partial reply and surface a retryable error event so the
             # client can show a retry affordance instead of losing output.
             partial = "".join(chunks)
-            persist_assistant(partial, stream_usage(partial))
+            persist_assistant(partial, stream_usage(partial), interrupted=True)
             reason = None
             if getattr(exc, "errno", None) in (errno.ECONNRESET, errno.EPIPE):
                 reason = "The connection was interrupted. Retry to continue."
@@ -1007,7 +1035,7 @@ def stream_message(conversation_id: int):
         except LLMProviderError as exc:
             # A provider failure mid-stream: keep the partial text too.
             partial = "".join(chunks)
-            persist_assistant(partial, stream_usage(partial))
+            persist_assistant(partial, stream_usage(partial), interrupted=True)
             payload = _stream_interrupted_payload(partial, str(exc))
             payload["retryable"] = is_transient_error(exc)
             yield f"data: {json.dumps(payload)}\n\n"
@@ -1024,6 +1052,7 @@ def stream_message(conversation_id: int):
                     response.content, token_usage.usage_from_response(response, messages)
                 )
             except LLMProviderError as exc:
+                persist_assistant("", None, interrupted=True)
                 payload = _stream_interrupted_payload("", str(exc))
                 payload["retryable"] = is_transient_error(exc)
                 yield f"data: {json.dumps(payload)}\n\n"
