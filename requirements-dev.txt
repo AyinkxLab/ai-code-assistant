@@ -7,7 +7,7 @@ pytest==9.0.3
 pytest-cov==7.1.0
 
 # Code quality
-ruff==0.17.4
+ruff==0.17.5
 black==26.5.1
 
 # Deployment manifest tests (#707/#706). YAML is parsed as data; no cluster or
