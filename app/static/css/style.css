@@ -3255,3 +3255,49 @@ tr[data-budget-id] .usage-bar span[style*="100%"] {
   gap: 1rem;
   margin: 1rem 0;
 }
+
+/* Keyboard focus and skip link (issue #713) ------------------------------- */
+
+.skip-link {
+  position: absolute;
+  top: -100px;
+  left: 8px;
+  z-index: 1000;
+  padding: 10px 14px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--accent);
+  border-radius: 8px;
+  color: var(--text);
+  font-weight: 600;
+}
+
+.skip-link:focus {
+  top: 8px;
+}
+
+a:focus-visible,
+button:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible,
+[tabindex]:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* The controls below intentionally remove the default outline on :focus;
+   restore it for keyboard users only. */
+.field input:focus-visible,
+.sidebar-search:focus-visible,
+.workspace-select:focus-visible,
+.chat-composer textarea:focus-visible,
+.field-input:focus-visible,
+.field-textarea:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* `.modal` sets display:flex, which otherwise overrides the hidden attribute. */
+.modal[hidden] {
+  display: none;
+}

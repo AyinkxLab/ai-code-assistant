@@ -121,6 +121,7 @@ table, quotas, budgets, alerts, invoices, and reconciliation.
 - [Plugin system](docs/plugins.md)
 - [Architecture](docs/architecture.md)
 - [Security model](docs/security.md)
+- [Accessibility and keyboard navigation](docs/accessibility.md)
 - [Soroban workflow guide](docs/soroban-workflow.md)
 - [Observability design](docs/observability.md)
 - [Billing](docs/billing.md)

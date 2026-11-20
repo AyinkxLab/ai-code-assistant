@@ -53,10 +53,10 @@
   {% endif %}
 </div>
 
-<div id="workspace-modal" class="modal" hidden>
+<div id="workspace-modal" class="modal" role="dialog" aria-modal="true" aria-labelledby="workspace-modal-title" hidden>
   <div class="modal-content">
     <div class="modal-header">
-      <h2>New workspace</h2>
+      <h2 id="workspace-modal-title">New workspace</h2>
       <button type="button" class="btn btn-ghost btn-sm modal-close">×</button>
     </div>
     <div class="modal-body">
