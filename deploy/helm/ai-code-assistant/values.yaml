@@ -1,0 +1,96 @@
+# Default values for ai-code-assistant.
+#
+# No credential is set here. Both workloads read an existing Secret; create it
+# with the keys SECRET_KEY and DATABASE_URL before installing.
+
+image:
+  repository: ghcr.io/ayinkxlab/ai-code-assistant
+  tag: "0.1.0"
+  pullPolicy: IfNotPresent
+
+# Name of the Secret with SECRET_KEY and DATABASE_URL (plus optional
+# METRICS_TOKEN and provider credentials). Required.
+secrets:
+  existingSecret: "aica-secrets"
+
+web:
+  replicaCount: 2
+  args:
+    - "--bind=0.0.0.0:5000"
+    - "--workers=3"
+    - "--timeout=120"
+    - "--graceful-timeout=30"
+    - "--access-logfile=-"
+    - "wsgi:app"
+  service:
+    type: ClusterIP
+    port: 80
+  resources:
+    requests:
+      cpu: 250m
+      memory: 512Mi
+    limits:
+      cpu: "1"
+      memory: 1Gi
+
+worker:
+  replicaCount: 1
+  args:
+    - "jobs"
+    - "worker"
+  resources:
+    requests:
+      cpu: 250m
+      memory: 512Mi
+    limits:
+      cpu: "1"
+      memory: 1Gi
+
+migration:
+  # Runs as a pre-install/pre-upgrade hook before the workloads.
+  activeDeadlineSeconds: 900
+  backoffLimit: 3
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+ingress:
+  enabled: true
+  className: nginx
+  host: assistant.example.com
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-buffering: "off"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "300"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "300"
+    nginx.ingress.kubernetes.io/proxy-body-size: "25m"
+  tls:
+    enabled: true
+    secretName: aica-tls
+
+# Optional in-cluster PostgreSQL. Off by default: production should use a
+# managed database and point DATABASE_URL at it. When enabled, the Secret named
+# below must already contain the username and password keys.
+database:
+  enabled: false
+  image:
+    repository: postgres
+    tag: "16-alpine"
+  auth:
+    existingSecret: aica-database
+    usernameKey: username
+    passwordKey: password
+    database: aica
+  persistence:
+    size: 20Gi
+    storageClass: ""
+  resources:
+    requests:
+      cpu: 250m
+      memory: 512Mi
+    limits:
+      cpu: "1"
+      memory: 1Gi

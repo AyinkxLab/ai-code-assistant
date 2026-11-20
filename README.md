@@ -125,6 +125,7 @@ table, quotas, budgets, alerts, invoices, and reconciliation.
 - [Multi-region deployment](docs/multi-region.md)
 - [Terraform module](docs/terraform.md)
 - [Kubernetes manifests](docs/kubernetes.md)
+- [Helm chart](docs/helm.md)
 - [Safe migration rollout](docs/migration-rollout.md)
 - [Backup and restore](docs/backup-restore.md)
 - [Soroban workflow guide](docs/soroban-workflow.md)
