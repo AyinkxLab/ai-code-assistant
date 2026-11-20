@@ -96,6 +96,11 @@ def create_app(config_name: str | None = None) -> Flask:
 
     init_query_profiling(app)
 
+    # Request/service/plugin spans flushed as bounded JSON log records (#703).
+    from app.observability.tracing import init_tracing
+
+    init_tracing(app)
+
     # Register blueprints.
     from app.admin import bp as admin_bp
     from app.auth import bp as auth_bp

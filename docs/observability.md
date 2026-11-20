@@ -105,6 +105,13 @@ dashboard and Prometheus alert rules derived from the metrics above, live in
 definitions are validated against the emitted metric set by
 `tests/test_observability_slo.py`.
 
+## Tracing
+
+Request ids are reused as trace ids. Service calls (`llm.provider.chat` /
+`llm.provider.stream`) and plugin callbacks (`plugin.handler`) emit bounded JSON
+span records; the response carries `X-Trace-ID` alongside `X-Request-ID`. See
+[`tracing.md`](tracing.md) for the log format, bounds and limitations.
+
 ## Cost recomputation
 
 Price-table changes do not rewrite history automatically. Run the bounded,
@@ -177,6 +184,7 @@ regressions by counting statements for a fixed number of conversations.
 | ------- | ------- | ------- |
 | `QUERY_PROFILING_ENABLED` | `1` | Enables per-request query counting and the slow-query log. |
 | `QUERY_SLOW_THRESHOLD_MS` | `200` | Statements at or above this duration are logged (shape only). |
+| `TRACING_ENABLED` | `1` | Emits bounded request/service/plugin spans and `X-Trace-ID`. |
 
 | `METRICS_ENABLED` | `1` | Hides `/metrics` (404) when disabled. |
 | `METRICS_TOKEN` | empty | Bearer token for scrapers. Empty falls back to admin-session auth. |
