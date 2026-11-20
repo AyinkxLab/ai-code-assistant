@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: aica
+  labels:
+    app.kubernetes.io/name: ai-code-assistant
+    app.kubernetes.io/part-of: ai-code-assistant
