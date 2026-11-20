@@ -197,6 +197,10 @@ class Registry:
         for histogram in self._histograms:
             histogram.reset()
 
+    def names(self) -> tuple[str, ...]:
+        """Return every emitted metric family name (sorted)."""
+        return tuple(sorted([c.name for c in self._counters] + [h.name for h in self._histograms]))
+
     def render(self) -> str:
         lines: list[str] = []
         for counter in self._counters:

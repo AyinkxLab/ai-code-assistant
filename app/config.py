@@ -375,6 +375,10 @@ class Config:
     # Bound parameters, prompts and secrets are never logged.
     QUERY_PROFILING_ENABLED = os.getenv("QUERY_PROFILING_ENABLED", "1") == "1"
     QUERY_SLOW_THRESHOLD_MS = float(os.getenv("QUERY_SLOW_THRESHOLD_MS", "200"))
+    # Bounded request/service/plugin spans (#703). Span records are JSON log
+    # lines under app.observability.trace; prompts, message bodies and secrets
+    # are never recorded. ``TRACING_ENABLED=0`` removes the hooks.
+    TRACING_ENABLED = os.getenv("TRACING_ENABLED", "1") == "1"
     # Per-user rate limit for AI-powered endpoints (#28): project chat,
     # conversation streaming, and the code tools. Applies per authenticated user
     # (not per IP) and can be switched off entirely (the testing config does).

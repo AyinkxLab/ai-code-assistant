@@ -180,7 +180,9 @@ def restore_backup(
             env=child_environment(target),
         )
     except FileNotFoundError as exc:
-        raise RestoreError(f"pg_restore not found: {pg_restore}", code="pg_restore_missing") from exc
+        raise RestoreError(
+            f"pg_restore not found: {pg_restore}", code="pg_restore_missing"
+        ) from exc
     except PermissionError as exc:
         raise RestoreError(
             f"permission denied while running pg_restore: {exc}",

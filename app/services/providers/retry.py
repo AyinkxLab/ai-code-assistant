@@ -27,6 +27,7 @@ import time
 from collections.abc import Callable, Iterable, Iterator
 from typing import Any
 
+from app.observability.tracing import trace_span
 from app.services import chat_audit
 from app.services.providers.base import (
     LLMProvider,
@@ -118,6 +119,16 @@ class RetryingProvider(LLMProvider):
         model: str | None = None,
         params: dict[str, Any] | None = None,
     ) -> ProviderResponse:
+        with trace_span("llm.provider.chat", provider=self.name):
+            return self._chat(messages, model=model, params=params)
+
+    def _chat(
+        self,
+        messages: Iterable[Any],
+        *,
+        model: str | None = None,
+        params: dict[str, Any] | None = None,
+    ) -> ProviderResponse:
         messages = list(messages)
         attempt = 0
         started = time.monotonic()
@@ -148,6 +159,16 @@ class RetryingProvider(LLMProvider):
                 self._wait(attempt)
 
     def stream(
+        self,
+        messages: Iterable[Any],
+        *,
+        model: str | None = None,
+        params: dict[str, Any] | None = None,
+    ) -> Iterator[str]:
+        with trace_span("llm.provider.stream", provider=self.name):
+            yield from self._stream(messages, model=model, params=params)
+
+    def _stream(
         self,
         messages: Iterable[Any],
         *,

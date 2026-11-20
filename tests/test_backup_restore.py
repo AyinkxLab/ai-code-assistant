@@ -82,14 +82,10 @@ def test_checksum_verification_detects_tampering(tmp_path):
     assert error.value.code == "checksum_mismatch"
 
 
-def test_backup_writes_archive_and_checksum_without_leaking_password(
-    tmp_path, monkeypatch, capsys
-):
+def test_backup_writes_archive_and_checksum_without_leaking_password(tmp_path, monkeypatch, capsys):
     monkeypatch.setattr(db_backup.subprocess, "run", _fake_dump(b"archive-bytes"))
 
-    code = db_backup.main(
-        ["--database-url", URL, "--output-dir", str(tmp_path), "--json"]
-    )
+    code = db_backup.main(["--database-url", URL, "--output-dir", str(tmp_path), "--json"])
     captured = capsys.readouterr()
     result = json.loads(captured.out)
 
@@ -104,7 +100,10 @@ def test_backup_writes_archive_and_checksum_without_leaking_password(
 def test_backup_failure_is_structured_and_sanitized(tmp_path, monkeypatch, capsys):
     def failing(command, **_kwargs):
         return subprocess.CompletedProcess(
-            command, 1, "", "password supersecret rejected for postgresql://aica:supersecret@db/aica"
+            command,
+            1,
+            "",
+            "password supersecret rejected for postgresql://aica:supersecret@db/aica",
         )
 
     monkeypatch.setattr(db_backup.subprocess, "run", failing)
@@ -118,9 +117,7 @@ def test_backup_failure_is_structured_and_sanitized(tmp_path, monkeypatch, capsy
 
 
 def test_backup_rejects_non_postgresql_url(capsys):
-    code = db_backup.main(
-        ["--database-url", "sqlite:///instance/app.db", "--output-dir", "unused"]
-    )
+    code = db_backup.main(["--database-url", "sqlite:///instance/app.db", "--output-dir", "unused"])
 
     assert code == 2
     error = json.loads(capsys.readouterr().err)
@@ -131,9 +128,7 @@ def test_backup_reports_output_directory_permission_failure(tmp_path, capsys):
     blocked = tmp_path / "blocked"
     blocked.write_text("not a directory", encoding="utf-8")
 
-    code = db_backup.main(
-        ["--database-url", URL, "--output-dir", str(blocked)]
-    )
+    code = db_backup.main(["--database-url", URL, "--output-dir", str(blocked)])
 
     assert code == 1
     error = json.loads(capsys.readouterr().err)

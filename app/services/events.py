@@ -34,6 +34,7 @@ from typing import Any
 
 from app.extensions import db
 from app.models import Plugin, PluginInstallation, Project, User, Workspace
+from app.observability.tracing import trace_span
 from app.services.capabilities import Capability, CapabilityStore
 from app.services.permissions import role_for
 from app.services.plugin_audit import record_plugin_audit, record_plugin_execution
@@ -330,10 +331,16 @@ class EventDispatcher:
             started = time.perf_counter()
             outcome = "success"
             try:
-                run_with_timeout(
-                    partial(handler, event=event),
-                    operation=f"dispatch:{event.event_type}",
-                )
+                with trace_span(
+                    "plugin.handler",
+                    plugin_id=plugin_id,
+                    event_type=event.event_type,
+                    capability=(capability.value if capability is not None else None),
+                ):
+                    run_with_timeout(
+                        partial(handler, event=event),
+                        operation=f"dispatch:{event.event_type}",
+                    )
                 results["successful"] += 1
             except Exception as e:
                 outcome = (

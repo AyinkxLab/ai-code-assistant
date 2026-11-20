@@ -1777,6 +1777,12 @@ def api_marketplace():
     )
     page_entries, pagination = _marketplace_page(ranked)
     plugins = [entry.to_dict() for entry in page_entries]
+    from app.services.plugin_collections import list_collections, serialize_collection
+
+    featured_collections = [
+        serialize_collection(collection, with_plugins=True)
+        for collection in list_collections(featured_only=True)
+    ]
     return jsonify(
         {
             "workspace": workspace,
@@ -1785,6 +1791,7 @@ def api_marketplace():
             "unavailable": loaded.unavailable,
             "entries": plugins,
             "plugins": plugins,
+            "featured_collections": featured_collections,
             "pagination": pagination,
             "filters": {
                 "q": query or None,

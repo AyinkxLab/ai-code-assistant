@@ -4,7 +4,9 @@ The repository runs a small, deterministic benchmark in CI to catch a
 regression in query count or response latency on the hottest workspace list
 endpoints. Budgets are declared in
 [`perf_budgets.json`](../perf_budgets.json) and the check lives in
-[`scripts/perf_budget.py`](../scripts/perf_budget.py).
+[`scripts/perf_budget.py`](../scripts/perf_budget.py). For a repeated-load
+smoke test of the main API and dashboard paths, see
+[`load-testing.md`](load-testing.md).
 
 ## What is measured
 

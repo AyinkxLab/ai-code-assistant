@@ -1,0 +1,77 @@
+{% extends "base.html" %}
+
+{% block title %}Curated collections - {{ config.APP_NAME }}{% endblock %}
+
+{% block content %}
+<div class="github-header">
+  <div>
+    <h1>Curated plugin collections</h1>
+    <p class="repo-meta">Maintainer-curated groups for onboarding and security. Collections are metadata only; installing a plugin still requires the normal signed, workspace-scoped install.</p>
+  </div>
+  <div class="repo-toolbar">
+    <a class="btn btn-ghost" href="{{ url_for('plugins.index') }}">Plugins</a>
+    {% if current_user.is_admin %}
+      <a class="btn" href="{{ url_for('plugins.collections_manage') }}">Manage collections</a>
+    {% endif %}
+  </div>
+</div>
+
+{% if featured %}
+<section class="project-list" aria-labelledby="featured-collections-heading">
+  <h2 id="featured-collections-heading">Featured</h2>
+  {% for collection in featured %}
+  <article class="plugin-catalog-card" id="collection-{{ collection.slug }}">
+    <div class="plugin-catalog-heading">
+      <div>
+        <h3 class="plugin-catalog-name">{{ collection.name }}</h3>
+        <p class="repo-meta">{{ collection.plugin_count }} plugin{% if collection.plugin_count != 1 %}s{% endif %} &middot; <code>{{ collection.slug }}</code></p>
+      </div>
+      <span class="badge">Featured</span>
+    </div>
+    {% if collection.description %}<p>{{ collection.description }}</p>{% endif %}
+    <ul>
+      {% for plugin in collection.plugins %}
+      <li>
+        <strong>{{ plugin.name }}</strong>
+        {% if plugin.version %}<span class="repo-meta">v{{ plugin.version }}</span>{% endif %}
+        {% if not plugin.available %}<span class="flash flash-warning">not available in this deployment</span>{% endif %}
+      </li>
+      {% else %}
+      <li class="empty-note">No plugins in this collection yet.</li>
+      {% endfor %}
+    </ul>
+  </article>
+  {% endfor %}
+</section>
+{% endif %}
+
+<section class="project-list" aria-labelledby="all-collections-heading">
+  <h2 id="all-collections-heading">All collections</h2>
+  {% for collection in collections %}
+  {% if not collection.featured %}
+  <article class="plugin-catalog-card" id="collection-{{ collection.slug }}">
+    <div class="plugin-catalog-heading">
+      <div>
+        <h3 class="plugin-catalog-name">{{ collection.name }}</h3>
+        <p class="repo-meta">{{ collection.plugin_count }} plugin{% if collection.plugin_count != 1 %}s{% endif %} &middot; <code>{{ collection.slug }}</code></p>
+      </div>
+    </div>
+    {% if collection.description %}<p>{{ collection.description }}</p>{% endif %}
+    <ul>
+      {% for plugin in collection.plugins %}
+      <li>
+        <strong>{{ plugin.name }}</strong>
+        {% if plugin.version %}<span class="repo-meta">v{{ plugin.version }}</span>{% endif %}
+        {% if not plugin.available %}<span class="flash flash-warning">not available in this deployment</span>{% endif %}
+      </li>
+      {% else %}
+      <li class="empty-note">No plugins in this collection yet.</li>
+      {% endfor %}
+    </ul>
+  </article>
+  {% endif %}
+  {% else %}
+  <p class="empty-note">No collections have been curated yet.</p>
+  {% endfor %}
+</section>
+{% endblock %}

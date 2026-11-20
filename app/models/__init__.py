@@ -20,6 +20,7 @@ from app.models.message_attachment import MessageAttachment
 from app.models.notification import Notification
 from app.models.notification_preference import NotificationPreference
 from app.models.plugin import CapabilityGrant, Plugin, PluginInstallation, PluginLockEntry
+from app.models.plugin_collection import PluginCollection
 from app.models.plugin_error_report import PluginErrorReport
 from app.models.plugin_install_event import PluginInstallEvent
 from app.models.plugin_review import PluginReview
@@ -61,6 +62,7 @@ __all__ = [
     "Notification",
     "NotificationPreference",
     "Plugin",
+    "PluginCollection",
     "PluginErrorReport",
     "PluginInstallEvent",
     "PluginInstallation",

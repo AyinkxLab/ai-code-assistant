@@ -234,6 +234,7 @@ class TestMigrationHead:
             "tokens_estimated",
             "cost_estimate",
             "cost_recomputed_at",
+            "cost_center",
             "request_id",
             "latency_ms",
             "status",
