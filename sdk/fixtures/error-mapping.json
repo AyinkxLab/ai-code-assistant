@@ -1,0 +1,35 @@
+{
+  "version": 1,
+  "description": "Shared contract for SDK error mapping (issues #657, #659, #661). Every SDK maps the same server status codes and error codes to the same typed error names.",
+  "request_id_header": "X-Request-ID",
+  "idempotent_methods": ["GET", "HEAD", "OPTIONS", "PUT", "DELETE"],
+  "retryable_statuses": [429, 500, 502, 503, 504],
+  "status_to_error": {
+    "400": "ValidationError",
+    "401": "AuthenticationError",
+    "403": "PermissionDeniedError",
+    "404": "NotFoundError",
+    "409": "ConflictError",
+    "422": "ValidationError",
+    "429": "RateLimitError",
+    "500": "ServerError",
+    "502": "ServerError",
+    "503": "ServerError",
+    "504": "ServerError"
+  },
+  "code_to_error": {
+    "invalid_request": "ValidationError",
+    "invalid_input": "ValidationError",
+    "validation_error": "ValidationError",
+    "unauthorized": "AuthenticationError",
+    "invalid_token": "AuthenticationError",
+    "authentication_required": "AuthenticationError",
+    "forbidden": "PermissionDeniedError",
+    "insufficient_scope": "PermissionDeniedError",
+    "not_found": "NotFoundError",
+    "conflict": "ConflictError",
+    "rate_limited": "RateLimitError",
+    "internal_error": "ServerError",
+    "server_error": "ServerError"
+  }
+}
