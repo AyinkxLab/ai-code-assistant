@@ -123,6 +123,7 @@ table, quotas, budgets, alerts, invoices, and reconciliation.
 - [Security model](docs/security.md)
 - [Accessibility and keyboard navigation](docs/accessibility.md)
 - [Multi-region deployment](docs/multi-region.md)
+- [Terraform module](docs/terraform.md)
 - [Safe migration rollout](docs/migration-rollout.md)
 - [Backup and restore](docs/backup-restore.md)
 - [Soroban workflow guide](docs/soroban-workflow.md)
