@@ -1,0 +1,85 @@
+{% extends "base.html" %}
+
+{% block title %}Manage collections - {{ config.APP_NAME }}{% endblock %}
+
+{% block content %}
+<div class="github-header">
+  <div>
+    <h1>Manage curated collections</h1>
+    <p class="repo-meta">Site-admin only. Collections are marketplace metadata; they never install code or grant capabilities.</p>
+  </div>
+  <div class="repo-toolbar">
+    <a class="btn btn-ghost" href="{{ url_for('plugins.collections_page') }}">View collections</a>
+  </div>
+</div>
+
+{% if error %}
+<div class="flash flash-warning" role="alert">{{ error }}</div>
+{% endif %}
+
+<section class="project-list">
+  <h2>Create a collection</h2>
+  <form method="post" action="{{ url_for('plugins.collections_create_form') }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <label class="field-label" for="collection-name">Name</label>
+    <input id="collection-name" class="field-input" name="name" type="text" maxlength="120" required>
+
+    <label class="field-label" for="collection-slug">Slug (optional)</label>
+    <input id="collection-slug" class="field-input" name="slug" type="text" maxlength="64" placeholder="derived from the name">
+
+    <label class="field-label" for="collection-description">Description</label>
+    <textarea id="collection-description" class="field-input" name="description" rows="3" maxlength="280" placeholder="Up to 280 characters"></textarea>
+
+    <label class="field-label" for="collection-plugin-ids">Additional plugin ids</label>
+    <textarea id="collection-plugin-ids" class="field-input" name="plugin_ids_text" rows="3" placeholder="One id per line or comma separated; ids need not be registered yet"></textarea>
+
+    <fieldset>
+      <legend class="field-label">Registered plugins</legend>
+      {% for plugin in plugins %}
+      <label>
+        <input type="checkbox" name="plugin_ids" value="{{ plugin.id }}">
+        {{ plugin.name }} <span class="repo-meta">({{ plugin.id }})</span>
+      </label>
+      {% else %}
+      <p class="empty-note">No registered plugins yet.</p>
+      {% endfor %}
+    </fieldset>
+
+    <label>
+      <input type="checkbox" name="featured" value="1">
+      Feature this collection
+    </label>
+
+    <div class="prompt-editor-actions">
+      <button class="btn btn-primary" type="submit">Create collection</button>
+    </div>
+  </form>
+</section>
+
+<section class="project-list">
+  <h2>Existing collections</h2>
+  {% for collection in collections %}
+  <article class="plugin-catalog-card" id="collection-{{ collection.slug }}">
+    <div class="plugin-catalog-heading">
+      <div>
+        <h3 class="plugin-catalog-name">{{ collection.name }}</h3>
+        <p class="repo-meta">{{ collection.plugin_count }} plugin{% if collection.plugin_count != 1 %}s{% endif %} &middot; <code>{{ collection.slug }}</code>{% if collection.featured %} &middot; featured{% endif %}</p>
+      </div>
+    </div>
+    {% if collection.description %}<p>{{ collection.description }}</p>{% endif %}
+    <div class="prompt-editor-actions">
+      <form method="post" action="{{ url_for('plugins.collections_toggle_featured', collection_id=collection.id) }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button class="btn btn-ghost" type="submit">{% if collection.featured %}Unfeature{% else %}Feature{% endif %}</button>
+      </form>
+      <form method="post" action="{{ url_for('plugins.collections_delete_form', collection_id=collection.id) }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button class="btn btn-ghost" type="submit">Delete</button>
+      </form>
+    </div>
+  </article>
+  {% else %}
+  <p class="empty-note">No collections yet.</p>
+  {% endfor %}
+</section>
+{% endblock %}

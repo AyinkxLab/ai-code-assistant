@@ -12,4 +12,4 @@ from flask import Blueprint
 
 bp = Blueprint("plugins", __name__, url_prefix="/plugins")
 
-from app.plugins import routes  # noqa: E402,F401
+from app.plugins import collections, routes  # noqa: E402,F401

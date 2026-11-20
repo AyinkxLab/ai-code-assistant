@@ -26,6 +26,10 @@ without modifying the core application.
 | Event / hook        | A plugin can subscribe to supported events and react.              |
 | Event dispatcher    | Dispatches events to subscribers; handler failures are isolated.   |
 
+Maintainer-curated onboarding and security groups are documented separately in
+[`collections.md`](collections.md). Collections are metadata only; they never
+install a plugin or grant a capability.
+
 ## Plugin manifest
 
 A plugin lives in its own directory and is described by `manifest.json`. The

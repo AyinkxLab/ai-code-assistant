@@ -1,6 +1,6 @@
 """add github connection status
 
-Revision ID: c9e1f2a3b4d5
+Revision ID: c9e1f2a3b4e6
 Revises: b8d0f2a4c6e8
 Create Date: 2026-11-19 23:45:00.000000
 
@@ -10,7 +10,7 @@ import sqlalchemy as sa
 from alembic import op
 
 # revision identifiers, used by Alembic.
-revision = "c9e1f2a3b4d5"
+revision = "c9e1f2a3b4e6"
 down_revision = "b8d0f2a4c6e8"
 branch_labels = None
 depends_on = None

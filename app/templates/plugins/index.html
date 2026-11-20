@@ -9,6 +9,7 @@
     <p class="repo-meta">Manage plugins for your workspaces. Plugin state is workspace-scoped; only the workspace owner can install, enable, disable, or grant capabilities.</p>
   </div>
   <div class="repo-toolbar">
+    <a class="btn btn-ghost" href="{{ url_for('plugins.collections_page') }}">Collections</a>
     <a class="btn btn-ghost" href="{{ url_for('plugins.analytics') }}">Analytics</a>
     <label class="field-label" for="plugin-workspace-select" style="margin-right:8px;">Workspace</label>
     <select id="plugin-workspace-select" class="field-input" style="min-width:220px;">
