@@ -122,6 +122,7 @@ table, quotas, budgets, alerts, invoices, and reconciliation.
 - [Isolated plugin runner](docs/plugin-runner.md)
 - [Plugin artifact cache](docs/plugin-artifact-cache.md)
 - [Encrypted integration credentials](docs/integration-credentials.md)
+- [Integration setup and local mocks](docs/integrations.md)
 - [Architecture](docs/architecture.md)
 - [Security model](docs/security.md)
 - [Accessibility and keyboard navigation](docs/accessibility.md)
