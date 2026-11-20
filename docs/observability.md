@@ -97,6 +97,14 @@ then total tokens, then label. Rows with no provider/model are grouped under
 an explicit `other` row and reported via `provider_truncated`/`model_truncated`
 and `*_groups_total`. Source rows keep their stable all-known-sources shape.
 
+## Service-level objectives and alerting
+
+Availability, error-rate and LLM-latency objectives, plus the Grafana-style
+dashboard and Prometheus alert rules derived from the metrics above, live in
+[`slos.md`](slos.md) and `app/observability/slo_definitions.json`. The
+definitions are validated against the emitted metric set by
+`tests/test_observability_slo.py`.
+
 ## Cost recomputation
 
 Price-table changes do not rewrite history automatically. Run the bounded,

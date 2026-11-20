@@ -1,0 +1,195 @@
+{
+  "schema_version": 1,
+  "description": "SLO objectives, Grafana-style dashboard and Prometheus alert rules for the metrics emitted by app/observability/metrics.py. See docs/slos.md.",
+  "window": "30d",
+  "objectives": [
+    {
+      "id": "availability",
+      "title": "API availability",
+      "target": 0.995,
+      "unit": "ratio",
+      "description": "Non-5xx responses divided by all HTTP responses, measured over rolling 30 days.",
+      "expr": "1 - (sum(rate(http_requests_total{status=\"5xx\"}[5m])) / sum(rate(http_requests_total[5m])))"
+    },
+    {
+      "id": "error_rate",
+      "title": "HTTP 5xx error rate",
+      "target": 0.01,
+      "unit": "ratio",
+      "comparison": "max",
+      "description": "Share of responses in the 5xx status class, measured over rolling 30 days.",
+      "expr": "sum(rate(http_requests_total{status=\"5xx\"}[5m])) / sum(rate(http_requests_total[5m]))"
+    },
+    {
+      "id": "llm_latency_p95",
+      "title": "LLM provider latency p95",
+      "target_ms": 10000,
+      "unit": "milliseconds",
+      "comparison": "max",
+      "description": "95th percentile provider latency from the llm_latency_ms histogram.",
+      "expr": "histogram_quantile(0.95, sum by (le) (rate(llm_latency_ms_bucket[5m])))"
+    }
+  ],
+  "metrics_contract": {
+    "http_requests_total": {
+      "type": "counter",
+      "labels": ["method", "endpoint", "status"],
+      "source": "app/observability/metrics.py",
+      "notes": "status is a class label such as 2xx, 4xx or 5xx."
+    },
+    "llm_tokens_total": {
+      "type": "counter",
+      "labels": ["provider", "model", "direction"],
+      "source": "app/services/usage_ledger.py",
+      "notes": "direction is in or out."
+    },
+    "llm_cost_usd_total": {
+      "type": "counter",
+      "labels": ["provider", "model"],
+      "source": "app/services/usage_ledger.py",
+      "notes": "Estimated cost, not a provider invoice."
+    },
+    "llm_latency_ms": {
+      "type": "histogram",
+      "labels": ["provider", "model"],
+      "source": "app/services/usage_ledger.py",
+      "notes": "Exposed as llm_latency_ms_bucket, llm_latency_ms_sum and llm_latency_ms_count."
+    }
+  },
+  "dashboard": {
+    "uid": "aica-slo-overview",
+    "title": "AI Code Assistant - SLO overview",
+    "description": "Availability, error rate and LLM latency from the application's Prometheus text endpoint.",
+    "refresh": "1m",
+    "time": {"from": "now-30d", "to": "now"},
+    "panels": [
+      {
+        "id": 1,
+        "type": "timeseries",
+        "title": "API availability (30d)",
+        "targets": [
+          {
+            "refId": "A",
+            "expr": "1 - (sum(rate(http_requests_total{status=\"5xx\"}[5m])) / sum(rate(http_requests_total[5m])))",
+            "legendFormat": "availability"
+          }
+        ],
+        "fieldConfig": {"defaults": {"unit": "percentunit"}, "overrides": []}
+      },
+      {
+        "id": 2,
+        "type": "timeseries",
+        "title": "HTTP 5xx error rate",
+        "targets": [
+          {
+            "refId": "A",
+            "expr": "sum(rate(http_requests_total{status=\"5xx\"}[5m])) / sum(rate(http_requests_total[5m]))",
+            "legendFormat": "5xx share"
+          }
+        ],
+        "fieldConfig": {"defaults": {"unit": "percentunit"}, "overrides": []}
+      },
+      {
+        "id": 3,
+        "type": "timeseries",
+        "title": "Requests by status class",
+        "targets": [
+          {
+            "refId": "A",
+            "expr": "sum by (status) (rate(http_requests_total[5m]))",
+            "legendFormat": "{{status}}"
+          }
+        ]
+      },
+      {
+        "id": 4,
+        "type": "timeseries",
+        "title": "LLM latency percentiles",
+        "targets": [
+          {
+            "refId": "A",
+            "expr": "histogram_quantile(0.50, sum by (le) (rate(llm_latency_ms_bucket[5m])))",
+            "legendFormat": "p50"
+          },
+          {
+            "refId": "B",
+            "expr": "histogram_quantile(0.95, sum by (le) (rate(llm_latency_ms_bucket[5m])))",
+            "legendFormat": "p95"
+          },
+          {
+            "refId": "C",
+            "expr": "histogram_quantile(0.99, sum by (le) (rate(llm_latency_ms_bucket[5m])))",
+            "legendFormat": "p99"
+          }
+        ],
+        "fieldConfig": {"defaults": {"unit": "ms"}, "overrides": []}
+      },
+      {
+        "id": 5,
+        "type": "timeseries",
+        "title": "LLM tokens per second",
+        "targets": [
+          {
+            "refId": "A",
+            "expr": "sum by (direction) (rate(llm_tokens_total[5m]))",
+            "legendFormat": "{{direction}}"
+          }
+        ]
+      },
+      {
+        "id": 6,
+        "type": "timeseries",
+        "title": "Estimated LLM cost per second (USD)",
+        "targets": [
+          {
+            "refId": "A",
+            "expr": "sum(rate(llm_cost_usd_total[5m]))",
+            "legendFormat": "USD/s"
+          }
+        ]
+      }
+    ]
+  },
+  "alerts": [
+    {
+      "alert": "AicaHighErrorRate",
+      "expr": "sum(rate(http_requests_total{status=\"5xx\"}[5m])) / sum(rate(http_requests_total[5m])) > 0.01",
+      "for": "10m",
+      "labels": {"severity": "critical", "slo": "error_rate"},
+      "annotations": {
+        "summary": "More than 1% of HTTP responses are 5xx.",
+        "runbook": "docs/slos.md#alert-response"
+      }
+    },
+    {
+      "alert": "AicaAvailabilityBudgetBurn",
+      "expr": "1 - (sum(rate(http_requests_total{status=\"5xx\"}[5m])) / sum(rate(http_requests_total[5m]))) < 0.995",
+      "for": "15m",
+      "labels": {"severity": "critical", "slo": "availability"},
+      "annotations": {
+        "summary": "Availability is below the 99.5% objective.",
+        "runbook": "docs/slos.md#alert-response"
+      }
+    },
+    {
+      "alert": "AicaLlmLatencyP95High",
+      "expr": "histogram_quantile(0.95, sum by (le) (rate(llm_latency_ms_bucket[5m]))) > 10000",
+      "for": "15m",
+      "labels": {"severity": "warning", "slo": "llm_latency_p95"},
+      "annotations": {
+        "summary": "LLM provider p95 latency is above 10 seconds.",
+        "runbook": "docs/slos.md#alert-response"
+      }
+    },
+    {
+      "alert": "AicaErrorBurstByEndpoint",
+      "expr": "sum by (endpoint) (rate(http_requests_total{status=\"5xx\"}[5m])) > 0.1",
+      "for": "5m",
+      "labels": {"severity": "warning", "slo": "error_rate"},
+      "annotations": {
+        "summary": "One endpoint is returning more than 0.1 5xx responses per second.",
+        "runbook": "docs/slos.md#alert-response"
+      }
+    }
+  ]
+}
