@@ -216,6 +216,14 @@ class PluginLockEntry(db.Model):
     integrity = db.Column(db.String(128), nullable=False)
     dependencies = db.Column(db.JSON, default=[], nullable=False)
 
+    # Previous resolved artifact, retained so a rollback can restore it even
+    # after the catalog stops listing that version (#363).
+    previous_version = db.Column(db.String(32), nullable=True)
+    previous_source = db.Column(db.String(512), nullable=True)
+    previous_integrity = db.Column(db.String(128), nullable=True)
+    previous_manifest = db.Column(db.JSON, nullable=True)
+    manifest = db.Column(db.JSON, nullable=True)
+
     resolved_at = db.Column(
         db.DateTime,
         default=lambda: datetime.now(UTC),

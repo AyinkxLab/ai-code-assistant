@@ -451,7 +451,16 @@ class CatalogDependencyGraph:
             PluginDependencyVersionError: When a catalogued dependency exists but
                 no catalogued version satisfies the declared range.
         """
-        order: list[str] = []
+        return tuple(node.plugin_id for node in self.ordered_entries(entry))
+
+    def ordered_entries(self, entry) -> tuple[object, ...]:
+        """Return catalog entries in dependency-first install order.
+
+        The same validation as :meth:`validate` runs first, so a caller gets no
+        ordering (and therefore writes nothing) for a cyclic, unparsable, or
+        version-unsatisfiable graph.
+        """
+        order: list[object] = []
         visiting: list[str] = []
         visited: set[str] = set()
 
@@ -473,7 +482,7 @@ class CatalogDependencyGraph:
             visiting.pop()
 
             visited.add(canonical_id)
-            order.append(node.plugin_id)
+            order.append(node)
 
         visit(entry)
         return tuple(order)
@@ -487,3 +496,13 @@ def validate_catalog_dependencies(catalog, entry) -> tuple[str, ...]:
     authoritative for their installed state.
     """
     return CatalogDependencyGraph(catalog).validate(entry)
+
+
+def resolve_install_order(catalog, entry) -> tuple[object, ...]:
+    """Return the full dependency-first catalog entries to install (#362).
+
+    Every node is resolved from the catalog and validated (cycles, unparsable
+    requirements, and unsatisfiable version ranges) before the caller writes
+    anything, so an install is all-or-nothing.
+    """
+    return CatalogDependencyGraph(catalog).ordered_entries(entry)

@@ -72,6 +72,11 @@ EXPECTED_COLUMNS = {
         "integrity",
         "dependencies",
         "resolved_at",
+        "manifest",
+        "previous_version",
+        "previous_source",
+        "previous_integrity",
+        "previous_manifest",
     },
 }
 
@@ -299,6 +304,21 @@ class TestMigrationHead:
             with _inspect(db_url) as insp:
                 columns = {col["name"] for col in insp.get_columns("messages")}
                 assert {"prompt_tokens", "completion_tokens", "total_tokens"}.isdisjoint(columns)
+
+    def test_message_interrupted_column_round_trips(self):
+        with _migration_db() as db_url, _inspect(db_url) as insp:
+            columns = {col["name"] for col in insp.get_columns("messages")}
+            assert "interrupted" in columns
+
+        with tempfile.TemporaryDirectory() as tmp:
+            db_url = f"sqlite:///{os.path.join(tmp, 'mig_interrupted.db')}"
+            up = _run_flask(["db", "upgrade"], {"DATABASE_URL": db_url})
+            assert up.returncode == 0, up.stderr
+            down = _run_flask(["db", "downgrade", "a9b8c7d6e5f4"], {"DATABASE_URL": db_url})
+            assert down.returncode == 0, down.stderr
+            with _inspect(db_url) as insp:
+                columns = {col["name"] for col in insp.get_columns("messages")}
+                assert "interrupted" not in columns
 
     def test_audit_logs_table_upgraded(self):
         expected = {

@@ -34,6 +34,9 @@ class Message(db.Model):
     prompt_tokens = db.Column(db.Integer, nullable=True)
     completion_tokens = db.Column(db.Integer, nullable=True)
     total_tokens = db.Column(db.Integer, nullable=True)
+    # True when generation stopped before a complete reply (client cancel,
+    # dropped stream, or provider error). The partial text is still shown.
+    interrupted = db.Column(db.Boolean, nullable=False, default=False)
     created_at = db.Column(
         db.DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC)
     )
@@ -61,6 +64,7 @@ class Message(db.Model):
             "content": self.content,
             "attachments": [attachment.to_dict() for attachment in self.attachments],
             "token_usage": usage,
+            "interrupted": bool(self.interrupted),
             "created_at": self.created_at.isoformat() if self.created_at else None,
         }
 

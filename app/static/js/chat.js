@@ -144,9 +144,17 @@
     );
   }
 
-  function addMessage(role, content, attachments, usage, messageId) {
+  function addMessage(role, content, attachments, usage, messageId, interrupted) {
+    if (
+      messageId !== undefined &&
+      messageId !== null &&
+      messagesEl.querySelector('.chat-message[data-message-id="' + String(messageId) + '"]')
+    ) {
+      return null;
+    }
     var el = document.createElement("div");
     el.className = "chat-message chat-" + role;
+    if (interrupted) el.classList.add("chat-interrupted");
     if (messageId !== undefined && messageId !== null) {
       el.dataset.messageId = messageId;
     }
@@ -154,6 +162,9 @@
     var body =
       '<div class="message-header">' +
       escapeHtml(label) +
+      (interrupted
+        ? '<span class="message-interrupted-badge" role="status">interrupted</span>'
+        : "") +
       '</div><div class="message-body">' +
       (role === "user" ? escapeHtml(content) : renderMarkdown(content)) +
       "</div>" +
@@ -214,6 +225,19 @@
       badge.parentNode.removeChild(badge);
     }
   }
+
+  // Unsaved-draft affordance (#24): warn before navigating away while a reply
+  // is generating or the composer still holds unsent text.
+  function hasUnsavedDraft() {
+    return !!streaming || !!(inputEl && inputEl.value.trim());
+  }
+
+  window.addEventListener("beforeunload", function (event) {
+    if (!hasUnsavedDraft()) return;
+    event.preventDefault();
+    event.returnValue = "";
+    return "";
+  });
 
   function isNearBottom() {
     if (!messagesEl) return true;
@@ -349,7 +373,7 @@
     messagesEl.innerHTML = "";
     actionsEl.hidden = false;
     loadShareLinks(id);
-    return api("/chat/conversations/" + id)
+    return api("/api/conversations/" + id)
       .then(function (data) {
         data.messages.forEach(function (message) {
           addMessage(
@@ -357,7 +381,8 @@
             message.content,
             message.attachments,
             message.token_usage,
-            message.id
+            message.id,
+            message.interrupted
           );
         });
         conversationUsage =
@@ -662,6 +687,17 @@
             if (payload.message) {
               if (payload.message.id !== undefined) {
                 typing.dataset.messageId = payload.message.id;
+              }
+              if (payload.message.interrupted) {
+                typing.classList.add("chat-interrupted");
+                var header = typing.querySelector(".message-header");
+                if (header && !header.querySelector(".message-interrupted-badge")) {
+                  var badge = document.createElement("span");
+                  badge.className = "message-interrupted-badge";
+                  badge.setAttribute("role", "status");
+                  badge.textContent = "interrupted";
+                  header.appendChild(badge);
+                }
               }
               streamBody.innerHTML =
                 renderMarkdown(payload.message.content) +
@@ -1306,6 +1342,7 @@
     formatRelativeTime: formatRelativeTime,
     renderMarkdown: renderMarkdown,
     isNearBottom: isNearBottom,
+    hasUnsavedDraft: hasUnsavedDraft,
     getCsrf: getCsrf,
   };
 })();
