@@ -223,7 +223,7 @@ Questions to answer before committing:
 - Can the product tolerate users being pinned to one region during an incident?
 - Who is allowed to promote the database, and how is that audited?
 - Are backups stored in the same region as the primary? (Avoid a single failure
-  domain; see `docs/backup-restore.md` when the backup runbook lands.)
+  domain; see [Backup and restore](backup-restore.md).)
 - Will per-process rate limits and caches be acceptable across regions?
 
 ## Verification checklist
