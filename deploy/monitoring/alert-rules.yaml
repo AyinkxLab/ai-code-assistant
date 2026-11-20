@@ -1,0 +1,131 @@
+# Prometheus alert rules for the metrics in app/observability/metrics.py.
+#
+# Load with:
+#   promtool check rules deploy/monitoring/alert-rules.yaml
+# or copy the group into the rule files of an existing Prometheus.
+#
+# The availability objective is 99.5% over 30 days (allowed error ratio 0.005),
+# so a burn-rate multiplier of 14.4 exhausts the budget in about two days and
+# 6 exhausts it in about five. Both a long and a short window must breach to
+# page, which suppresses single-scrape spikes.
+
+groups:
+  - name: aica-slo
+    interval: 1m
+    rules:
+      - alert: AicaAvailabilityFastBurn
+        expr: >-
+          (sum(rate(http_requests_total{status="5xx"}[5m])) /
+          sum(rate(http_requests_total[5m]))) > (14.4 * 0.005)
+          and
+          (sum(rate(http_requests_total{status="5xx"}[1h])) /
+          sum(rate(http_requests_total[1h]))) > (14.4 * 0.005)
+        for: 5m
+        labels:
+          severity: critical
+          slo: availability
+          component: http
+        annotations:
+          summary: "Availability is burning the 30-day error budget 14.4x too fast."
+          description: >-
+            More than 7.2% of HTTP responses have been 5xx over the last five
+            minutes and the last hour. The 99.5% availability objective is at
+            risk. Check recent deploys and the database before anything else.
+          runbook: "docs/incident-runbook.md#availability-burn"
+
+      - alert: AicaAvailabilitySlowBurn
+        expr: >-
+          (sum(rate(http_requests_total{status="5xx"}[30m])) /
+          sum(rate(http_requests_total[30m]))) > (6 * 0.005)
+          and
+          (sum(rate(http_requests_total{status="5xx"}[6h])) /
+          sum(rate(http_requests_total[6h]))) > (6 * 0.005)
+        for: 30m
+        labels:
+          severity: warning
+          slo: availability
+          component: http
+        annotations:
+          summary: "Availability is burning the 30-day error budget 6x too fast."
+          description: >-
+            More than 3% of HTTP responses have been 5xx over the last 30
+            minutes and the last six hours. This is slower than the fast-burn
+            page but still exhausts the monthly budget within five days.
+          runbook: "docs/incident-runbook.md#availability-burn"
+
+      - alert: AicaHighErrorRate
+        expr: >-
+          sum(rate(http_requests_total{status="5xx"}[5m])) /
+          sum(rate(http_requests_total[5m])) > 0.01
+        for: 10m
+        labels:
+          severity: critical
+          slo: error_rate
+          component: http
+        annotations:
+          summary: "More than 1% of HTTP responses are 5xx."
+          description: >-
+            The 5xx share has stayed above the 1% error-rate objective for ten
+            minutes. Find the failing route with the per-endpoint query in the
+            runbook; a single route is usually a bad deploy or dependency.
+          runbook: "docs/incident-runbook.md#error-spikes"
+
+      - alert: AicaErrorBurstByEndpoint
+        expr: >-
+          sum by (endpoint) (rate(http_requests_total{status="5xx"}[5m])) > 0.1
+        for: 5m
+        labels:
+          severity: warning
+          slo: error_rate
+          component: http
+        annotations:
+          summary: "One endpoint is returning more than 0.1 5xx responses per second."
+          description: >-
+            The global error rate may still be acceptable, but one route is
+            failing consistently. The endpoint label names the route to inspect.
+          runbook: "docs/incident-runbook.md#error-spikes"
+
+      - alert: AicaLlmLatencyP95High
+        expr: >-
+          histogram_quantile(0.95,
+          sum by (le) (rate(llm_latency_ms_bucket[5m]))) > 10000
+        for: 15m
+        labels:
+          severity: warning
+          slo: llm_latency_p95
+          component: llm
+        annotations:
+          summary: "LLM provider p95 latency is above 10 seconds."
+          description: >-
+            Provider calls are slower than the 10 s objective. Check whether one
+            provider/model is responsible before changing timeouts or retries.
+          runbook: "docs/incident-runbook.md#llm-latency"
+
+      - alert: AicaJobQueueBacklog
+        expr: sum(job_queue_depth{status="queued"}) > 100
+        for: 10m
+        labels:
+          severity: warning
+          component: worker
+        annotations:
+          summary: "The job queue has more than 100 queued jobs."
+          description: >-
+            The queue depth is refreshed from the jobs table at scrape time.
+            Check that the worker Deployment is running and that failed jobs are
+            not retrying forever; see the job-queue guide.
+          runbook: "docs/incident-runbook.md#queue-backlog"
+
+      - alert: AicaWebhookDeliveryFailures
+        expr: >-
+          sum(rate(webhook_deliveries_total{result="failure"}[5m])) > 0.05
+        for: 10m
+        labels:
+          severity: warning
+          component: worker
+        annotations:
+          summary: "Webhook deliveries are failing more than 3 times per minute."
+          description: >-
+            Failure includes rejected URLs (private host, non-HTTP scheme) and
+            non-2xx responses. Inspect failed webhook.deliver jobs for the last
+            error; do not disable URL validation to clear the alert.
+          runbook: "docs/incident-runbook.md#webhook-failures"

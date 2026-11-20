@@ -54,6 +54,18 @@
       "labels": ["provider", "model"],
       "source": "app/services/usage_ledger.py",
       "notes": "Exposed as llm_latency_ms_bucket, llm_latency_ms_sum and llm_latency_ms_count."
+    },
+    "job_queue_depth": {
+      "type": "gauge",
+      "labels": ["status"],
+      "source": "app/services/job_queue.py",
+      "notes": "Current job count per status, refreshed at scrape and worker time."
+    },
+    "webhook_deliveries_total": {
+      "type": "counter",
+      "labels": ["result"],
+      "source": "app/services/job_queue.py",
+      "notes": "result is success or failure; failures include validation and HTTP errors."
     }
   },
   "dashboard": {

@@ -64,6 +64,16 @@ def metrics() -> Response:
             response.headers["WWW-Authenticate"] = 'Bearer realm="metrics"'
         return response
 
+    # Queue depth is read from the database at scrape time so a stalled worker
+    # does not freeze the last value. A database error must not hide the other
+    # metrics, so this refresh is best effort and logged.
+    try:
+        from app.services.job_queue import refresh_queue_metrics
+
+        refresh_queue_metrics()
+    except Exception:  # pragma: no cover - depends on a live database
+        current_app.logger.debug("queue metrics refresh failed", exc_info=True)
+
     response = Response(render_metrics(), content_type=CONTENT_TYPE)
     response.headers["Cache-Control"] = "no-store"
     return response

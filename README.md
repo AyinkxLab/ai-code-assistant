@@ -130,6 +130,7 @@ table, quotas, budgets, alerts, invoices, and reconciliation.
 - [Backup and restore](docs/backup-restore.md)
 - [Soroban workflow guide](docs/soroban-workflow.md)
 - [Observability design](docs/observability.md)
+- [Incident runbook](docs/incident-runbook.md)
 - [Billing](docs/billing.md)
 - [Cost precision](docs/cost-precision.md)
 - [Usage and billing data privacy](docs/usage-privacy.md)

@@ -34,6 +34,8 @@ pinned in the JSON file and checked in tests.
 | `llm_tokens_total` | counter | `provider`, `model`, `direction` | `app/services/usage_ledger.py` |
 | `llm_cost_usd_total` | counter | `provider`, `model` | `app/services/usage_ledger.py` |
 | `llm_latency_ms` | histogram | `provider`, `model` | `app/services/usage_ledger.py` |
+| `job_queue_depth` | gauge | `status` | `app/services/job_queue.py` |
+| `webhook_deliveries_total` | counter | `result` | `app/services/job_queue.py` |
 
 `status` is a status *class* (`1xx` … `5xx`), never an individual code.
 Histogram samples appear as `llm_latency_ms_bucket`, `llm_latency_ms_sum` and
@@ -67,22 +69,22 @@ guaranteed to be exhaustive.
    the object, and pick the Prometheus data source. The `uid` is stable
    (`aica-slo-overview`) so repeated imports update the same dashboard.
 
-3. **Load the alert rules.** The `alerts` array is a list of Prometheus rule
-   entries. Wrap it as a rule group:
+3. **Load the alert rules.** The operator-facing ruleset is
+   [`deploy/monitoring/alert-rules.yaml`](../deploy/monitoring/alert-rules.yaml).
+   It includes availability fast/slow burn, the error-rate and per-endpoint
+   alerts, LLM latency, queue backlog and webhook failures. Check and reload it:
 
-   ```yaml
-   groups:
-     - name: aica-slo
-       interval: 1m
-       rules: <contents of the "alerts" array>
+   ```bash
+   promtool check rules deploy/monitoring/alert-rules.yaml
    ```
 
-   Reload Prometheus and confirm the four rules are `inactive`/`pending` in
-   **Status → Rules**. `AicaHighErrorRate` and
-   `AicaAvailabilityBudgetBurn` are critical; the latency and per-endpoint
-   alerts are warnings.
+   The `alerts` array in `slo_definitions.json` remains the source for the
+   dashboard-adjacent SLO alerts; `tests/test_observability_alerts.py` asserts
+   rules present in both files stay identical. Reload Prometheus and confirm the
+   rules are `inactive`/`pending` in **Status → Rules**.
 
-4. **Re-validate after changing instrumentation.** Run
+4. **Follow the runbook.** Triage, rollback and escalation steps for every rule
+   are in [`incident-runbook.md`](incident-runbook.md).
    `python -m pytest tests/test_observability_slo.py -q`. Adding, renaming or
    removing a metric without updating the definitions (or the reverse) fails
    the test with the unknown name.
@@ -91,11 +93,10 @@ guaranteed to be exhaustive.
 
 - **HTTP request latency.** Only LLM provider latency is a histogram today, so
   the latency objective covers provider calls, not route latency.
-- **Saturation and capacity.** There are no CPU, memory, connection-pool,
-  queue-depth or database metrics, so no saturation objective or alert is
-  defined.
-- **Background-job and queue health.** `job_queue.py` stores job state but does
-  not export metrics; queue lag is not alertable from this contract.
+- **Saturation and capacity.** There are no CPU, memory, connection-pool or
+  database metrics, so no saturation objective or alert is defined.
+- **Background-job latency.** `job_queue_depth` covers backlog counts, not how
+  long the oldest queued job has waited; queue lag itself is not measured.
 - **Multi-worker aggregation.** The in-process registry is per worker and
   resets on restart. Query results are only as complete as the scrape coverage.
 - **Business and cost objectives.** Token and cost series are charted, but no
@@ -122,4 +123,8 @@ guaranteed to be exhaustive.
 - Validator: `app/observability/slo.py`.
 - Tests: `tests/test_observability_slo.py` (validates every objective, panel
   and alert expression against `REGISTRY.names()`).
+- Operator rules: `deploy/monitoring/alert-rules.yaml`; syntax, labels,
+  annotations and runbook anchors are checked by
+  `tests/test_observability_alerts.py`.
+- Incident procedure: [`incident-runbook.md`](incident-runbook.md).
 - Metric source: [`observability.md`](observability.md).

@@ -46,7 +46,7 @@ serve those shapes; `tests/test_usage_ledger_indexes.py` pins the query plans.
 ## Metrics
 
 `GET /metrics` returns Prometheus `text/plain; version=0.0.4` and is bounded by
-`MAX_SERIES_PER_METRIC` (500) per counter or histogram; overflow is folded into
+`MAX_SERIES_PER_METRIC` (500) per metric family; overflow is folded into
 an `other` series so a hostile label cannot grow memory without limit.
 
 | Metric | Type | Labels | Meaning |
@@ -55,6 +55,8 @@ an `other` series so a hostile label cannot grow memory without limit.
 | `llm_tokens_total` | counter | `provider`, `model`, `direction` | Tokens consumed (`in`/`out`). |
 | `llm_cost_usd_total` | counter | `provider`, `model` | Estimated cost accumulated from ledger writes. |
 | `llm_latency_ms` | histogram | `provider`, `model` | Provider latency in milliseconds; buckets run from 5 ms to 30 s plus `+Inf`. |
+| `job_queue_depth` | gauge | `status` | Jobs stored in the `jobs` table, by status. Refreshed at scrape time and by the worker. |
+| `webhook_deliveries_total` | counter | `result` | Webhook delivery attempts (`success`/`failure`); failures include rejected URLs and non-2xx responses. |
 
 Token, cost and latency values are published from `usage_ledger.record_usage`, so
 every instrumented path reports the same numbers. Latency is observed only when
@@ -70,6 +72,9 @@ Endpoint protection:
 
 The registry is in-process: counters reset when the process restarts and are not
 shared across workers. Scrape each worker, or aggregate in your metrics backend.
+`job_queue_depth` is the exception: it is read from the shared `jobs` table on
+each authorized scrape, so every worker reports the same counts (and a stalled
+worker still shows the real backlog).
 
 ## Dashboards
 
@@ -103,7 +108,10 @@ Availability, error-rate and LLM-latency objectives, plus the Grafana-style
 dashboard and Prometheus alert rules derived from the metrics above, live in
 [`slos.md`](slos.md) and `app/observability/slo_definitions.json`. The
 definitions are validated against the emitted metric set by
-`tests/test_observability_slo.py`.
+`tests/test_observability_slo.py`. Operator-facing alert rules, including
+availability burn, queue backlog and webhook failures, live in
+`deploy/monitoring/alert-rules.yaml`; the response procedure is the
+[incident runbook](incident-runbook.md).
 
 ## Tracing
 
