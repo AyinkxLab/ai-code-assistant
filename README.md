@@ -120,6 +120,7 @@ table, quotas, budgets, alerts, invoices, and reconciliation.
 - [Stellar / Soroban tooling](docs/stellar.md)
 - [Plugin system](docs/plugins.md)
 - [Isolated plugin runner](docs/plugin-runner.md)
+- [Plugin artifact cache](docs/plugin-artifact-cache.md)
 - [Architecture](docs/architecture.md)
 - [Security model](docs/security.md)
 - [Accessibility and keyboard navigation](docs/accessibility.md)
