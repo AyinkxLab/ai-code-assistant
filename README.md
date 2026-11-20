@@ -122,6 +122,7 @@ table, quotas, budgets, alerts, invoices, and reconciliation.
 - [Architecture](docs/architecture.md)
 - [Security model](docs/security.md)
 - [Accessibility and keyboard navigation](docs/accessibility.md)
+- [Multi-region deployment](docs/multi-region.md)
 - [Soroban workflow guide](docs/soroban-workflow.md)
 - [Observability design](docs/observability.md)
 - [Billing](docs/billing.md)
