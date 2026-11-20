@@ -67,6 +67,7 @@ CAPABILITIES: dict[str, tuple[tuple[str, ...], str]] = {
     ),
     "manage_plugins": ((ROLE_OWNER,), "Install, enable, disable, and grant plugin capabilities"),
     "manage_billing": ((ROLE_OWNER,), "Manage workspace price overrides and billing estimates"),
+    "manage_integrations": ((ROLE_OWNER,), "Read, rotate, and delete integration credentials"),
 }
 
 
