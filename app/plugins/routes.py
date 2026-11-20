@@ -20,12 +20,14 @@ from flask_login import current_user, login_required
 
 from app.extensions import db
 from app.models import (
+    ActivityEvent,
     Plugin,
     PluginInstallation,
     PluginLockEntry,
     Workspace,
     WorkspaceMember,
 )
+from app.models.activity_event import EVENT_PLUGIN_EXECUTED
 from app.models.plugin_install_event import ACTION_INSTALL, ACTION_ROLLBACK, ACTION_UPDATE
 from app.models.workspace_member import STATUS_ACTIVE
 from app.plugins import bp
@@ -55,6 +57,7 @@ from app.services.marketplace_reviews import (
     review_error_payload,
     update_review,
 )
+from app.services.pagination import PaginationError, encode_cursor, parse_page_request
 from app.services.permissions import (
     can,
     require_workspace_capability,
@@ -562,26 +565,38 @@ def api_list_workspaces():
 @bp.route("/api/workspaces/<int:workspace_id>/plugins", methods=["GET"])
 @login_required
 def api_list_plugins(workspace_id: int):
-    """List registered plugins with stable, bounded pagination (#379).
+    """List registered plugins with bounded pages and a stable cursor (#379/#700).
 
-    Query params: ``page`` (1-based) and ``limit``. ``limit`` is clamped to
-    :data:`MAX_PAGE_LIMIT`, so an oversized request never returns an unbounded
-    page. Ordering is by plugin id, making pages stable across requests.
+    Query params: ``page`` (1-based), ``limit`` (clamped to
+    :data:`MAX_PAGE_LIMIT`), and an optional opaque ``cursor`` returned as
+    ``next_cursor``. Ordering is by plugin id, so the cursor continues after the
+    last id and is unaffected by rows inserted between requests. Malformed page
+    sizes or cursors return a structured ``400``.
     """
     resolve_workspace(workspace_id)
+    try:
+        page_request = parse_page_request(
+            request.args, default_limit=DEFAULT_PAGE_LIMIT, max_limit=MAX_PAGE_LIMIT
+        )
+    except PaginationError as exc:
+        return jsonify({"error": str(exc), "code": exc.code}), 400
 
-    page = request.args.get("page", type=int)
-    if page is None or page < 1:
-        page = 1
-    limit = request.args.get("limit", type=int)
-    if limit is None:
-        limit = DEFAULT_PAGE_LIMIT
-    limit = max(1, min(limit, MAX_PAGE_LIMIT))
+    page, limit = page_request.page, page_request.limit
+    query = Plugin.query.order_by(Plugin.id)
+    if page_request.cursor is not None:
+        cursor_id = page_request.cursor.get("id")
+        if not isinstance(cursor_id, str) or not cursor_id:
+            return jsonify({"error": "Invalid cursor.", "code": "invalid_pagination"}), 400
+        query = query.filter(Plugin.id > cursor_id)
+    else:
+        query = query.offset((page - 1) * limit)
 
     total = Plugin.query.count()
     pages = (total + limit - 1) // limit if total else 0
-    offset = (page - 1) * limit
-    rows = Plugin.query.order_by(Plugin.id).offset(offset).limit(limit).all()
+    rows = query.limit(limit + 1).all()
+    has_more = len(rows) > limit
+    rows = rows[:limit]
+    next_cursor = encode_cursor({"id": rows[-1].id}) if has_more and rows else None
 
     return jsonify(
         {
@@ -593,10 +608,80 @@ def api_list_plugins(workspace_id: int):
                 "max_limit": MAX_PAGE_LIMIT,
                 "total": total,
                 "pages": pages,
-                "has_next": page < pages,
+                "has_next": page < pages or has_more,
                 "has_prev": page > 1,
+                "next_cursor": next_cursor,
             },
             "ordering": ["id"],
+        }
+    )
+
+
+@bp.route("/api/workspaces/<int:workspace_id>/plugin-executions", methods=["GET"])
+@login_required
+def api_plugin_executions(workspace_id: int):
+    """Owner-only plugin execution audit log (#690).
+
+    Returns one row per callback with plugin id, version, capability, outcome
+    (``success``/``error``/``timeout``/``limit_exceeded``), and duration. The
+    stored metadata never contains event payloads or secrets. Non-members get
+    the uniform 404; workspace members without ``view_audit`` get a structured
+    403. Pagination follows the shared bounded/stable-cursor contract (#700).
+    """
+    resolve_workspace(workspace_id)
+    if not can("view_audit", workspace_id):
+        return (
+            jsonify(
+                {
+                    "error": "Only workspace owners may read plugin execution logs.",
+                    "code": "forbidden",
+                }
+            ),
+            403,
+        )
+
+    try:
+        page_request = parse_page_request(request.args)
+    except PaginationError as exc:
+        return jsonify({"error": str(exc), "code": exc.code}), 400
+
+    query = ActivityEvent.query.filter_by(
+        workspace_id=workspace_id, event_type=EVENT_PLUGIN_EXECUTED
+    ).order_by(ActivityEvent.id.desc())
+    if page_request.cursor is not None:
+        cursor_id = page_request.cursor.get("id")
+        if not isinstance(cursor_id, int):
+            return jsonify({"error": "Invalid cursor.", "code": "invalid_pagination"}), 400
+        query = query.filter(ActivityEvent.id < cursor_id)
+    else:
+        query = query.offset((page_request.page - 1) * page_request.limit)
+
+    total = ActivityEvent.query.filter_by(
+        workspace_id=workspace_id, event_type=EVENT_PLUGIN_EXECUTED
+    ).count()
+    rows = query.limit(page_request.limit + 1).all()
+    has_more = len(rows) > page_request.limit
+    rows = rows[: page_request.limit]
+    next_cursor = encode_cursor({"id": rows[-1].id}) if has_more and rows else None
+
+    return jsonify(
+        {
+            "items": [
+                {
+                    "id": row.id,
+                    "plugin_id": (row.event_metadata or {}).get("plugin_id"),
+                    "version": (row.event_metadata or {}).get("version"),
+                    "capability": (row.event_metadata or {}).get("capability"),
+                    "outcome": (row.event_metadata or {}).get("outcome"),
+                    "duration_ms": (row.event_metadata or {}).get("duration_ms"),
+                    "created_at": row.created_at.isoformat() if row.created_at else None,
+                }
+                for row in rows
+            ],
+            "total": total,
+            "page": page_request.page,
+            "limit": page_request.limit,
+            "next_cursor": next_cursor,
         }
     )
 

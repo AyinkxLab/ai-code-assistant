@@ -685,7 +685,11 @@ trusted, and plugin outbound traffic is denied until an operator opts in.
 | `PLUGIN_NETWORK_TIMEOUT` | `15` | Outbound request timeout in seconds. |
 | `PLUGIN_NETWORK_MAX_BYTES` | `2097152` | Maximum response body accepted from a plugin request (2 MiB). |
 | `PLUGIN_NETWORK_STRICT_DNS` | `0` | When enabled, an unresolvable host is rejected instead of tolerated. |
-| `PLUGIN_EXECUTION_TIMEOUT` | `5` | Seconds a plugin event handler or lifecycle hook may run before it is abandoned and recorded as a bounded error. `0` or negative disables the bound. |
+| `PLUGIN_EXECUTION_TIMEOUT` | `5` | Wall-clock seconds a plugin event handler or lifecycle hook may run before it is abandoned and recorded as a bounded error. `0` or negative disables this bound; the other resource limits still apply. |
+| `PLUGIN_CPU_TIME_SECONDS` | `5` | Thread CPU time a callback may consume. Measured after the callback returns (Python cannot preempt a thread); `0` or negative disables this check. |
+| `PLUGIN_MAX_MEMORY_BYTES` | `67108864` | Peak allocation per callback, measured with `tracemalloc`. |
+| `PLUGIN_MAX_OUTPUT_BYTES` | `1048576` | Maximum serialized size of a callback result. |
+| `PLUGIN_MAX_FILE_DESCRIPTORS` | `64` | Maximum descriptor growth while a callback runs (POSIX only; skipped where unsupported). |
 | `PLUGIN_CONFIG_MAX_BYTES` | `65536` | Maximum serialized size of a stored per-workspace plugin configuration. |
 | `PLUGIN_CONFIG_MAX_KEYS` | `200` | Maximum number of top-level keys in a stored plugin configuration. |
 | `PLUGIN_CONFIG_MAX_DEPTH` | `8` | Maximum nesting depth of a stored plugin configuration. |
@@ -704,7 +708,7 @@ Redirects are refused, the request uses `PLUGIN_NETWORK_TIMEOUT`, and the body
 is capped at the catalog limit (1 MiB). A local `PLUGIN_CATALOG_FILE` always
 takes precedence.
 
-### Resource limits and failure behavior (#409, #410)
+### Resource limits and failure behavior (#409, #410, #689)
 
 All plugin resource limits are configuration-driven
 (`app/services/plugin_limits.py`) and have conservative defaults. Invalid or
@@ -715,10 +719,21 @@ override them, and the failure behavior are summarized below:
 
 | Boundary | Default bound | Behavior when exceeded |
 | -------- | ------------- | ---------------------- |
-| Event handler / lifecycle hook | `PLUGIN_EXECUTION_TIMEOUT=5` seconds | The callback is abandoned (daemon thread), one bounded error report is recorded, and dispatch continues with the remaining handlers. |
+| Event handler / lifecycle hook (wall clock) | `PLUGIN_EXECUTION_TIMEOUT=5` seconds | The callback is abandoned (daemon thread), one bounded error report is recorded, and dispatch continues with the remaining handlers. |
+| Callback CPU time | `PLUGIN_CPU_TIME_SECONDS=5` seconds | The call fails cleanly with `PluginCPUTimeLimitError` after it returns; the worker is never crashed. |
+| Callback peak memory | `PLUGIN_MAX_MEMORY_BYTES=67108864` (64 MiB) | The call fails cleanly with `PluginMemoryLimitError`. |
+| Callback output size | `PLUGIN_MAX_OUTPUT_BYTES=1048576` (1 MiB) | The call fails cleanly with `PluginOutputLimitError`; the oversized result is never returned. |
+| Callback descriptor growth | `PLUGIN_MAX_FILE_DESCRIPTORS=64` | The call fails cleanly with `PluginFileDescriptorLimitError` (POSIX; unsupported platforms skip the check). |
 | Stored workspace configuration | 64 KiB, 200 keys, depth 8 | The write is rejected with `400` and nothing is stored. |
 | Owner error-report read | 100 rows | The response is truncated to the configured limit (maximum 500). |
 | Outbound plugin HTTP | 15 seconds, 2 MiB | The request fails closed; see the network settings below. |
+
+The CPU, memory, and descriptor checks are **post-hoc guards**: Python cannot
+interrupt a running thread, so an over-budget callback is rejected after it
+returns rather than killed mid-flight. The wall-clock timeout is the only
+preemptive bound. Every callback failure (including a resource limit) is
+contained, reported, and audited; it never propagates into the request or
+crashes the worker.
 
 Failure isolation covers every plugin invocation boundary: **loading** an
 entry point, **instantiating** the plugin class, running a **lifecycle hook**,
@@ -739,13 +754,17 @@ export PLUGIN_NETWORK_ALLOWLIST=plugins.example.com
 export PLUGIN_NETWORK_HTTPS_ONLY=1
 export PLUGIN_NETWORK_ALLOW_PRIVATE=0
 export PLUGIN_EXECUTION_TIMEOUT=5
+export PLUGIN_CPU_TIME_SECONDS=5
+export PLUGIN_MAX_MEMORY_BYTES=67108864
+export PLUGIN_MAX_OUTPUT_BYTES=1048576
+export PLUGIN_MAX_FILE_DESCRIPTORS=64
 export PLUGIN_CONFIG_MAX_BYTES=65536
 export PLUGIN_CONFIG_MAX_KEYS=200
 export PLUGIN_CONFIG_MAX_DEPTH=8
 export PLUGIN_ERROR_REPORT_LIMIT=100
 ```
 
-## Audit trail (capabilities & state)
+## Audit trail (capabilities, state & execution)
 
 Security-relevant plugin actions are recorded in the shared, append-only
 workspace audit log (`ActivityEvent`, via `app/services/plugin_audit.py`):
@@ -756,18 +775,25 @@ workspace audit log (`ActivityEvent`, via `app/services/plugin_audit.py`):
 - `plugin.denied` — a rejected capability request (e.g. not declared by the
   manifest) or a workspace-scoped dispatch-time denial (plugin disabled /
   not installed / missing capability grant).
+- `plugin.executed` — one row per workspace-scoped plugin callback with
+  `plugin_id`, `version`, `capability`, `outcome`
+  (`success` / `error` / `timeout` / `limit_exceeded`), and `duration_ms`.
 
 Each entry carries only safe facts — actor, workspace, `plugin_id`, capability
 name, action, outcome, a static reason, and (for dispatch denials) the refused
-event type. **Secrets and event payloads are never stored.** Grant/revoke rows
-are only appended on an actual change (repeat grants are not duplicated), and
-dispatch-time denial recording is best-effort and never changes the fail-closed
-delivery decision.
+event type. **Secrets and event payloads are never stored.** Execution rows
+never include event data, configuration, return values, or exception messages.
+Grant/revoke rows are only appended on an actual change (repeat grants are not
+duplicated), and dispatch-time denial recording is best-effort and never
+changes the fail-closed delivery decision.
 
 Entries are owner-visible through the workspace audit view (`GET
-/workspaces/api/workspaces/<id>/audit`); the member activity feed always
-excludes this audit subset, and cross-workspace records are never readable
-outside the workspace they belong to (non-members receive 404).
+/workspaces/api/workspaces/<id>/audit`) and the dedicated execution-log endpoint
+(`GET /plugins/api/workspaces/<id>/plugin-executions`). The dedicated endpoint
+returns a structured `403` (`{"error": ..., "code": "forbidden"}`) to members
+without `view_audit`, and the uniform `404` to non-members. The member activity
+feed always excludes this audit subset, and cross-workspace records are never
+readable outside the workspace they belong to.
 
 ## Writing a plugin
 

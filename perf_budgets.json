@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "description": "Documented query-count and latency budgets for the deterministic Phase 12 benchmark. See docs/performance-budgets.md.",
+  "enforce": false,
+  "scenarios": {
+    "plugins_list": {
+      "queries": 210,
+      "latency_ms": 2000
+    },
+    "workspace_audit": {
+      "queries": 20,
+      "latency_ms": 2000
+    },
+    "plugin_executions": {
+      "queries": 20,
+      "latency_ms": 2000
+    }
+  }
+}

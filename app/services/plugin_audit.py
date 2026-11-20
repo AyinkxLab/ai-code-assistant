@@ -16,19 +16,24 @@ Security rules:
 
 from __future__ import annotations
 
+import logging
 from typing import TYPE_CHECKING
 
+from app.extensions import db
 from app.models.activity_event import (
     EVENT_PLUGIN_CAPABILITY_GRANTED,
     EVENT_PLUGIN_CAPABILITY_REVOKED,
     EVENT_PLUGIN_DENIED,
     EVENT_PLUGIN_DISABLED,
     EVENT_PLUGIN_ENABLED,
+    EVENT_PLUGIN_EXECUTED,
 )
 from app.services.activity import record_activity
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
     from app.models.user import User
+
+logger = logging.getLogger(__name__)
 
 #: Action -> ActivityEvent type for the recorded plugin operations.
 _ACTION_EVENT_TYPES = {
@@ -78,3 +83,44 @@ def record_plugin_audit(
     if trigger_event_type is not None:
         metadata["trigger_event_type"] = trigger_event_type
     record_activity(workspace_id, event_type, actor=actor, metadata=metadata)
+
+
+#: Outcomes accepted for an execution audit row (never free-form text).
+EXECUTION_OUTCOMES = frozenset({"success", "error", "timeout", "limit_exceeded"})
+
+
+def record_plugin_execution(
+    workspace_id: int,
+    plugin_id: str,
+    *,
+    version: str | None,
+    capability: str | None,
+    outcome: str,
+    duration_ms: float,
+) -> None:
+    """Append a bounded execution audit row (never payloads or secrets).
+
+    Only the facts needed to audit a callback are stored: plugin id, version,
+    capability, outcome, and duration. Event payloads, configuration, return
+    values, and exception messages are deliberately excluded.
+    """
+    safe_outcome = outcome if outcome in EXECUTION_OUTCOMES else "error"
+    metadata: dict[str, str | float] = {
+        "action": "executed",
+        "plugin_id": str(plugin_id)[:64],
+        "outcome": safe_outcome,
+        "duration_ms": round(max(0.0, float(duration_ms)), 3),
+    }
+    if version:
+        metadata["version"] = str(version)[:32]
+    if capability:
+        metadata["capability"] = str(capability)[:64]
+    record_activity(workspace_id, EVENT_PLUGIN_EXECUTED, metadata=metadata)
+    # Execution rows are written after the action they describe (event handlers
+    # are dispatched after the route's own commit), so they must commit
+    # themselves. Failure is contained: the callback result is unaffected.
+    try:
+        db.session.commit()
+    except Exception:  # pragma: no cover - best effort by design
+        db.session.rollback()
+        logger.warning("Could not commit plugin execution audit", exc_info=True)

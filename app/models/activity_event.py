@@ -41,6 +41,7 @@ EVENT_PLUGIN_CAPABILITY_REVOKED = "plugin.capability.revoked"
 EVENT_PLUGIN_ENABLED = "plugin.enabled"
 EVENT_PLUGIN_DISABLED = "plugin.disabled"
 EVENT_PLUGIN_DENIED = "plugin.denied"
+EVENT_PLUGIN_EXECUTED = "plugin.executed"
 
 # The audit subset: events that record security-relevant membership, permission,
 # invitation, ownership, and plugin capability/state history. The owner-only
@@ -61,6 +62,7 @@ AUDIT_EVENT_TYPES = frozenset(
         EVENT_PLUGIN_ENABLED,
         EVENT_PLUGIN_DISABLED,
         EVENT_PLUGIN_DENIED,
+        EVENT_PLUGIN_EXECUTED,
     }
 )
 
@@ -88,6 +90,7 @@ EVENT_LABELS = {
     EVENT_PLUGIN_ENABLED: "enabled a plugin",
     EVENT_PLUGIN_DISABLED: "disabled a plugin",
     EVENT_PLUGIN_DENIED: "denied a plugin action",
+    EVENT_PLUGIN_EXECUTED: "ran a plugin callback",
 }
 
 
