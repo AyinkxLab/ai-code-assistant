@@ -192,7 +192,8 @@ Notes:
 - `SESSION_LIFETIME` is optional and defaults to 12 hours.
 - `docker-compose.yml` runs `flask db upgrade` before gunicorn. With multiple
   regions, run migrations **once** from a controlled job (see
-  `docs/migration-rollout.md`); concurrent upgrades are not safe.
+  [the migration rollout guide](migration-rollout.md)); concurrent upgrades are
+  not safe.
 
 The configuration above is exercised by `tests/test_multi_region_docs.py`, which
 loads it through the real production config class in a subprocess.

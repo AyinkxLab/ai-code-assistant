@@ -123,6 +123,7 @@ table, quotas, budgets, alerts, invoices, and reconciliation.
 - [Security model](docs/security.md)
 - [Accessibility and keyboard navigation](docs/accessibility.md)
 - [Multi-region deployment](docs/multi-region.md)
+- [Safe migration rollout](docs/migration-rollout.md)
 - [Soroban workflow guide](docs/soroban-workflow.md)
 - [Observability design](docs/observability.md)
 - [Billing](docs/billing.md)
