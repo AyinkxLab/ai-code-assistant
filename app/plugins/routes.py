@@ -86,10 +86,9 @@ from app.services.plugin_ops import (
     PluginNotFoundError,
     PluginUpdateError,
     RemoteInstallError,
-    atomic_rollback,
     atomic_update_from_catalog,
     discover_plugins,
-    rollback_from_catalog,
+    rollback_plugin,
     update_plugin,
     validate_catalog_install,
 )
@@ -1332,7 +1331,6 @@ def api_rollback_plugin(workspace_id: int, plugin_id: str):
     plugin = Plugin.query.filter_by(id=plugin_id).first()
     if plugin is None:
         return jsonify({"error": "Plugin not found."}), 404
-    current_version = plugin.version
 
     lock_entry = PluginLockEntry.query.filter_by(
         workspace_id=workspace_id,
@@ -1345,27 +1343,12 @@ def api_rollback_plugin(workspace_id: int, plugin_id: str):
         return jsonify({"error": "No lockfile history or catalog is available for rollback."}), 404
 
     try:
-        if lock_entry is not None and is_newer(current_version, lock_entry.version):
-            manifest = PluginManifest(
-                id=plugin.id,
-                name=plugin.name,
-                version=lock_entry.version,
-                description=plugin.description,
-                author=plugin.author,
-                entry_point=plugin.entry_point,
-                capabilities=plugin.capabilities or [],
-                permissions=plugin.permissions or [],
-                dependencies=plugin.dependencies or [],
-                compatibility=plugin.compatibility,
-                configuration=plugin.configuration or {},
-                trust_state=plugin.trust_state,
-                trust_publisher=plugin.trust_publisher,
-            )
-            plugin = atomic_rollback(plugin_id, manifest, workspace_id=workspace_id)
-            target_version = manifest.version
-        else:
-            plugin, entry = rollback_from_catalog(plugin_id, workspace_id=workspace_id)
-            target_version = entry.version
+        plugin, _entry = rollback_plugin(
+            plugin_id,
+            workspace_id=workspace_id,
+            actor=current_user,
+        )
+        target_version = plugin.version
     except (AtomicUpdateError, PluginUpdateError) as exc:
         db.session.rollback()
         record_plugin_audit(
@@ -1381,16 +1364,6 @@ def api_rollback_plugin(workspace_id: int, plugin_id: str):
         db.session.rollback()
         return jsonify({"error": str(exc)}), 404
 
-    record_plugin_audit(
-        workspace_id,
-        "granted",
-        actor=current_user,
-        plugin_id=plugin_id,
-        capability="rollback",
-        outcome="success",
-        reason=f"rolled back from {current_version} to {target_version}",
-    )
-    db.session.commit()
     emit_event(
         "plugin.rolled_back",
         data={"plugin_id": plugin_id, "version": target_version},
@@ -1656,6 +1629,89 @@ def api_list_plugin_errors(workspace_id: int):
     """
     reports = list_workspace_error_reports(workspace_id)
     return jsonify({"workspace_id": workspace_id, "count": len(reports), "errors": reports})
+
+
+# --------------------------------------------------------------------------
+# API: marketplace artifact install (#361)
+# --------------------------------------------------------------------------
+
+
+@bp.route("/api/workspaces/<int:workspace_id>/marketplace/install", methods=["POST"])
+@login_required
+@require_workspace_capability("manage_plugins")
+def api_install_from_marketplace(workspace_id: int):
+    """Install a signed marketplace artifact after signature/hash verification.
+
+    Owner-only. The client names only ``plugin_id`` (and optional ``version``);
+    the artifact URL, integrity hash, and manifest all come from the catalog.
+    The artifact is fetched through the plugin network guard and registered only
+    after its sha256 matches. No code runs and no capability is granted.
+    """
+    from app.services.plugin_ops import MarketplaceInstallRefused, install_from_marketplace
+
+    data = request.get_json(silent=True) or {}
+    plugin_id = data.get("plugin_id")
+    version = data.get("version")
+    if not isinstance(plugin_id, str) or not plugin_id.strip():
+        return jsonify({"error": "plugin_id is required."}), 400
+    if version is not None and (not isinstance(version, str) or not version.strip()):
+        return jsonify({"error": "version must be a non-empty string when provided."}), 400
+
+    try:
+        plugin, entry = install_from_marketplace(
+            plugin_id.strip(),
+            version.strip() if version is not None else None,
+            workspace_id=workspace_id,
+            actor=current_user,
+        )
+    except CatalogEntryNotFoundError as exc:
+        return jsonify({"error": str(exc)}), 404
+    except MarketplaceInstallRefused as exc:
+        return jsonify({"error": str(exc)}), 403
+    except (CatalogUnavailableError, CatalogError) as exc:
+        return jsonify({"error": f"Plugin catalog is not available: {exc}"}), 404
+    except (PublisherSignatureError, PluginTrustConfigError) as exc:
+        return jsonify({"error": f"Trust policy refused the plugin: {exc}"}), 403
+    except (IncompatibleCompatibilityError, InvalidCompatibilityError, RemoteInstallError) as exc:
+        return jsonify({"error": str(exc)}), 400
+    except PluginError as exc:
+        return jsonify({"error": str(exc)}), 400
+
+    record_plugin_event(plugin.id, ACTION_INSTALL)
+    payload = _serialize(plugin, workspace_id)
+    payload["source"] = entry.source
+    payload["integrity"] = entry.integrity
+    return jsonify(payload), 201
+
+
+@bp.route("/api/marketplace/lock", methods=["GET"])
+@login_required
+def api_marketplace_lock():
+    """Return the resolved plugin lockfile for the caller's workspace(s).
+
+    An optional ``workspace_id`` narrows the result to one workspace the caller
+    can manage; without it the caller's owned workspaces are combined (most
+    recent resolution wins per plugin id). No plugin code is loaded.
+    """
+    from app.services.plugin_lockfile import build_lockfile
+
+    raw_workspace_id = request.args.get("workspace_id")
+    query = PluginLockEntry.query.join(
+        Workspace, Workspace.id == PluginLockEntry.workspace_id
+    ).filter(Workspace.user_id == current_user.id)
+
+    if raw_workspace_id not in (None, "", "all"):
+        try:
+            requested = int(raw_workspace_id)
+        except (TypeError, ValueError):
+            return jsonify({"error": "workspace_id must be an integer."}), 400
+        query = query.filter(PluginLockEntry.workspace_id == requested)
+
+    rows = query.order_by(PluginLockEntry.resolved_at.desc()).all()
+    latest: dict[str, object] = {}
+    for row in rows:
+        latest.setdefault(row.plugin_id, row)
+    return jsonify(build_lockfile(latest.values()))
 
 
 # --------------------------------------------------------------------------

@@ -778,6 +778,17 @@ configuration, audit/error reporting, and the plugin-writing guide.
   (Ed25519 publisher signatures; `required` refuses unsigned entries). Never
   accept a client-supplied artifact URL. Never make the management API/CLI load
   or execute plugin code, and never grant capabilities implicitly.
+- **Marketplace installs fetch and verify the artifact.** `install_from_marketplace`
+  (API: `POST /plugins/api/workspaces/<id>/marketplace/install`; CLI:
+  `flask plugins install <id> --marketplace`) resolves the full dependency graph,
+  fetches the catalog source only through `plugin_network` (https, allowlist,
+  bounded, no redirects), checks the sha256 against the catalog, and registers
+  only the validated manifest. Every attempt is audited; `--json` and exit code
+  `3` report a refused artifact.
+- **Updates keep a rollback target.** `update_plugin(id, version)` verifies the
+  same signature/hash guards and retains the previous artifact reference in the
+  workspace lock entry, so `rollback_plugin(id)` can restore it without touching
+  capability grants.
 - **Fail closed.** Dispatch-time capability enforcement and workspace
   isolation must stay intact (see `docs/security.md`).
 - **Isolate failures.** Plugin handler/hook failures must never crash a request
@@ -793,7 +804,9 @@ pytest tests/test_plugins_manifest.py tests/test_capabilities.py \
        tests/test_event_authorization.py tests/test_event_wiring.py \
        tests/test_plugin_integration.py tests/test_plugin_lifecycle.py \
        tests/test_plugin_config.py tests/test_plugin_compat.py \
-       tests/test_plugin_error_reports.py tests/test_plugins_cli.py
+       tests/test_plugin_error_reports.py tests/test_plugins_cli.py \
+       tests/test_plugin_marketplace_install.py tests/test_plugin_install_order_lock.py \
+       tests/test_plugin_update_rollback.py
 ```
 
 ## Supply-chain rules for contributors

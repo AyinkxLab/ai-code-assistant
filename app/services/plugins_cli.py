@@ -8,8 +8,12 @@ Usage (inside the Flask app context):
     flask plugins disable <plugin_id>
     flask plugins install <local-path> [--json]
     flask plugins install <plugin-id> --remote [--version V] [--json]
+    flask plugins install <plugin-id> --marketplace [--version V] [--workspace-id W] [--json]
     flask plugins scaffold <plugin-id> [--output-dir <path>] [--json]
     flask plugins lockfile <workspace-id> [--json]
+    flask plugins lock [--workspace-id W] [--json]
+    flask plugins update <plugin-id> <version> [--workspace-id W] [--json]
+    flask plugins rollback <plugin-id> [--workspace-id W] [--json]
     flask plugins publishers [--json]
     flask plugins errors [--json]
 
@@ -38,10 +42,11 @@ import json
 import click
 from flask import Flask, current_app
 
-#: Exit codes (success / not found / validation-or-other error).
+#: Exit codes (success / not found / validation-or-other error / refused).
 EXIT_OK = 0
 EXIT_NOT_FOUND = 1
 EXIT_ERROR = 2
+EXIT_REFUSED = 3
 
 
 def _write_json(data) -> None:
@@ -172,23 +177,46 @@ def register_plugins_cli(app: Flask) -> None:
         is_flag=True,
         help="Treat PATH as a plugin id from the operator catalog instead of a local path.",
     )
+    @click.option(
+        "--marketplace",
+        is_flag=True,
+        help="Fetch and verify the signed artifact for PATH from the catalog.",
+    )
     @click.option("--version", default=None, help="Catalog version to install (implies --remote).")
+    @click.option(
+        "--workspace-id",
+        "workspace_id",
+        type=int,
+        default=None,
+        help="Workspace to audit and record the marketplace lock entry for.",
+    )
     @click.option("--json", "as_json", is_flag=True, help="Emit machine-readable JSON.")
-    def install_plugin(path: str, remote: bool, version: str | None, as_json: bool) -> int:
+    def install_plugin(
+        path: str,
+        remote: bool,
+        marketplace: bool,
+        version: str | None,
+        workspace_id: int | None,
+        as_json: bool,
+    ) -> int:
         """Install a plugin from a local manifest or the marketplace catalog.
 
         Local paths remain the default. Use ``--remote`` (or ``--version``) to
-        resolve the positional argument as a catalog plugin id; the active
-        ``PLUGIN_TRUST_POLICY`` is enforced before registration.
+        resolve the positional argument as a catalog plugin id, or
+        ``--marketplace`` to additionally fetch and hash-verify the signed
+        artifact before registration. The active ``PLUGIN_TRUST_POLICY`` is
+        enforced before registration.
         """
         from app.services.plugin_ops import (
+            MarketplaceInstallRefused,
             RemoteInstallError,
             install_from_catalog,
             install_from_local_dir,
+            install_from_marketplace,
         )
         from app.services.plugins import ManifestValidationError, PluginError
 
-        if remote or version is not None:
+        if marketplace or remote or version is not None:
             from app.services.plugin_catalog import (
                 CatalogEntryNotFoundError,
                 CatalogError,
@@ -209,9 +237,18 @@ def register_plugins_cli(app: Flask) -> None:
                     as_json=as_json,
                 )
             try:
-                plugin, entry = install_from_catalog(plugin_id, version)
+                if marketplace:
+                    plugin, entry = install_from_marketplace(
+                        plugin_id,
+                        version,
+                        workspace_id=workspace_id,
+                    )
+                else:
+                    plugin, entry = install_from_catalog(plugin_id, version)
             except CatalogEntryNotFoundError as exc:
                 _fail(str(exc), code=EXIT_NOT_FOUND, as_json=as_json)
+            except MarketplaceInstallRefused as exc:
+                _fail(str(exc), code=EXIT_REFUSED, as_json=as_json)
             except CatalogUnavailableError as exc:
                 _fail(f"Plugin catalog is not available: {exc}", code=EXIT_ERROR, as_json=as_json)
             except CatalogError as exc:
@@ -219,7 +256,7 @@ def register_plugins_cli(app: Flask) -> None:
             except (PublisherSignatureError, PluginTrustConfigError) as exc:
                 _fail(
                     f"Trust policy refused the plugin: {exc}",
-                    code=EXIT_ERROR,
+                    code=EXIT_REFUSED,
                     as_json=as_json,
                 )
             except (
@@ -248,6 +285,83 @@ def register_plugins_cli(app: Flask) -> None:
             _write_json(plugin.to_dict())
         else:
             click.echo(f"Installed plugin: {plugin.id} v{plugin.version}")
+        return EXIT_OK
+
+    @plugins_group.command("update")
+    @click.argument("plugin_id")
+    @click.argument("new_version")
+    @click.option("--workspace-id", "workspace_id", type=int, default=None)
+    @click.option("--json", "as_json", is_flag=True, help="Emit machine-readable JSON.")
+    def update(plugin_id: str, new_version: str, workspace_id: int | None, as_json: bool) -> int:
+        """Update a plugin to a catalog version after signature/hash checks."""
+        from app.services.plugin_catalog import CatalogEntryNotFoundError, CatalogError
+        from app.services.plugin_compat import (
+            IncompatibleCompatibilityError,
+            InvalidCompatibilityError,
+        )
+        from app.services.plugin_ops import (
+            AtomicUpdateError,
+            PluginNotFoundError,
+            PluginUpdateError,
+            update_plugin,
+        )
+        from app.services.plugin_signatures import PublisherSignatureError
+        from app.services.plugin_trust import PluginTrustConfigError
+
+        try:
+            plugin = update_plugin(
+                plugin_id,
+                new_version,
+                workspace_id=workspace_id,
+            )
+        except PluginNotFoundError as exc:
+            _fail(str(exc), code=EXIT_NOT_FOUND, as_json=as_json)
+        except CatalogEntryNotFoundError as exc:
+            _fail(str(exc), code=EXIT_NOT_FOUND, as_json=as_json)
+        except (PublisherSignatureError, PluginTrustConfigError) as exc:
+            _fail(str(exc), code=EXIT_REFUSED, as_json=as_json)
+        except (IncompatibleCompatibilityError, InvalidCompatibilityError) as exc:
+            _fail(f"Incompatible update: {exc}", code=EXIT_ERROR, as_json=as_json)
+        except (AtomicUpdateError, PluginUpdateError, CatalogError) as exc:
+            _fail(str(exc), code=EXIT_ERROR, as_json=as_json)
+        if as_json:
+            _write_json({"id": plugin.id, "version": plugin.version})
+        else:
+            click.echo(f"Updated plugin: {plugin.id} v{plugin.version}")
+        return EXIT_OK
+
+    @plugins_group.command("rollback")
+    @click.argument("plugin_id")
+    @click.option("--workspace-id", "workspace_id", type=int, default=None)
+    @click.option("--json", "as_json", is_flag=True, help="Emit machine-readable JSON.")
+    def rollback(plugin_id: str, workspace_id: int | None, as_json: bool) -> int:
+        """Roll a plugin back to its retained previous version."""
+        from app.services.plugin_catalog import CatalogEntryNotFoundError, CatalogError
+        from app.services.plugin_ops import (
+            AtomicUpdateError,
+            PluginNotFoundError,
+            PluginUpdateError,
+            rollback_plugin,
+        )
+
+        try:
+            plugin, entry = rollback_plugin(plugin_id, workspace_id=workspace_id)
+        except PluginNotFoundError as exc:
+            _fail(str(exc), code=EXIT_NOT_FOUND, as_json=as_json)
+        except CatalogEntryNotFoundError as exc:
+            _fail(str(exc), code=EXIT_NOT_FOUND, as_json=as_json)
+        except (AtomicUpdateError, PluginUpdateError) as exc:
+            _fail(str(exc), code=EXIT_ERROR, as_json=as_json)
+        except CatalogError as exc:
+            _fail(str(exc), code=EXIT_ERROR, as_json=as_json)
+        if as_json:
+            payload = {"id": plugin.id, "version": plugin.version}
+            if entry is not None:
+                payload["source"] = entry.source
+                payload["integrity"] = entry.integrity
+            _write_json(payload)
+        else:
+            click.echo(f"Rolled back plugin: {plugin.id} v{plugin.version}")
         return EXIT_OK
 
     @plugins_group.command("scaffold")
@@ -402,6 +516,44 @@ def register_plugins_cli(app: Flask) -> None:
                     f"{plugin['source']} {plugin['integrity']}"
                 )
                 click.echo(line)
+        return EXIT_OK
+
+    @plugins_group.command("lock")
+    @click.option(
+        "--workspace-id",
+        "workspace_id",
+        type=int,
+        default=None,
+        help="Restrict the lockfile to one workspace (operator default: all).",
+    )
+    @click.option("--json", "as_json", is_flag=True, help="Emit machine-readable JSON.")
+    def lock(workspace_id: int | None, as_json: bool) -> int:
+        """Print the resolved plugin lockfile, optionally scoped to a workspace."""
+        from app.models import PluginLockEntry
+        from app.services.plugin_lockfile import build_lockfile
+
+        query = PluginLockEntry.query
+        if workspace_id is not None:
+            query = query.filter_by(workspace_id=workspace_id)
+        rows = query.order_by(PluginLockEntry.resolved_at.desc()).all()
+
+        # The operator view spans workspaces, where the same plugin can appear
+        # once per workspace. Keep the most recent resolution per plugin id so
+        # the canonical lockfile stays unambiguous.
+        latest: dict[str, object] = {}
+        for row in rows:
+            latest.setdefault(row.plugin_id, row)
+        lockfile = build_lockfile(latest.values())
+        if as_json:
+            _write_json(lockfile)
+        else:
+            if not lockfile["plugins"]:
+                click.echo("No lockfile entries found.")
+            for plugin in lockfile["plugins"]:
+                click.echo(
+                    f"{plugin['plugin_id']} {plugin['version']} "
+                    f"{plugin['source']} {plugin['integrity']}"
+                )
         return EXIT_OK
 
 

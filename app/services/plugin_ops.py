@@ -17,16 +17,24 @@ Security rules:
 
 from __future__ import annotations
 
+import hashlib
+import logging
 import re
 from pathlib import Path
+from urllib.parse import urlparse
 
 from flask import current_app
 
 from app.extensions import db
 from app.models import Plugin, PluginLockEntry, Workspace
-from app.services.plugin_catalog import CatalogEntry, load_plugin_catalog
+from app.services.plugin_catalog import (
+    CatalogEntry,
+    CatalogEntryNotFoundError,
+    load_plugin_catalog,
+)
 from app.services.plugin_compat import enforce_compatible
 from app.services.plugin_lockfile import LockfileError, normalize_integrity
+from app.services.plugin_network import PluginNetworkError, PluginNetworkPolicy, guarded_get
 from app.services.plugin_signatures import (
     VERIFY_IF_PRESENT,
     enforce_publisher_trust,
@@ -42,6 +50,8 @@ from app.services.plugins import (
 _URL_SCHEME_RE = re.compile(r"^[a-zA-Z][a-zA-Z0-9+.-]*://")
 #: Looks like an scp-style or URL-ish remote (host:path or git@host).
 _REMOTE_HINT_RE = re.compile(r"^(?:[^/@\s]+@)?[^/\s:@]+:[/~]")
+
+logger = logging.getLogger(__name__)
 
 
 class PluginNotFoundError(ValueError):
@@ -303,7 +313,243 @@ def install_from_catalog(
     return plugin, entry
 
 
-def _register_manifest(manifest: PluginManifest) -> Plugin:
+class MarketplaceInstallRefused(RemoteInstallError):
+    """A marketplace artifact was refused before registration (trust/hash/network)."""
+
+
+def _record_marketplace_audit(
+    workspace_id: int | None,
+    *,
+    plugin_id: str,
+    outcome: str,
+    reason: str,
+    actor=None,
+    capability: str = "marketplace_install",
+) -> None:
+    """Append an install-attempt audit row (never artifact bytes or key material)."""
+    if workspace_id is None:
+        # The operator CLI has no workspace; keep a structured audit trail.
+        logger.info(
+            "plugin.marketplace.install plugin=%s outcome=%s reason=%s",
+            plugin_id,
+            outcome,
+            reason,
+        )
+        return
+    from app.services.plugin_audit import record_plugin_audit
+
+    record_plugin_audit(
+        workspace_id,
+        "granted" if outcome == "success" else "denied",
+        actor=actor,
+        plugin_id=plugin_id,
+        capability=capability if outcome == "success" else None,
+        outcome=outcome,
+        reason=reason,
+    )
+
+
+def _fetch_marketplace_artifact(
+    entry: CatalogEntry,
+    *,
+    config,
+    transport=None,
+    resolver=None,
+) -> bytes:
+    """Fetch and size-check a catalog artifact through the plugin transport.
+
+    The source must be https, the host must be on ``PLUGIN_NETWORK_ALLOWLIST``,
+    redirects are refused by :func:`guarded_get`, and the response is bounded by
+    ``PLUGIN_MARKETPLACE_MAX_BYTES`` (or the plugin network cap).
+    """
+    source = entry.source.strip()
+    if urlparse(source).scheme.lower() != "https":
+        raise MarketplaceInstallRefused(
+            f"Marketplace artifact for {entry.plugin_id} must use an https source."
+        )
+
+    policy = PluginNetworkPolicy.from_config(config)
+    max_bytes = int(config.get("PLUGIN_MARKETPLACE_MAX_BYTES", policy.max_bytes))
+    try:
+        policy.check_url(source, resolver=resolver)
+    except PluginNetworkError as exc:
+        raise MarketplaceInstallRefused(
+            f"Marketplace artifact refused by the network policy: {exc}"
+        ) from exc
+    fetch = transport or guarded_get
+    try:
+        response = fetch(
+            source,
+            policy=policy,
+            resolver=resolver,
+            max_bytes=max_bytes,
+        )
+    except PluginNetworkError as exc:
+        raise MarketplaceInstallRefused(
+            f"Marketplace artifact refused by the network policy: {exc}"
+        ) from exc
+    except Exception as exc:  # transport failures are refusals, never partial installs
+        raise MarketplaceInstallRefused(f"Marketplace artifact request failed: {exc}") from exc
+
+    status = getattr(response, "status_code", None)
+    if isinstance(status, int) and 300 <= status < 400:
+        raise MarketplaceInstallRefused("Marketplace artifact requests must not redirect.")
+    if status != 200:
+        raise MarketplaceInstallRefused(
+            f"Marketplace artifact returned an unexpected status: {status!r}."
+        )
+    body = getattr(response, "content", None)
+    if not isinstance(body, (bytes, bytearray)):
+        raise MarketplaceInstallRefused("Marketplace artifact response was not readable.")
+    if len(body) > max_bytes:
+        raise MarketplaceInstallRefused(f"Marketplace artifact exceeds the {max_bytes} byte cap.")
+    return bytes(body)
+
+
+def install_from_marketplace(
+    plugin_id: str,
+    version: str | None = None,
+    *,
+    workspace_id: int | None = None,
+    config=None,
+    transport=None,
+    resolver=None,
+    actor=None,
+) -> tuple[Plugin, CatalogEntry]:
+    """Install a signed remote plugin artifact from the validated catalog (#361).
+
+    Guards run in this order, and every attempt is audited:
+
+    1. the catalog resolves ``(plugin_id, version)`` and its transitive
+       dependency graph is valid;
+    2. the detached publisher signature satisfies ``PLUGIN_TRUST_POLICY``
+       (``required`` refuses unsigned artifacts);
+    3. the declared compatibility range includes this application;
+    4. the artifact is fetched over https through
+       :func:`~app.services.plugin_network.guarded_get` (allowlist, timeout,
+       byte cap, no redirects) and its sha256 matches the catalog entry;
+    5. only the validated manifest is registered.
+
+    No plugin code is executed and no capability grant is created.
+    """
+    source = config if config is not None else current_app.config
+
+    try:
+        catalog = load_plugin_catalog(source)
+        entry = catalog.get(plugin_id, version)
+    except CatalogEntryNotFoundError:
+        _record_marketplace_audit(
+            workspace_id,
+            plugin_id=plugin_id,
+            outcome="denied",
+            reason="catalog entry not found",
+            actor=actor,
+        )
+        _commit_audit()
+        raise
+    except Exception as exc:
+        _record_marketplace_audit(
+            workspace_id,
+            plugin_id=plugin_id,
+            outcome="denied",
+            reason="catalog unavailable or invalid",
+            actor=actor,
+        )
+        _commit_audit()
+        raise RemoteInstallError(f"Plugin catalog is not available: {exc}") from exc
+
+    try:
+        from app.services.plugin_deps import resolve_install_order
+
+        # Resolve the full dependency graph and validate every entry *before*
+        # any write. The order is dependency-first so a partial install cannot
+        # leave a dependent registered without its dependencies.
+        plan = resolve_install_order(catalog, entry)
+        trusted = source.get("PLUGIN_TRUSTED_KEYS") or {}
+        policy = source.get("PLUGIN_TRUST_POLICY", VERIFY_IF_PRESENT)
+        verified: list[tuple[CatalogEntry, PluginManifest, str]] = []
+        for planned in plan:
+            manifest = _validated_catalog_manifest(
+                planned,
+                trusted_publishers=trusted,
+                policy=policy,
+            )
+            enforce_compatible(manifest.compatibility, subject=f"Plugin {manifest.id}")
+            artifact = _fetch_marketplace_artifact(
+                planned,
+                config=source,
+                transport=transport,
+                resolver=resolver,
+            )
+            actual = f"sha256:{hashlib.sha256(artifact).hexdigest()}"
+            try:
+                expected = normalize_integrity(planned.integrity)
+            except LockfileError as exc:
+                raise MarketplaceInstallRefused(f"Invalid artifact integrity: {exc}") from exc
+            if actual != expected:
+                raise MarketplaceInstallRefused(
+                    f"Artifact hash mismatch for plugin {planned.plugin_id}: "
+                    f"expected {expected}, got {actual}."
+                )
+            verified.append((planned, manifest, expected))
+    except Exception as exc:
+        _record_marketplace_audit(
+            workspace_id,
+            plugin_id=entry.plugin_id,
+            outcome="denied",
+            reason=_refusal_reason(exc),
+            actor=actor,
+        )
+        _commit_audit()
+        if isinstance(exc, RemoteInstallError):
+            raise
+        raise MarketplaceInstallRefused(str(exc)) from exc
+
+    try:
+        target = None
+        for planned, manifest, integrity in verified:
+            plugin = _register_manifest(manifest, commit=False)
+            if workspace_id is not None:
+                _upsert_lock_entry(plugin, workspace_id, planned, integrity)
+            if planned.plugin_id == entry.plugin_id:
+                target = plugin
+        _record_marketplace_audit(
+            workspace_id,
+            plugin_id=entry.plugin_id,
+            outcome="success",
+            reason="installed from marketplace",
+            actor=actor,
+        )
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+        raise
+    return target, entry
+
+
+def _commit_audit() -> None:
+    """Persist a refusal audit row on its own, ignoring audit failures."""
+    try:
+        db.session.commit()
+    except Exception:  # pragma: no cover - audit must not mask the refusal
+        db.session.rollback()
+
+
+def _refusal_reason(exc: Exception) -> str:
+    """Return a short, payload-free reason for a refused marketplace install."""
+    if isinstance(exc, MarketplaceInstallRefused):
+        return "artifact refused"
+    from app.services.plugin_signatures import PublisherSignatureError
+    from app.services.plugin_trust import PluginTrustConfigError
+
+    if isinstance(exc, (PublisherSignatureError, PluginTrustConfigError)):
+        return "publisher signature refused"
+    if isinstance(exc, RemoteInstallError):
+        return "dependency validation failed"
+    return "install validation failed"
+
+
+def _register_manifest(manifest: PluginManifest, *, commit: bool = True) -> Plugin:
     """Create or reuse the global ``Plugin`` row for a validated manifest."""
     existing = db.session.get(Plugin, manifest.id)
     if existing is not None:
@@ -314,7 +560,8 @@ def _register_manifest(manifest: PluginManifest) -> Plugin:
         existing.version = manifest.version
         existing.trust_state = manifest.trust_state
         existing.trust_publisher = manifest.trust_publisher
-        db.session.commit()
+        if commit:
+            db.session.commit()
         return existing
 
     plugin = Plugin(
@@ -333,12 +580,26 @@ def _register_manifest(manifest: PluginManifest) -> Plugin:
         trust_publisher=manifest.trust_publisher,
     )
     db.session.add(plugin)
-    db.session.commit()
+    if commit:
+        db.session.commit()
     return plugin
 
 
-def update_plugin(plugin_id: str, manifest: PluginManifest) -> Plugin:
-    """Apply a validated manifest to an already-registered plugin atomically.
+def update_plugin(
+    plugin_id: str,
+    manifest: PluginManifest | str | None = None,
+    *,
+    version: str | None = None,
+    new_version: str | None = None,
+    workspace_id: int | None = None,
+    config=None,
+) -> Plugin:
+    """Apply a validated manifest, or update to a catalog version atomically.
+
+    The historical form takes a :class:`~app.services.plugins.PluginManifest`.
+    Passing a version string (positionally as ``new_version``) resolves that
+    version from the active catalog and swaps signature-verified metadata and
+    its lock entry in one transaction (#363).
 
     Updates are identity-bound like installs: the manifest id must equal
     ``plugin_id`` and the entry point must not change, so an update can never
@@ -356,6 +617,39 @@ def update_plugin(plugin_id: str, manifest: PluginManifest) -> Plugin:
     per-workspace, and are managed only through the capability endpoints.
     Any failure rolls the transaction back, so the prior version stays active.
     """
+    if isinstance(manifest, str):
+        version, manifest = manifest, None
+    if new_version is not None:
+        version = new_version
+    if manifest is None:
+        if not version:
+            raise PluginUpdateError("A catalog version is required to update a plugin.")
+        try:
+            plugin, entry = atomic_update_from_catalog(
+                plugin_id,
+                version,
+                workspace_id=workspace_id,
+                config=config,
+            )
+        except Exception as exc:
+            _record_marketplace_audit(
+                workspace_id,
+                plugin_id=plugin_id,
+                outcome="denied",
+                reason=f"update refused: {_refusal_reason(exc)}",
+            )
+            _commit_audit()
+            raise
+        _record_marketplace_audit(
+            workspace_id,
+            plugin_id=plugin_id,
+            outcome="success",
+            reason=f"updated to {entry.version}",
+            capability="update",
+        )
+        _commit_audit()
+        return plugin
+
     plugin = get_plugin(plugin_id)
 
     if manifest.id != plugin_id:
@@ -379,6 +673,14 @@ def update_plugin(plugin_id: str, manifest: PluginManifest) -> Plugin:
     except Exception:
         db.session.rollback()
         raise
+    _record_marketplace_audit(
+        workspace_id,
+        plugin_id=plugin_id,
+        outcome="success",
+        reason=f"updated to {manifest.version}",
+        capability="update",
+    )
+    _commit_audit()
     return plugin
 
 
@@ -447,10 +749,18 @@ def _upsert_lock_entry(
             plugin_id=plugin.id,
         )
         db.session.add(row)
+    if row.version is not None and row.version != entry.version:
+        # Retain the current artifact reference so rollback_plugin() can
+        # restore it even if the catalog no longer lists that version.
+        row.previous_version = row.version
+        row.previous_source = row.source
+        row.previous_integrity = row.integrity
+        row.previous_manifest = row.manifest
     row.version = entry.version
     row.source = entry.source
     row.integrity = integrity
-    row.dependencies = list(entry.manifest.get("dependencies") or [])
+    row.dependencies = list(entry.manifest.get("dependencies") or ())
+    row.manifest = dict(entry.manifest)
 
 
 def atomic_update_from_catalog(
@@ -590,6 +900,100 @@ def rollback_from_catalog(
     )
 
 
+def rollback_plugin(
+    plugin_id: str,
+    *,
+    workspace_id: int | None = None,
+    config=None,
+    catalog=None,
+    actor=None,
+) -> tuple[Plugin, CatalogEntry | None]:
+    """Roll a plugin back to the version retained by its lock entry (#363).
+
+    When the workspace lock row carries a previous manifest, that exact version
+    is restored without needing the catalog to still list it. Otherwise the
+    newest older catalog version is used. The swap is atomic and the plugin's
+    capability grants are untouched.
+    """
+    source = config if config is not None else current_app.config
+    get_plugin(plugin_id)
+
+    if workspace_id is not None:
+        row = PluginLockEntry.query.filter_by(
+            workspace_id=workspace_id,
+            plugin_id=plugin_id,
+        ).first()
+        if row is not None and row.previous_version and row.previous_manifest:
+            try:
+                manifest = PluginManifest.from_dict(
+                    row.previous_manifest,
+                    trusted_publishers=source.get("PLUGIN_TRUSTED_KEYS") or {},
+                    trust_policy=VERIFY_IF_PRESENT,
+                )
+            except (ManifestValidationError, PluginError) as exc:
+                raise PluginUpdateError(
+                    f"Retained manifest for plugin {plugin_id} is invalid: {exc}"
+                ) from exc
+            try:
+                left_version = row.version
+                left_source = row.source
+                left_integrity = row.integrity
+                left_manifest = row.manifest
+                plugin = atomic_rollback(
+                    plugin_id,
+                    manifest,
+                    workspace_id=workspace_id,
+                )
+                # Keep the version we just left as the next rollback target.
+                row.version = manifest.version
+                row.source = row.previous_source or row.source
+                row.integrity = row.previous_integrity or row.integrity
+                row.manifest = row.previous_manifest
+                row.previous_version = left_version
+                row.previous_source = left_source
+                row.previous_integrity = left_integrity
+                row.previous_manifest = left_manifest
+                db.session.commit()
+            except Exception:
+                db.session.rollback()
+                _record_marketplace_audit(
+                    workspace_id,
+                    plugin_id=plugin_id,
+                    outcome="denied",
+                    reason="rollback failed",
+                    actor=actor,
+                )
+                _commit_audit()
+                raise
+            _record_marketplace_audit(
+                workspace_id,
+                plugin_id=plugin_id,
+                outcome="success",
+                reason=f"rolled back to {manifest.version}",
+                capability="rollback",
+                actor=actor,
+            )
+            _commit_audit()
+            return plugin, None
+
+    plugin, entry = rollback_from_catalog(
+        plugin_id,
+        workspace_id=workspace_id,
+        config=source,
+        catalog=catalog,
+    )
+    _record_marketplace_audit(
+        workspace_id,
+        plugin_id=plugin_id,
+        outcome="success",
+        reason=f"rolled back to {entry.version}",
+        capability="rollback",
+        actor=actor,
+    )
+    _commit_audit()
+    return plugin, entry
+
+
 class PluginReloadDisabledError(PluginError):
     """Plugin hot reload was requested outside development."""
 
@@ -629,6 +1033,7 @@ def reload_plugin(plugin_id: str, *, config=None) -> Plugin:
 __all__ = [
     "AtomicUpdateError",
     "ManifestValidationError",
+    "MarketplaceInstallRefused",
     "PluginDependencyResolutionError",
     "PluginError",
     "PluginManifest",
@@ -643,10 +1048,12 @@ __all__ = [
     "hot_reload_enabled",
     "install_from_catalog",
     "install_from_local_dir",
+    "install_from_marketplace",
     "list_plugins",
     "reload_plugin",
     "resolve_plugin_dependencies",
     "rollback_from_catalog",
+    "rollback_plugin",
     "set_plugin_enabled",
     "update_plugin",
     "validate_catalog_install",
