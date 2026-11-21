@@ -21,6 +21,7 @@ repository.
 | Navigation | The primary nav was not a labelled landmark. | Fixed | `aria-label="Primary"` on `<nav>` (asserted in `tests/test_accessibility.py`). |
 | Keyboard | No skip link to bypass repeated navigation. | Fixed | `.skip-link` targets `#main-content`; focus styling uses `:focus-visible`. |
 | Dialogs | Workspace and file dialogs lacked modal semantics. | Fixed | `role="dialog"`, `aria-modal="true"`, and `aria-labelledby` are asserted by tests. |
+| Modal focus | The mutation-observer path returned before focusing because the dialog was already visible, so opening a dialog left focus behind it. | Fixed | `a11y.js` now focuses on both direct and observer opens; `tests/js/a11y.test.js` passes. |
 | Focus order | Positive `tabindex` values would reorder focus unpredictably. | Fixed | The audit rejects any `tabindex="1"`-style value. |
 | Contrast | Body text, muted text, and links must stay ≥ 4.5:1 on the dark background. | Verified | `scripts/accessibility_audit.py` computes the ratios from theme tokens. |
 | RTL | Arabic pages need mirrored layout and left-to-right code blocks. | Fixed | `rtl.css` uses logical properties and keeps code LTR. |
