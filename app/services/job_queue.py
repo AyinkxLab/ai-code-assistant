@@ -37,7 +37,7 @@ import requests
 from flask import current_app
 
 from app.extensions import db
-from app.models import Job, Project, ProjectFile
+from app.models import Job, Project, ProjectFile, WebhookSubscription
 from app.models.job import (
     STATUS_FAILED,
     STATUS_QUEUED,
@@ -45,6 +45,7 @@ from app.models.job import (
     STATUS_SUCCEEDED,
 )
 from app.observability.metrics import JOBS_QUEUE_DEPTH, WEBHOOK_DELIVERIES
+from app.services import webhook_signing
 
 logger = logging.getLogger(__name__)
 
@@ -304,18 +305,51 @@ def validate_webhook_url(url: str) -> str:
 
 @register_handler("webhook.deliver")
 def deliver_webhook(payload: dict) -> dict:
-    """POST ``payload`` to a validated webhook URL without following redirects."""
+    """POST ``payload`` to a validated webhook URL without following redirects.
+
+    When ``payload["secret"]`` is present the exact request body is signed with
+    HMAC-SHA256 and a timestamp, and the signature headers are attached so the
+    receiver can verify authenticity and reject replays.
+    """
     try:
         url = validate_webhook_url(payload.get("url"))
         body = payload.get("payload")
         if not isinstance(body, dict):
             raise JobQueueError("webhook payload must be a JSON object")
-        response = requests.post(
-            url,
-            json=body,
-            timeout=float(_config("JOB_QUEUE_WEBHOOK_TIMEOUT", 10)),
-            allow_redirects=False,
-        )
+        timeout = float(_config("JOB_QUEUE_WEBHOOK_TIMEOUT", 10))
+        secret = payload.get("secret")
+        subscription_id = payload.get("subscription_id")
+        if secret is None and subscription_id is not None:
+            try:
+                subscription = db.session.get(WebhookSubscription, int(subscription_id))
+            except (TypeError, ValueError) as exc:
+                raise JobQueueError("webhook subscription_id must be an integer") from exc
+            if subscription is None or not subscription.is_active:
+                raise JobQueueError("webhook subscription is missing or inactive")
+            event_type = payload.get("event")
+            if isinstance(event_type, str) and not subscription.matches(event_type):
+                raise JobQueueError("webhook subscription does not match the event")
+            secret = subscription.signing_secret()
+        if secret is None:
+            response = requests.post(
+                url,
+                json=body,
+                timeout=timeout,
+                allow_redirects=False,
+            )
+        else:
+            raw = json.dumps(body, separators=(",", ":"), sort_keys=True).encode("utf-8")
+            headers = {
+                "Content-Type": "application/json",
+                **webhook_signing.signature_headers(secret, raw),
+            }
+            response = requests.post(
+                url,
+                data=raw,
+                headers=headers,
+                timeout=timeout,
+                allow_redirects=False,
+            )
         if response.status_code >= 400:
             raise RuntimeError(f"webhook returned HTTP {response.status_code}")
     except Exception:

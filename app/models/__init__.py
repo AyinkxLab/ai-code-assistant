@@ -41,7 +41,11 @@ from app.models.review_finding import ReviewFinding
 from app.models.stellar_security_finding import StellarSecurityFinding
 from app.models.usage_record import UsageRecord
 from app.models.user import User
-from app.models.webhook import WebhookDelivery, WebhookSubscription
+from app.models.webhook import (
+    WebhookDelivery,
+    WebhookSubscription,
+    WebhookSubscriptionEvent,
+)
 from app.models.workspace import Workspace
 from app.models.workspace_budget_override import WorkspaceBudgetOverride
 from app.models.workspace_member import WorkspaceMember
@@ -91,6 +95,7 @@ __all__ = [
     "User",
     "WebhookDelivery",
     "WebhookSubscription",
+    "WebhookSubscriptionEvent",
     "Workspace",
     "WorkspaceBudgetOverride",
     "WorkspaceInvitation",
