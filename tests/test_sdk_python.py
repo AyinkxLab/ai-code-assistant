@@ -324,3 +324,54 @@ def test_rejects_invalid_base_url_and_resource_id() -> None:
         Client("not-a-url")
     with pytest.raises(errors.ValidationError):
         Client("https://api.example.com").get_project(0)
+
+
+def test_pagination_iterators_are_lazy_and_follow_cursors() -> None:
+    responses = [
+        {
+            "status": 200,
+            "body": {"items": [{"id": 1, "name": "A"}], "next_cursor": "c2"},
+        },
+        {
+            "status": 200,
+            "body": {"items": [{"id": 2, "name": "B"}], "total": 2},
+        },
+    ]
+    with MockServer(responses) as server:
+        client = make_client(server)
+        iterator = client.iter_pages("/api/projects", per_page=1)
+        first = next(iterator)
+        assert first.page == 1
+        assert first.next_cursor == "c2"
+        assert len(server.calls) == 1, "pages are fetched lazily"
+        second = next(iterator)
+        assert second.page == 2
+        assert "cursor=c2" in server.calls[1]["path"]
+        assert [page.page for page in iterator] == []
+
+
+def test_pagination_handles_empty_pages_and_max_pages() -> None:
+    with MockServer([{"status": 200, "body": {"items": [], "total": 0}}]) as server:
+        assert list(make_client(server).iter_projects(per_page=1)) == []
+
+    responses = [
+        {"status": 200, "body": {"items": [{"id": index, "name": f"P{index}"}], "total": 100}}
+        for index in range(3)
+    ]
+    with MockServer(responses) as server:
+        names = [
+            project.name for project in make_client(server).iter_projects(per_page=1, max_pages=3)
+        ]
+        assert names == ["P0", "P1", "P2"]
+        assert len(server.calls) == 3
+
+
+def test_pagination_rejects_invalid_parameters_and_cursor_errors() -> None:
+    with MockServer([{"status": 400, "body": {"error": "bad cursor"}}]) as server:
+        client = make_client(server)
+        with pytest.raises(errors.ValidationError):
+            next(client.iter_pages("/api/projects", per_page=0))
+        with pytest.raises(errors.ValidationError):
+            next(client.iter_pages("/api/projects", max_pages=0))
+        with pytest.raises(errors.SDKError):
+            next(client.iter_pages("/api/projects", params={"cursor": "bad"}))

@@ -63,6 +63,7 @@ class WebhookSubscription(db.Model):
         return {
             "id": self.id,
             "workspace_id": self.workspace_id,
+            "url": self.url,
             "event_type": self.event_type,
             "is_active": bool(self.is_active),
             "created_at": self.created_at.isoformat() if self.created_at else None,
@@ -130,3 +131,58 @@ class WebhookDelivery(db.Model):
 
     def __repr__(self) -> str:  # pragma: no cover - debugging aid
         return f"<WebhookDelivery id={self.id} status={self.status!r}>"
+
+
+class WebhookDeadLetter(db.Model):
+    """A permanently failed delivery retained for owner-driven replay (#671)."""
+
+    __tablename__ = "webhook_dead_letters"
+    __table_args__ = (
+        db.Index(
+            "ix_webhook_dead_letters_subscription_created",
+            "subscription_id",
+            "created_at",
+        ),
+    )
+
+    id = db.Column(db.Integer, primary_key=True)
+    subscription_id = db.Column(
+        db.Integer,
+        db.ForeignKey("webhook_subscriptions.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    event_type = db.Column(db.String(100), nullable=False)
+    #: Serialized JSON payload needed to replay the delivery.
+    payload = db.Column(db.Text, nullable=False)
+    attempts = db.Column(db.Integer, nullable=False, default=1)
+    response_code = db.Column(db.Integer, nullable=True)
+    error = db.Column(db.String(500), nullable=True)
+    expires_at = db.Column(db.DateTime(timezone=True), nullable=False, index=True)
+    replayed_at = db.Column(db.DateTime(timezone=True), nullable=True)
+    replayed_by_id = db.Column(
+        db.Integer, db.ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    created_at = db.Column(
+        db.DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC)
+    )
+
+    subscription = db.relationship("WebhookSubscription")
+
+    def to_dict(self) -> dict:
+        """Serialize metadata; the payload is replayed but never listed."""
+        return {
+            "id": self.id,
+            "subscription_id": self.subscription_id,
+            "event_type": self.event_type,
+            "attempts": self.attempts,
+            "response_code": self.response_code,
+            "error": self.error,
+            "expires_at": self.expires_at.isoformat() if self.expires_at else None,
+            "replayed_at": self.replayed_at.isoformat() if self.replayed_at else None,
+            "replayed_by_id": self.replayed_by_id,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+        }
+
+    def __repr__(self) -> str:  # pragma: no cover - debugging aid
+        return f"<WebhookDeadLetter id={self.id} event_type={self.event_type!r}>"

@@ -13,6 +13,7 @@ from app.models.conversation import Conversation
 from app.models.conversation_share import ConversationShare
 from app.models.file_analysis import FileAnalysis
 from app.models.github_account import GithubAccount
+from app.models.gitlab_account import GitlabAccount
 from app.models.integration_credential import IntegrationCredential
 from app.models.invitation import WorkspaceInvitation
 from app.models.job import Job
@@ -40,7 +41,7 @@ from app.models.review_finding import ReviewFinding
 from app.models.stellar_security_finding import StellarSecurityFinding
 from app.models.usage_record import UsageRecord
 from app.models.user import User
-from app.models.webhook import WebhookDelivery, WebhookSubscription
+from app.models.webhook import WebhookDeadLetter, WebhookDelivery, WebhookSubscription
 from app.models.workspace import Workspace
 from app.models.workspace_budget_override import WorkspaceBudgetOverride
 from app.models.workspace_member import WorkspaceMember
@@ -58,6 +59,7 @@ __all__ = [
     "ConversationShare",
     "FileAnalysis",
     "GithubAccount",
+    "GitlabAccount",
     "IntegrationCredential",
     "Job",
     "Message",
@@ -87,6 +89,7 @@ __all__ = [
     "StellarSecurityFinding",
     "UsageRecord",
     "User",
+    "WebhookDeadLetter",
     "WebhookDelivery",
     "WebhookSubscription",
     "Workspace",

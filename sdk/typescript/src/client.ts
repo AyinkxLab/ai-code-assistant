@@ -68,6 +68,26 @@ export interface ListQuery {
   per_page?: number;
 }
 
+/** One page of a paginated list response. */
+export interface Page<T> {
+  items: T[];
+  page: number;
+  perPage: number;
+  total: number | null;
+  totalPages: number | null;
+  nextCursor: string | null;
+}
+
+/** Options for the pagination iterators. */
+export interface PageOptions extends ListQuery {
+  /** Stop after this many pages. */
+  maxPages?: number;
+  /** Initial opaque cursor. */
+  cursor?: string;
+  /** Additional query parameters. */
+  params?: Record<string, QueryValue>;
+}
+
 function defaultSleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -282,6 +302,79 @@ export class Client {
       query: { project_id: query.project_id },
     });
     return parseUsage(response.data);
+  }
+
+  // -- Pagination helpers ----------------------------------------------------
+
+  async *iteratePages<T = unknown>(
+    path: string,
+    options: PageOptions = {},
+  ): AsyncGenerator<Page<T>> {
+    const perPage = options.per_page ?? 20;
+    if (!Number.isInteger(perPage) || perPage < 1 || perPage > 100) {
+      throw new ValidationError("per_page must be an integer between 1 and 100");
+    }
+    const maxPages = options.maxPages;
+    if (maxPages !== undefined && (!Number.isInteger(maxPages) || maxPages < 1)) {
+      throw new ValidationError("maxPages must be a positive integer");
+    }
+
+    let page = options.page ?? 1;
+    let cursor = options.cursor;
+    let pagesSeen = 0;
+    while (true) {
+      const query: Record<string, QueryValue> = {
+        ...(options.params ?? {}),
+        page,
+        per_page: perPage,
+      };
+      if (cursor) query.cursor = cursor;
+      const response = await this.get(path, { query });
+      const data = response.data;
+      const rawItems = items(data);
+      const record = isRecord(data) ? data : {};
+      const total = typeof record.total === "number" ? record.total : null;
+      const totalPages = typeof record.total_pages === "number" ? record.total_pages : null;
+      const nextCursor = typeof record.next_cursor === "string" ? record.next_cursor : null;
+      yield {
+        items: rawItems as T[],
+        page,
+        perPage,
+        total,
+        totalPages,
+        nextCursor,
+      };
+      pagesSeen += 1;
+      if (maxPages !== undefined && pagesSeen >= maxPages) return;
+      if (total !== null && page * perPage >= total) return;
+      if (totalPages !== null && page >= totalPages) return;
+      if (rawItems.length === 0 || rawItems.length < perPage) return;
+      if (nextCursor) cursor = nextCursor;
+      page += 1;
+    }
+  }
+
+  async *iterateProjects(options: PageOptions = {}): AsyncGenerator<Project> {
+    for await (const page of this.iteratePages<unknown>("/api/projects", options)) {
+      for (const item of page.items) {
+        yield parseProject(item);
+      }
+    }
+  }
+
+  async *iterateReviews(
+    options: PageOptions & { project_id?: number } = {},
+  ): AsyncGenerator<Review> {
+    const params =
+      options.project_id !== undefined ? { project_id: options.project_id } : undefined;
+    for await (const page of this.iteratePages<unknown>("/api/reviews", {
+      ...options,
+      params,
+    })) {
+      for (const item of page.items) {
+        yield parseReview(item);
+      }
+    }
   }
 
   private buildUrl(path: string, query?: Record<string, QueryValue>): string {
