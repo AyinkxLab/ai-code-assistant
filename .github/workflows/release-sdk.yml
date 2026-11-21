@@ -1,0 +1,90 @@
+name: Release SDK
+
+# Publishing is tag-driven and never runs for pull requests, so fork code can
+# never reach the publish credentials. The tag must be ``sdk-vX.Y.Z`` and match
+# the versions in the SDK manifests.
+on:
+  push:
+    tags:
+      - "sdk-v*"
+
+# Least privilege: the job only reads the repository. Publication uses
+# repository secrets for the package registries, not the GitHub token.
+permissions:
+  contents: read
+
+concurrency:
+  group: release-sdk-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Test, build, and publish SDKs
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+
+      - name: Set up Node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: "20"
+
+      - name: Verify the tag matches the SDK version
+        run: |
+          python - <<'PY'
+          import os
+          import pathlib
+          import tomllib
+
+          manifest = tomllib.loads(
+              pathlib.Path("sdk/python/pyproject.toml").read_text(encoding="utf-8")
+          )
+          version = manifest["project"]["version"]
+          expected = f"sdk-v{version}"
+          tag = os.environ["GITHUB_REF_NAME"]
+          if tag != expected:
+              raise SystemExit(f"tag {tag!r} does not match {expected!r}")
+          print(f"Releasing SDK {version}")
+          PY
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-dev.txt
+          pip install build twine
+
+      - name: Test the Python SDK and quickstart
+        run: pytest tests/test_sdk_python.py tests/test_sdk_quickstart.py -q
+
+      - name: Build the Python SDK
+        run: python -m build sdk/python
+
+      - name: Build and typecheck the TypeScript SDK
+        run: |
+          npm --prefix sdk/typescript install --no-audit --no-fund
+          npm --prefix sdk/typescript run build
+          npm --prefix sdk/typescript run typecheck
+
+      - name: Publish to PyPI
+        env:
+          TWINE_USERNAME: __token__
+          TWINE_PASSWORD: ${{ secrets.PYPI_API_TOKEN }}
+        run: python -m twine upload --non-interactive sdk/python/dist/*
+
+      - name: Publish to npm
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          echo "//registry.npmjs.org/:_authToken=${NODE_AUTH_TOKEN}" > ~/.npmrc
+          npm --prefix sdk/typescript publish --access public

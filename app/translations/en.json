@@ -12,6 +12,7 @@
   "nav.plugins": "Plugins",
   "nav.stellar": "Stellar",
   "nav.reviews": "Reviews",
+  "nav.webhooks": "Webhooks",
   "nav.notifications": "Notifications",
   "nav.account": "Account",
   "nav.logout": "Log out",
