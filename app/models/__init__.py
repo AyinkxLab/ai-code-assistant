@@ -11,10 +11,12 @@ from app.models.audit_log import AuditLog
 from app.models.budget import Budget
 from app.models.conversation import Conversation
 from app.models.conversation_share import ConversationShare
+from app.models.email_suppression import EmailSuppression
 from app.models.file_analysis import FileAnalysis
 from app.models.github_account import GithubAccount
 from app.models.gitlab_account import GitlabAccount
 from app.models.integration_credential import IntegrationCredential
+from app.models.integration_health import IntegrationHealth
 from app.models.invitation import WorkspaceInvitation
 from app.models.job import Job
 from app.models.message import Message
@@ -63,10 +65,12 @@ __all__ = [
     "CapabilityGrant",
     "Conversation",
     "ConversationShare",
+    "EmailSuppression",
     "FileAnalysis",
     "GithubAccount",
     "GitlabAccount",
     "IntegrationCredential",
+    "IntegrationHealth",
     "Job",
     "Message",
     "MessageAttachment",

@@ -23,11 +23,27 @@ def _smtp_configured() -> bool:
     return bool(current_app.config.get("SMT_HOST") and current_app.config.get("SMT_PORT"))
 
 
-def send_email(to: str, subject: str, text_body: str, html_body: str | None = None) -> bool:
+def _header_value(value: str) -> str:
+    """Strip CR/LF so a caller-supplied header can never inject extra lines."""
+    return " ".join(str(value or "").splitlines()).strip()
+
+
+def send_email(
+    to: str,
+    subject: str,
+    text_body: str,
+    html_body: str | None = None,
+    *,
+    reply_to: str | None = None,
+    headers: dict | None = None,
+) -> bool:
     """Send an email; return ``True`` on success and ``False`` otherwise.
 
     Never raises: mail failures are logged and swallowed so requests always
-    succeed even when the mail server is down.
+    succeed even when the mail server is down. ``reply_to`` and ``headers`` are
+    optional and used by the notification-email integration (reply routing and
+    ``List-Unsubscribe``). Header values are stripped of CR/LF to prevent
+    header injection.
     """
     sender = current_app.config.get("MAIL_DEFAULT_SENDER") or "noreply@localhost"
     if not _smtp_configured():
@@ -35,9 +51,15 @@ def send_email(to: str, subject: str, text_body: str, html_body: str | None = No
         return False
 
     message = MIMEMultipart("alternative")
-    message["Subject"] = subject
-    message["From"] = sender
-    message["To"] = to
+    message["Subject"] = _header_value(subject)
+    message["From"] = _header_value(sender)
+    message["To"] = _header_value(to)
+    if reply_to:
+        message["Reply-To"] = _header_value(reply_to)
+    for name, value in (headers or {}).items():
+        header = _header_value(name)
+        if header and value:
+            message[header] = _header_value(value)
     message.attach(MIMEText(text_body, "plain", "utf-8"))
     if html_body:
         message.attach(MIMEText(html_body, "html", "utf-8"))
