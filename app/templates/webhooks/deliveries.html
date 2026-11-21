@@ -1,0 +1,83 @@
+{% extends "base.html" %}
+
+{% block title %}Webhook deliveries - {{ config.APP_NAME }}{% endblock %}
+
+{% block content %}
+<div class="github-header">
+  <div>
+    <h1>Delivery attempts</h1>
+    <p class="repo-meta">
+      Subscription #{{ subscription.id }} &middot; event <code>{{ subscription.event_type }}</code>.
+      Response bodies and secrets are never shown.
+    </p>
+  </div>
+  <a class="btn" href="{{ url_for('webhooks.index') }}">All webhooks</a>
+</div>
+
+<form class="finding-filters" method="GET"
+      action="{{ url_for('webhooks.deliveries_page', subscription_id=subscription.id) }}"
+      role="group" aria-label="Filter delivery attempts">
+  <label class="filter-field" for="delivery-status">Status
+    <select id="delivery-status" name="status" class="prompt-filter">
+      <option value="">All statuses</option>
+      <option value="success" {% if request.args.get('status') == 'success' %}selected{% endif %}>Success</option>
+      <option value="failure" {% if request.args.get('status') == 'failure' %}selected{% endif %}>Failure</option>
+    </select>
+  </label>
+  <label class="filter-field" for="delivery-start">From
+    <input id="delivery-start" name="start" type="date" value="{{ request.args.get('start', '') }}">
+  </label>
+  <label class="filter-field" for="delivery-end">To
+    <input id="delivery-end" name="end" type="date" value="{{ request.args.get('end', '') }}">
+  </label>
+  <button class="btn btn-primary" type="submit">Apply filters</button>
+</form>
+
+{% if error %}
+<div class="flash flash-error" role="alert">{{ error }}</div>
+{% endif %}
+
+{% if result %}
+  {% if result["items"] %}
+  <table class="table">
+    <caption>Delivery attempts ({{ result.total }} total)</caption>
+    <thead>
+      <tr>
+        <th scope="col">Time</th>
+        <th scope="col">Event</th>
+        <th scope="col">Attempt</th>
+        <th scope="col">Status</th>
+        <th scope="col">Response</th>
+        <th scope="col">Latency (ms)</th>
+        <th scope="col">Error</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for delivery in result["items"] %}
+      <tr>
+        <td>{{ delivery.created_at }}</td>
+        <td>{{ delivery.event_type }}</td>
+        <td>{{ delivery.attempt }}</td>
+        <td>{{ delivery.status }}</td>
+        <td>{{ delivery.response_code if delivery.response_code is not none else "-" }}</td>
+        <td>{{ delivery.latency_ms if delivery.latency_ms is not none else "-" }}</td>
+        <td>{{ delivery.error if delivery.error else "-" }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  <nav class="pager" aria-label="Delivery pages">
+    {% if result.has_prev %}
+    <a class="btn" href="{{ url_for('webhooks.deliveries_page', subscription_id=subscription.id) }}?page={{ result.page - 1 }}{{ filter_query }}">Previous</a>
+    {% endif %}
+    <span>Page {{ result.page }} of {{ result.total_pages }}</span>
+    {% if result.has_next %}
+    <a class="btn" href="{{ url_for('webhooks.deliveries_page', subscription_id=subscription.id) }}?page={{ result.page + 1 }}{{ filter_query }}">Next</a>
+    {% endif %}
+  </nav>
+  {% else %}
+  <p class="sidebar-empty">No delivery attempts match these filters.</p>
+  {% endif %}
+{% endif %}
+{% endblock %}

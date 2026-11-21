@@ -51,14 +51,37 @@ Both clients send `Authorization: Bearer <token>` when a token is configured.
 The timeout is configurable per attempt (`timeout` seconds in Python,
 `timeoutMs` in TypeScript).
 
+## Quickstart examples
+
+Runnable examples live next to each SDK and work against a bundled mock API:
+
+- Python: [`sdk/python/examples/quickstart.py`](../sdk/python/examples/quickstart.py),
+  with a local server in
+  [`sdk/python/examples/mock_server.py`](../sdk/python/examples/mock_server.py).
+- TypeScript: [`sdk/typescript/examples/quickstart.ts`](../sdk/typescript/examples/quickstart.ts).
+
+They demonstrate authentication, listing projects with pagination, structured
+errors, and webhook delivery logs. Start the mock server, then run an example:
+
+```bash
+python sdk/python/examples/mock_server.py
+npx tsx sdk/typescript/examples/quickstart.ts
+```
+
 ## Running the tests
 
 ```bash
 # Python
-pytest tests/test_sdk_python.py
+pytest tests/test_sdk_python.py tests/test_sdk_quickstart.py
 
 # TypeScript (from the repository root; uses the existing Vitest setup)
 npm test
 ```
 
 Both suites start a local mock HTTP server, so they do not touch the network.
+
+## Releasing
+
+The SDKs are published from an `sdk-vX.Y.Z` tag by the `Release SDK` workflow.
+Credentials, the version-bump checklist, verification, and rollback are
+documented in [`sdk-release.md`](sdk-release.md).
