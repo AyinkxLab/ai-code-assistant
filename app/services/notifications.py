@@ -95,18 +95,18 @@ def _send_email_alert(
         return
 
     try:
-        from app.services.email import is_email_configured, send_email
+        from app.services.email import _smtp_configured, send_email
     except ImportError:  # pragma: no cover - email service optional
         return
 
-    if not is_email_configured():
+    if not _smtp_configured():
         return
 
     subject = _email_subject(notification_type, payload)
     body = _email_body(notification_type, payload=payload, link=link)
 
     try:
-        send_email(to=email, subject=subject, body=body)
+        send_email(to=email, subject=subject, text_body=body)
     except Exception:  # no-qa: email is best-effort only
         return
 

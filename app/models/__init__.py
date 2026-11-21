@@ -19,6 +19,7 @@ from app.models.job import Job
 from app.models.message import Message
 from app.models.message_attachment import MessageAttachment
 from app.models.notification import Notification
+from app.models.notification_channel import NotificationChannelPreference
 from app.models.notification_preference import NotificationPreference
 from app.models.plugin import CapabilityGrant, Plugin, PluginInstallation, PluginLockEntry
 from app.models.plugin_collection import PluginCollection
@@ -63,6 +64,7 @@ __all__ = [
     "Message",
     "MessageAttachment",
     "Notification",
+    "NotificationChannelPreference",
     "NotificationPreference",
     "Plugin",
     "PluginCollection",

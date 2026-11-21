@@ -69,6 +69,41 @@ jobs:
       - name: Black format check
         run: black --check .
 
+  accessibility:
+    name: Accessibility audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: |
+            requirements.txt
+            requirements-dev.txt
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-dev.txt
+
+      - name: Static accessibility audit
+        run: python scripts/accessibility_audit.py
+
+      - name: Extraction and accessibility tests
+        run: |
+          python scripts/extract_i18n_strings.py
+          pytest tests/test_accessibility.py tests/test_accessibility_audit.py \
+            tests/test_i18n.py tests/test_notification_channels.py -q
+
   perf-budgets:
     name: Performance budgets (advisory)
     runs-on: ubuntu-latest

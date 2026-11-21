@@ -48,11 +48,13 @@
   }
 
   function openDialog(dialog) {
-    if (!dialog || !dialog.hidden) return;
+    if (!dialog) return;
     if (lastTrigger && !dialog.contains(lastTrigger)) {
       dialog.__aicaTrigger = lastTrigger;
     }
-    dialog.hidden = false;
+    // The mutation observer calls this after the feature script has already
+    // cleared `hidden`; direct callers call it before. Both must focus.
+    if (dialog.hidden) dialog.hidden = false;
     var items = focusableElements(dialog);
     var target = items.length ? items[0] : dialog;
     if (target === dialog) dialog.setAttribute("tabindex", "-1");

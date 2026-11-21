@@ -109,8 +109,11 @@ def create_app(config_name: str | None = None) -> Flask:
     from app.chat.api import bp as chat_api_bp
     from app.collaboration import bp as collaboration_bp
     from app.github import bp as github_bp
+    from app.i18n import bp as i18n_bp
+    from app.i18n import init_i18n
     from app.keys import bp as keys_bp
     from app.main import bp as main_bp
+    from app.notification_settings import bp as notification_settings_bp
     from app.plugins import bp as plugins_bp
     from app.prompts import bp as prompts_bp
     from app.reviews import bp as reviews_bp
@@ -119,6 +122,8 @@ def create_app(config_name: str | None = None) -> Flask:
     from app.webhooks import bp as webhooks_bp
     from app.workspaces import bp as workspaces_bp
 
+    init_i18n(app)
+    app.register_blueprint(i18n_bp)
     app.register_blueprint(auth_bp)
     app.register_blueprint(main_bp)
     app.register_blueprint(chat_bp)
@@ -133,6 +138,7 @@ def create_app(config_name: str | None = None) -> Flask:
     app.register_blueprint(reviews_bp)
     app.register_blueprint(stellar_bp)
     app.register_blueprint(billing_bp)
+    app.register_blueprint(notification_settings_bp)
     app.register_blueprint(webhooks_bp)
     app.register_blueprint(admin_bp)
 
