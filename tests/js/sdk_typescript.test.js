@@ -14,10 +14,13 @@ import {
   RateLimitError,
   ServerError,
   ValidationError,
+  computeSignature,
   errorFromResponse,
+  extractSignature,
   parseProject,
   parseReview,
   parseUsage,
+  verifySignature,
 } from "../../sdk/typescript/src/index.ts";
 
 const FIXTURE = JSON.parse(
@@ -391,5 +394,40 @@ describe("TypeScript SDK client", () => {
         }
       })(),
     ).rejects.toBeInstanceOf(ValidationError);
+  });
+});
+
+describe("webhook signatures (#663)", () => {
+  const secret = "whsec_known_answer";
+  const body = '{"event":"ping"}';
+  const timestamp = 1700000000;
+  const expected =
+    "v1=ea1980a87d2594bdf099acaf428e26cd5bb851648cde873453733621f66b1d5e";
+
+  it("matches the shared known-answer vector", async () => {
+    expect(await computeSignature(secret, body, timestamp)).toBe(expected);
+  });
+
+  it("verifies fresh signatures and rejects tampering and replays", async () => {
+    const signature = await computeSignature(secret, body, timestamp);
+    await expect(
+      verifySignature({ secret, body, signature, timestamp, now: timestamp }),
+    ).resolves.toBe(true);
+    await expect(
+      verifySignature({ secret, body, signature, timestamp, now: timestamp + 301 }),
+    ).resolves.toBe(false);
+    await expect(
+      verifySignature({ secret, body: "tampered", signature, timestamp, now: timestamp }),
+    ).resolves.toBe(false);
+  });
+
+  it("extracts signature headers case-insensitively", () => {
+    expect(
+      extractSignature({
+        "x-aica-signature": "v1=abc",
+        "X-AICA-TIMESTAMP": "1700000000",
+      }),
+    ).toEqual({ signature: "v1=abc", timestamp: 1700000000 });
+    expect(extractSignature({})).toEqual({});
   });
 });

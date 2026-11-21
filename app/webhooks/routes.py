@@ -152,21 +152,29 @@ def api_subscriptions(workspace_id: int):
         return jsonify({"subscriptions": [row.to_dict() for row in subscriptions]})
 
     data = request.get_json(silent=True) or {}
+    events = data.get("events")
     try:
         url = _validate_webhook_url(data.get("url"))
         event_type = _event_type(data.get("event_type"))
         secret = str(data.get("secret") or "").strip() or secrets.token_urlsafe(32)
         if len(secret) > 255:
             raise ValueError("secret must be 255 characters or fewer")
+        if events is not None and (not isinstance(events, list) or not events):
+            raise ValueError("events must be a non-empty list")
     except ValueError as exc:
         return jsonify({"error": str(exc), "code": "invalid_webhook_config"}), 400
     subscription = WebhookSubscription(
         workspace_id=workspace_id,
         url=url,
         event_type=event_type,
-        secret=secret,
         is_active=bool(data.get("is_active", True)),
     )
+    subscription.set_secret(secret)
+    if events is not None:
+        try:
+            subscription.set_events(events)
+        except ValueError as exc:
+            return jsonify({"error": str(exc), "code": "invalid_webhook_config"}), 400
     db.session.add(subscription)
     db.session.commit()
     payload = subscription.to_dict()
@@ -191,8 +199,16 @@ def api_subscription(workspace_id: int, subscription_id: int):
     try:
         if "url" in data:
             subscription.url = _validate_webhook_url(data.get("url"))
-        if "event_type" in data:
+        if "events" in data:
+            subscription.set_events(data.get("events"))
+        elif "event_type" in data:
             subscription.event_type = _event_type(data.get("event_type"))
+            subscription.set_events([subscription.event_type])
+        if "secret" in data:
+            secret = str(data.get("secret") or "").strip()
+            if not secret or len(secret) > 255:
+                raise ValueError("secret must be 1-255 characters")
+            subscription.set_secret(secret)
         if "is_active" in data:
             subscription.is_active = bool(data["is_active"])
     except ValueError as exc:

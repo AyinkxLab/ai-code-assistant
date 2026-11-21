@@ -326,6 +326,55 @@ def test_rejects_invalid_base_url_and_resource_id() -> None:
         Client("https://api.example.com").get_project(0)
 
 
+# -- Webhook signature helpers (#663) -----------------------------------------
+
+
+def test_webhook_known_answer_vector():
+    from ai_code_assistant import webhooks
+
+    body = b'{"event":"ping"}'
+    timestamp = 1_700_000_000
+    expected = "v1=ea1980a87d2594bdf099acaf428e26cd5bb851648cde873453733621f66b1d5e"
+    assert webhooks.compute_signature("whsec_known_answer", body, timestamp) == expected
+    assert webhooks.signed_content(timestamp, body) == b'1700000000.{"event":"ping"}'
+
+
+def test_webhook_verify_rejects_tampering_and_replays():
+    from ai_code_assistant import webhooks
+
+    body = b'{"event":"ping"}'
+    timestamp = 1_700_000_000
+    signature = webhooks.compute_signature("whsec_known_answer", body, timestamp)
+    assert webhooks.verify_signature(
+        "whsec_known_answer", body, signature, timestamp, now=timestamp
+    )
+    assert not webhooks.verify_signature(
+        "whsec_known_answer", body, signature, timestamp, now=timestamp + 301
+    )
+    assert not webhooks.verify_signature(
+        "whsec_known_answer", b"tampered", signature, timestamp, now=timestamp
+    )
+
+
+def test_webhook_helpers_raise_validation_errors():
+    from ai_code_assistant import errors, webhooks
+
+    with pytest.raises(errors.ValidationError):
+        webhooks.compute_signature("", b"body", 1)
+    with pytest.raises(errors.ValidationError):
+        webhooks.compute_signature("secret", 123, 1)  # type: ignore[arg-type]
+    with pytest.raises(errors.ValidationError):
+        webhooks.verify_signature("secret", b"body", "v1=x", -1)
+
+
+def test_webhook_extract_signature_is_case_insensitive():
+    from ai_code_assistant import webhooks
+
+    headers = {"x-aica-signature": "v1=abc", "X-AICA-TIMESTAMP": "1700000000"}
+    assert webhooks.extract_signature(headers) == ("v1=abc", 1_700_000_000)
+    assert webhooks.extract_signature({}) == (None, None)
+
+
 def test_pagination_iterators_are_lazy_and_follow_cursors() -> None:
     responses = [
         {

@@ -45,6 +45,20 @@ for review in client.list_reviews(project_id=project.id):
 The error mapping is shared with the TypeScript SDK through
 [`sdk/fixtures/error-mapping.json`](../fixtures/error-mapping.json).
 
+## Webhook verification
+
+```python
+from ai_code_assistant import verify_signature
+
+signature = request.headers["X-AICA-Signature"]
+timestamp = int(request.headers["X-AICA-Timestamp"])
+if not verify_signature(secret, request.get_data(), signature, timestamp):
+    raise ValueError("invalid webhook signature")
+```
+
+The signature covers `<timestamp>.<raw body>`; verify the raw bytes before
+parsing. Timestamps outside the 300-second tolerance are rejected.
+
 ## Tests
 
 The SDK is covered by `tests/test_sdk_python.py` in the repository root, which

@@ -1,4 +1,4 @@
-# SDKs (Phase 12)
+﻿# SDKs (Phase 12)
 
 Typed client libraries for the AI Code Assistant public API. Both SDKs share a
 single error-mapping contract so the same server failure produces the same
@@ -8,6 +8,42 @@ typed error in every language.
 | --- | ------ | ----- |
 | Python | [`sdk/python`](../sdk/python/README.md) | `tests/test_sdk_python.py` |
 | TypeScript | [`sdk/typescript`](../sdk/typescript/README.md) | `tests/js/sdk_typescript.test.js` |
+| Rust | [`sdk/rust`](../sdk/rust/README.md) | `cargo test` in `sdk/rust` |
+
+## Webhook signatures
+
+Every SDK ships the same webhook verification helpers (issue #663). The signed
+string is exactly:
+
+    <timestamp>.<raw body bytes>
+
+The timestamp is Unix seconds. The signature header is
+`X-AICA-Signature: v1=<lowercase hex HMAC-SHA256>` and `X-AICA-Timestamp` carries
+the timestamp. Verification is constant time and rejects timestamps outside a
+300-second tolerance window (configurable) to prevent replays.
+
+```python
+from ai_code_assistant import verify_signature
+
+if not verify_signature(secret, raw_body, signature, timestamp):
+    raise ValueError("invalid webhook")
+```
+
+```ts
+import { verifySignature } from "@ai-code-assistant/sdk";
+
+const valid = await verifySignature({ secret, body: rawBody, signature, timestamp });
+```
+
+```rust
+let valid = ai_code_assistant_sdk::verify_signature(
+    secret, raw_body, signature, timestamp, 300, now,
+)?;
+```
+
+Verify the raw bytes before JSON parsing or re-encoding. The shared known-answer
+vector (`whsec_known_answer`, `1700000000`, `{"event":"ping"}`) is asserted by
+all three suites. See [Webhooks](webhooks.md) for the subscription model.
 
 ## Shared error contract
 
@@ -99,6 +135,7 @@ for await (const page of client.iteratePages("/api/reviews", { per_page: 20 })) 
   before any request is made. A server-rejected cursor surfaces as a typed SDK
   error.
 
+
 ## Running the tests
 
 ```bash
@@ -107,13 +144,18 @@ pytest tests/test_sdk_python.py tests/test_sdk_quickstart.py
 
 # TypeScript (from the repository root; uses the existing Vitest setup)
 npm test
-# includes tests/js/sdk_typescript.test.js (pagination, retries, errors)
+
+# Rust
+cd sdk/rust
+cargo test
 ```
 
-Both suites start a local mock HTTP server, so they do not touch the network.
+Both HTTP suites start a local mock HTTP server, so they do not touch the
+network. The Rust tests use a loopback test server.
 
 ## Releasing
 
 The SDKs are published from an `sdk-vX.Y.Z` tag by the `Release SDK` workflow.
 Credentials, the version-bump checklist, verification, and rollback are
 documented in [`sdk-release.md`](sdk-release.md).
+

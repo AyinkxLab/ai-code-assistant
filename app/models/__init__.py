@@ -20,6 +20,7 @@ from app.models.job import Job
 from app.models.message import Message
 from app.models.message_attachment import MessageAttachment
 from app.models.notification import Notification
+from app.models.notification_channel import NotificationChannelPreference
 from app.models.notification_preference import NotificationPreference
 from app.models.plugin import CapabilityGrant, Plugin, PluginInstallation, PluginLockEntry
 from app.models.plugin_collection import PluginCollection
@@ -41,7 +42,12 @@ from app.models.review_finding import ReviewFinding
 from app.models.stellar_security_finding import StellarSecurityFinding
 from app.models.usage_record import UsageRecord
 from app.models.user import User
-from app.models.webhook import WebhookDeadLetter, WebhookDelivery, WebhookSubscription
+from app.models.webhook import (
+    WebhookDeadLetter,
+    WebhookDelivery,
+    WebhookSubscription,
+    WebhookSubscriptionEvent,
+)
 from app.models.workspace import Workspace
 from app.models.workspace_budget_override import WorkspaceBudgetOverride
 from app.models.workspace_member import WorkspaceMember
@@ -65,6 +71,7 @@ __all__ = [
     "Message",
     "MessageAttachment",
     "Notification",
+    "NotificationChannelPreference",
     "NotificationPreference",
     "Plugin",
     "PluginCollection",
@@ -92,6 +99,7 @@ __all__ = [
     "WebhookDeadLetter",
     "WebhookDelivery",
     "WebhookSubscription",
+    "WebhookSubscriptionEvent",
     "Workspace",
     "WorkspaceBudgetOverride",
     "WorkspaceInvitation",

@@ -1,0 +1,113 @@
+{% extends "base.html" %}
+
+{% block title %}{{ t('notifications.preferences.title') }} - {{ config.APP_NAME }}{% endblock %}
+
+{% block content %}
+<div class="github-header">
+  <div>
+    <h1>{{ t('notifications.preferences.title') }}</h1>
+    <p class="repo-meta">{{ t('notifications.preferences.intro') }}</p>
+  </div>
+  <a class="btn" href="{{ url_for('workspaces.detail', workspace_id=workspace.id) }}">{{ workspace.name }}</a>
+</div>
+
+<form id="notification-channel-form" data-workspace-id="{{ workspace.id }}">
+  <table class="table">
+    <caption>{{ workspace.name }}</caption>
+    <thead>
+      <tr>
+        <th scope="col">Event</th>
+        {% for channel in channels %}
+        <th scope="col">{{ t('notifications.preferences.channel_' ~ channel) }}</th>
+        {% endfor %}
+        <th scope="col">{{ t('notifications.preferences.test') }}</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in matrix.rows %}
+      <tr data-event-type="{{ row.event_type }}">
+        <th scope="row">{{ row.event_type }}</th>
+        {% for channel in channels %}
+        <td>
+          <label class="visually-hidden" for="channel-{{ row.event_type }}-{{ channel }}">
+            {{ t('notifications.preferences.channel_' ~ channel) }} {{ row.event_type }}
+          </label>
+          <input id="channel-{{ row.event_type }}-{{ channel }}"
+                 type="checkbox" name="{{ row.event_type }}.{{ channel }}"
+                 {% if row[channel] %}checked{% endif %}>
+        </td>
+        {% endfor %}
+        <td>
+          <button class="btn test-channel" type="button"
+                  data-event-type="{{ row.event_type }}" data-channel="chat">
+            {{ t('notifications.preferences.test') }}
+          </button>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  <button class="btn btn-primary" type="submit">{{ t('notifications.preferences.save') }}</button>
+</form>
+<p id="notification-channel-status" role="status" aria-live="polite"></p>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+  const form = document.getElementById("notification-channel-form");
+  if (!form) return;
+  const status = document.getElementById("notification-channel-status");
+  const csrf = document.querySelector('meta[name="csrf-token"]').content;
+  const workspaceId = form.dataset.workspaceId;
+
+  function collectRows() {
+    const rows = [];
+    form.querySelectorAll("tbody tr[data-event-type]").forEach((tr) => {
+      const row = { event_type: tr.dataset.eventType };
+      tr.querySelectorAll("input[type=checkbox]").forEach((input) => {
+        row[input.name.split(".")[1]] = input.checked;
+      });
+      rows.push(row);
+    });
+    return rows;
+  }
+
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const response = await fetch(
+      `/workspaces/api/workspaces/${workspaceId}/notification-channels`,
+      {
+        method: "PUT",
+        headers: { "Content-Type": "application/json", "X-CSRFToken": csrf },
+        body: JSON.stringify({ rows: collectRows() }),
+      },
+    );
+    const body = await response.json();
+    status.textContent = response.ok
+      ? "Saved."
+      : (body.error || "Could not save preferences.");
+  });
+
+  form.querySelectorAll(".test-channel").forEach((button) => {
+    button.addEventListener("click", async () => {
+      const response = await fetch(
+        `/workspaces/api/workspaces/${workspaceId}/notification-channels/test`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "X-CSRFToken": csrf },
+          body: JSON.stringify({
+            event_type: button.dataset.eventType,
+            channel: button.dataset.channel,
+          }),
+        },
+      );
+      const body = await response.json();
+      status.textContent = response.ok
+        ? `Test ${body.status}${body.reason ? ": " + body.reason : ""}.`
+        : (body.error || "Could not send a test.");
+    });
+  });
+})();
+</script>
+{% endblock %}
