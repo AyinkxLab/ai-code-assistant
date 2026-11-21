@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+
+{% block title %}Email unsubscribe{% endblock %}
+
+{% block content %}
+<div class="github-header">
+  <h1>Email notifications</h1>
+</div>
+{% if ok %}
+<p role="status">You have been unsubscribed from workspace email notifications.</p>
+{% else %}
+<p role="alert">This unsubscribe link is invalid or has expired.</p>
+{% endif %}
+{% endblock %}

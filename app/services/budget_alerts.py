@@ -166,6 +166,16 @@ def notify_budget_alerts(alerts, users, *, workspace=None, link=None) -> list:
             )
             if notification is not None:
                 created.append(notification)
+
+    # Best-effort fan-out to configured external integrations (#678/#679/#682).
+    # Only integrations with a stored credential are contacted, and a delivery
+    # failure can never affect the in-app notifications above.
+    from app.services.integrations.dispatch import dispatch_workspace_event
+
+    for alert in alerts:
+        workspace_id = alert.get("workspace_id")
+        if workspace_id is not None:
+            dispatch_workspace_event(workspace_id, "budget.alert", alert)
     return created
 
 

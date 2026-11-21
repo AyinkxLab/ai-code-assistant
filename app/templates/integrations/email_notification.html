@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>{{ title }} - {{ workspace_name }}</title>
+</head>
+<body>
+  <h1>{{ title }}</h1>
+  <p>{{ workspace_name }}</p>
+  <ul>
+    {% for line in lines %}
+    <li>{{ line }}</li>
+    {% endfor %}
+  </ul>
+  {% if unsubscribe_url %}
+  <p><a href="{{ unsubscribe_url }}">Unsubscribe from these notifications</a></p>
+  {% endif %}
+</body>
+</html>

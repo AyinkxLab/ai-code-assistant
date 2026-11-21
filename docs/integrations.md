@@ -13,6 +13,10 @@ Both mocks bind to `127.0.0.1` on an ephemeral port. No test contacts a public
 network. Credentials for workspace integrations are stored encrypted; see
 [encrypted integration credentials](integration-credentials.md).
 
+Slack, Microsoft Teams, and email notifications (including signed inbound email
+and integration health checks) are documented separately in
+[notification integrations](notification-integrations.md).
+
 ## GitHub
 
 ### Required scopes

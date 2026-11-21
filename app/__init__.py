@@ -112,6 +112,7 @@ def create_app(config_name: str | None = None) -> Flask:
     from app.gitlab import bp as gitlab_bp
     from app.i18n import bp as i18n_bp
     from app.i18n import init_i18n
+    from app.integrations import bp as integrations_bp
     from app.keys import bp as keys_bp
     from app.main import bp as main_bp
     from app.notification_settings import bp as notification_settings_bp
@@ -142,10 +143,17 @@ def create_app(config_name: str | None = None) -> Flask:
     app.register_blueprint(notification_settings_bp)
     app.register_blueprint(webhooks_bp)
     app.register_blueprint(gitlab_bp)
+    app.register_blueprint(integrations_bp)
     app.register_blueprint(admin_bp)
 
     # Register Socket.IO event handlers (import has side effects by design).
     from app.collaboration import realtime  # noqa: F401
+
+    # Fan out review/security events to configured Slack/Teams/email
+    # integrations (best-effort; never affects the emitting request).
+    from app.services.integrations.dispatch import register_event_handlers
+
+    register_event_handlers(app)
 
     @app.after_request
     def add_budget_warning_header(response):

@@ -1,0 +1,8 @@
+{{ title }} - {{ workspace_name }}
+
+{% for line in lines %}{{ line }}
+{% endfor %}
+{% if unsubscribe_url %}
+Unsubscribe from these notifications:
+{{ unsubscribe_url }}
+{% endif %}

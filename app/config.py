@@ -340,6 +340,24 @@ class Config:
     JOB_QUEUE_WORKER_POLL_SECONDS = float(os.getenv("JOB_QUEUE_WORKER_POLL_SECONDS", "5"))
     JOB_QUEUE_WEBHOOK_TIMEOUT = float(os.getenv("JOB_QUEUE_WEBHOOK_TIMEOUT", "10"))
 
+    # Notification integrations (#678, #679, #682, #684). Slack/Teams delivery
+    # and signed inbound email all use bounded retries with exponential backoff;
+    # inbound email must also carry a fresh HMAC signature. The attachment and
+    # body caps keep a hostile inbound message from consuming unbounded memory.
+    INTEGRATION_REQUEST_TIMEOUT = float(os.getenv("INTEGRATION_REQUEST_TIMEOUT", "10"))
+    INTEGRATION_MAX_RETRIES = int(os.getenv("INTEGRATION_MAX_RETRIES", "3"))
+    INTEGRATION_RETRY_BASE_SECONDS = float(os.getenv("INTEGRATION_RETRY_BASE_SECONDS", "0.5"))
+    INTEGRATION_RETRY_MAX_SECONDS = float(os.getenv("INTEGRATION_RETRY_MAX_SECONDS", "8"))
+    INTEGRATION_INBOUND_SIGNATURE_TOLERANCE = int(
+        os.getenv("INTEGRATION_INBOUND_SIGNATURE_TOLERANCE", "300")
+    )
+    INTEGRATION_INBOUND_MAX_BYTES = int(os.getenv("INTEGRATION_INBOUND_MAX_BYTES", str(512 * 1024)))
+    INTEGRATION_EMAIL_MAX_ATTACHMENTS = int(os.getenv("INTEGRATION_EMAIL_MAX_ATTACHMENTS", "5"))
+    INTEGRATION_EMAIL_MAX_ATTACHMENT_BYTES = int(
+        os.getenv("INTEGRATION_EMAIL_MAX_ATTACHMENT_BYTES", str(10 * 1024 * 1024))
+    )
+    INTEGRATION_EMAIL_MAX_BODY_CHARS = int(os.getenv("INTEGRATION_EMAIL_MAX_BODY_CHARS", "20000"))
+
     # AI reviews (Phase 6): caps that keep reviews bounded and predictable.
     # A review never sends more than REVIEW_MAX_CONTEXT_CHARS of repository text
     # to the model, and never analyzes more than REVIEW_MAX_FILES changed files.
