@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+
+{% block title %}Webhooks - {{ config.APP_NAME }}{% endblock %}
+
+{% block content %}
+<div class="github-header">
+  <div>
+    <h1>Webhooks</h1>
+    <p class="repo-meta">Delivery attempts for events sent to your workspace endpoints.</p>
+  </div>
+</div>
+
+{% if subscriptions %}
+<table class="table">
+  <caption>Webhook subscriptions</caption>
+  <thead>
+    <tr>
+      <th scope="col">Subscription</th>
+      <th scope="col">Event type</th>
+      <th scope="col">Status</th>
+      <th scope="col">Created</th>
+      <th scope="col">Delivery log</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for subscription in subscriptions %}
+    <tr>
+      <td>#{{ subscription.id }}</td>
+      <td>{{ subscription.event_type }}</td>
+      <td>{{ "active" if subscription.is_active else "paused" }}</td>
+      <td>{{ subscription.created_at.strftime("%Y-%m-%d %H:%M") if subscription.created_at else "" }}</td>
+      <td>
+        <a href="{{ url_for('webhooks.deliveries_page', subscription_id=subscription.id) }}">View deliveries</a>
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p class="sidebar-empty">No webhook subscriptions yet.</p>
+{% endif %}
+{% endblock %}
