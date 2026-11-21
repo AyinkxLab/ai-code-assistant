@@ -54,6 +54,23 @@ try {
 The mapping is shared with the Python SDK through
 [`sdk/fixtures/error-mapping.json`](../fixtures/error-mapping.json).
 
+## Webhook verification
+
+```ts
+import { verifySignature } from "@ai-code-assistant/sdk";
+
+const valid = await verifySignature({
+  secret,
+  body: rawBody, // exact bytes, before JSON parsing
+  signature: request.headers["x-aica-signature"],
+  timestamp: Number(request.headers["x-aica-timestamp"]),
+});
+if (!valid) throw new Error("invalid webhook signature");
+```
+
+The signature covers `<timestamp>.<raw body>`. Verification uses the Web Crypto
+API and rejects timestamps outside the 300-second tolerance.
+
 ## Tests
 
 The suite lives in `tests/js/sdk_typescript.test.js` at the repository root and

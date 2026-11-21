@@ -7,14 +7,16 @@ Phase 12 (issues #657, #658, #659 and #661).
 | --- | ------ | ------- |
 | Python | [`python/`](python/README.md) | `pip install -e sdk/python` |
 | TypeScript | [`typescript/`](typescript/README.md) | `npm install @ai-code-assistant/sdk` |
+| Rust | [`rust/`](rust/README.md) | `cargo add ai-code-assistant-sdk` |
 
-Both SDKs:
+All SDKs:
 
 - authenticate with an API token (`Authorization: Bearer`);
 - expose configurable timeouts and bounded retries;
 - retry only idempotent requests and transient status codes;
 - raise typed errors and preserve the raw `code` and request id;
-- validate responses into typed models (projects, reviews, findings, usage).
+- validate responses into typed models (projects, reviews, findings, usage);
+- verify webhook deliveries with the shared `v1=<hex HMAC-SHA256>` contract.
 
 The shared error contract lives in
 [`fixtures/error-mapping.json`](fixtures/error-mapping.json) and is asserted by
@@ -50,6 +52,7 @@ errors, and webhook delivery logs.
 ```bash
 pytest tests/test_sdk_python.py tests/test_sdk_quickstart.py   # Python
 npm test                                                       # TypeScript (Vitest)
+cd sdk/rust && cargo test                                      # Rust
 ```
 
 See [`docs/sdk-release.md`](../docs/sdk-release.md) for the tag-driven release

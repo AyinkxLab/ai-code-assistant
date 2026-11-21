@@ -1,0 +1,14 @@
+[package]
+name = "ai-code-assistant-sdk"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.75"
+license = "MIT"
+description = "Dependency-conscious Rust client for the AI Code Assistant public API."
+repository = "https://github.com/AyinkxLab/ai-code-assistant"
+readme = "README.md"
+
+[dependencies]
+hex = "0.4"
+hmac = "0.12"
+sha2 = "0.10"
