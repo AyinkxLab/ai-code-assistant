@@ -1,0 +1,59 @@
+/* Right-to-left layout support (#715).
+ *
+ * Logical properties let the same rules follow the document direction. Only
+ * direction-specific adjustments that cannot be expressed logically live under
+ * [dir="rtl"].
+ */
+
+[dir="rtl"] {
+  text-align: right;
+}
+
+[dir="rtl"] body {
+  direction: rtl;
+}
+
+[dir="rtl"] .header-inner,
+[dir="rtl"] .nav,
+[dir="rtl"] .brand,
+[dir="rtl"] .github-header,
+[dir="rtl"] .filter-field {
+  direction: rtl;
+}
+
+[dir="rtl"] .nav {
+  margin-inline-start: auto;
+}
+
+[dir="rtl"] .nav-link {
+  margin-inline-start: 0;
+  margin-inline-end: 4px;
+}
+
+[dir="rtl"] .container {
+  padding-inline: 24px;
+}
+
+[dir="rtl"] .locale-switcher {
+  margin-inline-start: 12px;
+}
+
+[dir="rtl"] .notification-icon {
+  margin-inline-end: 0;
+  margin-inline-start: 4px;
+}
+
+[dir="rtl"] .modal {
+  text-align: right;
+}
+
+/* Keep code, diffs, and identifiers left-to-right even in RTL pages. */
+[dir="rtl"] pre,
+[dir="rtl"] code,
+[dir="rtl"] .fragment,
+[dir="rtl"] input[type="url"],
+[dir="rtl"] input[type="email"] {
+  direction: ltr;
+  text-align: left;
+  unicode-bidi: embed;
+}
