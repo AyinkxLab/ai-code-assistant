@@ -7,6 +7,7 @@ exposes a subscription secret or a response body.
 
 from __future__ import annotations
 
+import secrets
 from urllib.parse import urlencode
 
 from flask import abort, jsonify, render_template, request
@@ -14,7 +15,7 @@ from flask_login import current_user, login_required
 
 from app.extensions import db
 from app.models import WebhookSubscription, Workspace
-from app.services import webhook_deliveries
+from app.services import job_queue, webhook_dead_letters, webhook_deliveries
 from app.webhooks import bp
 
 
@@ -25,6 +26,32 @@ def _get_subscription(subscription_id: int) -> WebhookSubscription:
     if workspace is None or workspace.user_id != current_user.id:
         abort(404)
     return subscription
+
+
+def _get_workspace(workspace_id: int) -> Workspace:
+    """Return a workspace owned by the current user, or 404."""
+    return Workspace.query.filter_by(id=workspace_id, user_id=current_user.id).first_or_404()
+
+
+def _get_workspace_subscription(workspace_id: int, subscription_id: int) -> WebhookSubscription:
+    _get_workspace(workspace_id)
+    return WebhookSubscription.query.filter_by(
+        id=subscription_id, workspace_id=workspace_id
+    ).first_or_404()
+
+
+def _validate_webhook_url(url) -> str:
+    try:
+        return job_queue.validate_webhook_url(str(url or ""))
+    except job_queue.JobQueueError as exc:
+        raise ValueError(str(exc)) from exc
+
+
+def _event_type(value) -> str:
+    text = str(value or "*").strip() or "*"
+    if len(text) > 100:
+        raise ValueError("event_type must be 100 characters or fewer")
+    return text
 
 
 def _int_arg(name: str, default: int) -> int:
@@ -109,6 +136,115 @@ def deliveries_page(subscription_id: int):
         error=None,
         filter_query=_filter_query(),
     )
+
+
+@bp.route("/api/workspaces/<int:workspace_id>/subscriptions", methods=["GET", "POST"])
+@login_required
+def api_subscriptions(workspace_id: int):
+    """List or create the workspace's webhook subscriptions (owner only)."""
+    _get_workspace(workspace_id)
+    if request.method == "GET":
+        subscriptions = (
+            WebhookSubscription.query.filter_by(workspace_id=workspace_id)
+            .order_by(WebhookSubscription.created_at.desc(), WebhookSubscription.id.desc())
+            .all()
+        )
+        return jsonify({"subscriptions": [row.to_dict() for row in subscriptions]})
+
+    data = request.get_json(silent=True) or {}
+    events = data.get("events")
+    try:
+        url = _validate_webhook_url(data.get("url"))
+        event_type = _event_type(data.get("event_type"))
+        secret = str(data.get("secret") or "").strip() or secrets.token_urlsafe(32)
+        if len(secret) > 255:
+            raise ValueError("secret must be 255 characters or fewer")
+        if events is not None and (not isinstance(events, list) or not events):
+            raise ValueError("events must be a non-empty list")
+    except ValueError as exc:
+        return jsonify({"error": str(exc), "code": "invalid_webhook_config"}), 400
+    subscription = WebhookSubscription(
+        workspace_id=workspace_id,
+        url=url,
+        event_type=event_type,
+        is_active=bool(data.get("is_active", True)),
+    )
+    subscription.set_secret(secret)
+    if events is not None:
+        try:
+            subscription.set_events(events)
+        except ValueError as exc:
+            return jsonify({"error": str(exc), "code": "invalid_webhook_config"}), 400
+    db.session.add(subscription)
+    db.session.commit()
+    payload = subscription.to_dict()
+    # The signing secret is returned exactly once, on creation.
+    payload["secret"] = secret
+    return jsonify(payload), 201
+
+
+@bp.route(
+    "/api/workspaces/<int:workspace_id>/subscriptions/<int:subscription_id>",
+    methods=["PATCH", "DELETE"],
+)
+@login_required
+def api_subscription(workspace_id: int, subscription_id: int):
+    """Update or delete one subscription (owner only)."""
+    subscription = _get_workspace_subscription(workspace_id, subscription_id)
+    if request.method == "DELETE":
+        db.session.delete(subscription)
+        db.session.commit()
+        return jsonify({"deleted": True})
+    data = request.get_json(silent=True) or {}
+    try:
+        if "url" in data:
+            subscription.url = _validate_webhook_url(data.get("url"))
+        if "events" in data:
+            subscription.set_events(data.get("events"))
+        elif "event_type" in data:
+            subscription.event_type = _event_type(data.get("event_type"))
+            subscription.set_events([subscription.event_type])
+        if "secret" in data:
+            secret = str(data.get("secret") or "").strip()
+            if not secret or len(secret) > 255:
+                raise ValueError("secret must be 1-255 characters")
+            subscription.set_secret(secret)
+        if "is_active" in data:
+            subscription.is_active = bool(data["is_active"])
+    except ValueError as exc:
+        db.session.rollback()
+        return jsonify({"error": str(exc), "code": "invalid_webhook_config"}), 400
+    db.session.commit()
+    return jsonify(subscription.to_dict())
+
+
+@bp.route(
+    "/api/workspaces/<int:workspace_id>/subscriptions/<int:subscription_id>/dead-letters",
+    methods=["GET"],
+)
+@login_required
+def api_dead_letters(workspace_id: int, subscription_id: int):
+    """List retained permanently failed deliveries (owner only)."""
+    subscription = _get_workspace_subscription(workspace_id, subscription_id)
+    include_replayed = request.args.get("include_replayed") == "1"
+    rows = webhook_dead_letters.list_dead_letters(subscription, include_replayed=include_replayed)
+    return jsonify({"dead_letters": [row.to_dict() for row in rows]})
+
+
+@bp.route(
+    "/api/workspaces/<int:workspace_id>/subscriptions/<int:subscription_id>/dead-letters/replay",
+    methods=["POST"],
+)
+@login_required
+def api_replay_dead_letters(workspace_id: int, subscription_id: int):
+    """Replay a bounded batch of dead letters (owner only)."""
+    subscription = _get_workspace_subscription(workspace_id, subscription_id)
+    data = request.get_json(silent=True) or {}
+    try:
+        result = webhook_dead_letters.replay(subscription, data.get("ids"), actor=current_user)
+    except ValueError as exc:
+        return jsonify({"error": str(exc), "code": "invalid_replay_request"}), 400
+    return jsonify(result)
 
 
 @bp.route("/api/subscriptions/<int:subscription_id>/deliveries")

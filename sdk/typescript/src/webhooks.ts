@@ -70,7 +70,7 @@ async function hmacHex(secret: string, message: Uint8Array): Promise<string> {
     false,
     ["sign"],
   );
-  const signature = await crypto.subtle.sign("HMAC", key, message);
+  const signature = await crypto.subtle.sign("HMAC", key, message as unknown as BufferSource);
   return Array.from(new Uint8Array(signature))
     .map((byte) => byte.toString(16).padStart(2, "0"))
     .join("");

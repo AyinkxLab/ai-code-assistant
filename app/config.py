@@ -263,6 +263,24 @@ class Config:
     # warning on the GitHub dashboard (issue #77).
     GITHUB_LOW_QUOTA_THRESHOLD = int(os.getenv("GITHUB_LOW_QUOTA_THRESHOLD", "100"))
 
+    # GitLab OAuth and repository connection (#677). Tokens are stored with the
+    # same AES-GCM helper as provider keys and integration credentials.
+    GITLAB_CLIENT_ID = os.getenv("GITLAB_CLIENT_ID", "")
+    GITLAB_CLIENT_SECRET = os.getenv("GITLAB_CLIENT_SECRET", "")
+    GITLAB_REDIRECT_URI = os.getenv("GITLAB_REDIRECT_URI", "")
+    GITLAB_BASE_URL = os.getenv("GITLAB_BASE_URL", "https://gitlab.com")
+    GITLAB_API_URL = os.getenv("GITLAB_API_URL", "https://gitlab.com/api/v4")
+    GITLAB_OAUTH_AUTHORIZE_URL = os.getenv(
+        "GITLAB_OAUTH_AUTHORIZE_URL", "https://gitlab.com/oauth/authorize"
+    )
+    GITLAB_OAUTH_TOKEN_URL = os.getenv("GITLAB_OAUTH_TOKEN_URL", "https://gitlab.com/oauth/token")
+    GITLAB_OAUTH_REVOKE_URL = os.getenv(
+        "GITLAB_OAUTH_REVOKE_URL", "https://gitlab.com/oauth/revoke"
+    )
+    GITLAB_SCOPES = os.getenv("GITLAB_SCOPES", "read_api")
+    GITLAB_REQUEST_TIMEOUT = int(os.getenv("GITLAB_REQUEST_TIMEOUT", "30"))
+    GITLAB_MAX_REPOSITORIES = int(os.getenv("GITLAB_MAX_REPOSITORIES", "100"))
+
     # GitHub GET responses are revalidated with their stored ETag
     # (If-None-Match) instead of being re-downloaded; a 304 replays the cached
     # body and preserves rate-limit quota (issue #76). Set

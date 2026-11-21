@@ -109,6 +109,7 @@ def create_app(config_name: str | None = None) -> Flask:
     from app.chat.api import bp as chat_api_bp
     from app.collaboration import bp as collaboration_bp
     from app.github import bp as github_bp
+    from app.gitlab import bp as gitlab_bp
     from app.i18n import bp as i18n_bp
     from app.i18n import init_i18n
     from app.keys import bp as keys_bp
@@ -140,6 +141,7 @@ def create_app(config_name: str | None = None) -> Flask:
     app.register_blueprint(billing_bp)
     app.register_blueprint(notification_settings_bp)
     app.register_blueprint(webhooks_bp)
+    app.register_blueprint(gitlab_bp)
     app.register_blueprint(admin_bp)
 
     # Register Socket.IO event handlers (import has side effects by design).

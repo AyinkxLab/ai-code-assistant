@@ -9,7 +9,7 @@ A small, dependency-free client for the AI Code Assistant public API.
 
 from __future__ import annotations
 
-from .client import Client, Response
+from .client import Client, Page, Response
 from .errors import (
     APITimeoutError,
     AuthenticationError,
@@ -47,6 +47,7 @@ __all__ = [
     "ConflictError",
     "Finding",
     "NotFoundError",
+    "Page",
     "PermissionDeniedError",
     "Project",
     "RateLimitError",

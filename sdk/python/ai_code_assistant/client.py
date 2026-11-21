@@ -16,7 +16,7 @@ import json as jsonlib
 import random
 import socket
 import time
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Iterator, Mapping
 from dataclasses import dataclass
 from typing import Any
 from urllib import error, parse
@@ -32,7 +32,7 @@ from .errors import (
 )
 from .models import Project, Review, Usage
 
-__all__ = ["Client", "Response"]
+__all__ = ["Client", "Page", "Response"]
 
 _DEFAULT_USER_AGENT = "ai-code-assistant-python/0.1.0"
 
@@ -45,6 +45,18 @@ class Response:
     headers: Mapping[str, str]
     data: Any
     request_id: str | None = None
+
+
+@dataclass(frozen=True)
+class Page:
+    """One page of a paginated list response."""
+
+    items: list[Any]
+    page: int
+    per_page: int
+    total: int | None = None
+    total_pages: int | None = None
+    next_cursor: str | None = None
 
 
 class _HTTPFailure(Exception):
@@ -299,6 +311,86 @@ class Client:
     def get_usage(self, *, project_id: int | None = None) -> Usage:
         response = self.get("/api/usage", params={"project_id": project_id})
         return Usage.from_dict(response.data)
+
+    # -- Pagination helpers ----------------------------------------------------
+
+    def iter_pages(
+        self,
+        path: str,
+        *,
+        per_page: int = 20,
+        max_pages: int | None = None,
+        params: Mapping[str, Any] | None = None,
+    ) -> Iterator[Page]:
+        """Yield pages, hiding page/cursor bookkeeping.
+
+        Pages are yielded lazily, so memory stays bounded by one page. The
+        iterator stops at the last page, at ``max_pages``, or when the server
+        reports no further results.
+        """
+        if isinstance(per_page, bool) or not isinstance(per_page, int) or not 1 <= per_page <= 100:
+            raise ValidationError("per_page must be an integer between 1 and 100")
+        if max_pages is not None and (
+            isinstance(max_pages, bool) or not isinstance(max_pages, int) or max_pages < 1
+        ):
+            raise ValidationError("max_pages must be a positive integer or None")
+
+        base = dict(params or {})
+        page = 1
+        pages_seen = 0
+        while True:
+            query = dict(base)
+            query["page"] = page
+            query["per_page"] = per_page
+            response = self.get(path, params=query)
+            data = response.data
+            items = _items(data)
+            total = data.get("total") if isinstance(data, Mapping) else None
+            total_pages = data.get("total_pages") if isinstance(data, Mapping) else None
+            next_cursor = data.get("next_cursor") if isinstance(data, Mapping) else None
+            yield Page(
+                items=items,
+                page=page,
+                per_page=per_page,
+                total=total if isinstance(total, int) else None,
+                total_pages=total_pages if isinstance(total_pages, int) else None,
+                next_cursor=next_cursor if isinstance(next_cursor, str) else None,
+            )
+            pages_seen += 1
+            if max_pages is not None and pages_seen >= max_pages:
+                return
+            if isinstance(total, int) and page * per_page >= total:
+                return
+            if isinstance(total_pages, int) and page >= total_pages:
+                return
+            if not items or len(items) < per_page:
+                return
+            if isinstance(next_cursor, str) and next_cursor:
+                base["cursor"] = next_cursor
+            page += 1
+
+    def iter_projects(
+        self, *, per_page: int = 20, max_pages: int | None = None
+    ) -> Iterator[Project]:
+        """Iterate projects across pages without loading the full list."""
+        for page in self.iter_pages("/api/projects", per_page=per_page, max_pages=max_pages):
+            for item in page.items:
+                yield Project.from_dict(item)
+
+    def iter_reviews(
+        self,
+        *,
+        project_id: int | None = None,
+        per_page: int = 20,
+        max_pages: int | None = None,
+    ) -> Iterator[Review]:
+        """Iterate reviews across pages without loading the full list."""
+        params = {"project_id": project_id} if project_id is not None else None
+        for page in self.iter_pages(
+            "/api/reviews", per_page=per_page, max_pages=max_pages, params=params
+        ):
+            for item in page.items:
+                yield Review.from_dict(item)
 
     # -- Internals -------------------------------------------------------------
 

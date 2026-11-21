@@ -21,6 +21,8 @@ export {
   type ApiResponse,
   type ClientOptions,
   type ListQuery,
+  type Page,
+  type PageOptions,
   type QueryValue,
   type RequestOptions,
 } from "./client.js";

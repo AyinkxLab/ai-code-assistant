@@ -344,6 +344,57 @@ describe("TypeScript SDK client", () => {
     const client = new Client({ baseUrl: "http://127.0.0.1:1", jitter: false });
     await expect(client.getProject(0)).rejects.toBeInstanceOf(ValidationError);
   });
+
+  it("paginates lazily and follows cursors", async () => {
+    let requests = 0;
+    await withServer(
+      () => {
+        requests += 1;
+        if (requests === 1) {
+          return {
+            status: 200,
+            body: { items: [{ id: 1, name: "A" }], next_cursor: "c2" },
+          };
+        }
+        return { status: 200, body: { items: [{ id: 2, name: "B" }], total: 2 } };
+      },
+      async (url, calls) => {
+        const client = makeClient(url);
+        const iterator = client.iterateProjects({ per_page: 1 });
+        const first = await iterator.next();
+        expect(first.value.name).toBe("A");
+        expect(calls.length).toBe(1);
+        const second = await iterator.next();
+        expect(second.value.name).toBe("B");
+        expect(calls[1].url).toContain("cursor=c2");
+        expect((await iterator.next()).done).toBe(true);
+      },
+    );
+  });
+
+  it("bounds pages and rejects invalid pagination input", async () => {
+    await withServer(
+      () => ({ status: 200, body: { items: [{ id: 1, name: "A" }], total: 100 } }),
+      async (url, calls) => {
+        const client = makeClient(url);
+        const names = [];
+        for await (const project of client.iterateProjects({ per_page: 1, maxPages: 2 })) {
+          names.push(project.name);
+        }
+        expect(names).toEqual(["A", "A"]);
+        expect(calls.length).toBe(2);
+      },
+    );
+
+    const client = new Client({ baseUrl: "http://127.0.0.1:1", jitter: false });
+    await expect(
+      (async () => {
+        for await (const _page of client.iteratePages("/api/projects", { per_page: 0 })) {
+          // unreachable: validation happens before the first request
+        }
+      })(),
+    ).rejects.toBeInstanceOf(ValidationError);
+  });
 });
 
 describe("webhook signatures (#663)", () => {

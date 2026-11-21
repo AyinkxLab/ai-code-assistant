@@ -1,4 +1,4 @@
-# SDKs (Phase 12)
+﻿# SDKs (Phase 12)
 
 Typed client libraries for the AI Code Assistant public API. Both SDKs share a
 single error-mapping contract so the same server failure produces the same
@@ -104,6 +104,38 @@ python sdk/python/examples/mock_server.py
 npx tsx sdk/typescript/examples/quickstart.ts
 ```
 
+## Pagination
+
+Both SDKs expose lazy pagination helpers that hide page and cursor bookkeeping
+(#662):
+
+```python
+# Python: yields projects one at a time, one page in memory
+for project in client.iter_projects(per_page=50, max_pages=10):
+    print(project.name)
+
+for page in client.iter_pages("/api/reviews", per_page=20):
+    print(page.page, page.next_cursor)
+```
+
+```ts
+// TypeScript: async iterators
+for await (const project of client.iterateProjects({ per_page: 50, maxPages: 10 })) {
+  console.log(project.name);
+}
+for await (const page of client.iteratePages("/api/reviews", { per_page: 20 })) {
+  console.log(page.page, page.nextCursor);
+}
+```
+
+- Pages are fetched lazily, so memory is bounded by one page.
+- `next_cursor` is followed automatically when the server returns one.
+- `max_pages` / `maxPages` bounds the number of requests.
+- `per_page` must be between 1 and 100; invalid values raise `ValidationError`
+  before any request is made. A server-rejected cursor surfaces as a typed SDK
+  error.
+
+
 ## Running the tests
 
 ```bash
@@ -126,3 +158,4 @@ network. The Rust tests use a loopback test server.
 The SDKs are published from an `sdk-vX.Y.Z` tag by the `Release SDK` workflow.
 Credentials, the version-bump checklist, verification, and rollback are
 documented in [`sdk-release.md`](sdk-release.md).
+

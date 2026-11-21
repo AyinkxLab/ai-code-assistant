@@ -123,6 +123,8 @@ table, quotas, budgets, alerts, invoices, and reconciliation.
 - [Plugin artifact cache](docs/plugin-artifact-cache.md)
 - [Encrypted integration credentials](docs/integration-credentials.md)
 - [Integration setup and local mocks](docs/integrations.md)
+- [GitLab integration](docs/gitlab.md)
+- [Webhooks, delivery logs, and dead-letter replay](docs/webhooks.md)
 - [Architecture](docs/architecture.md)
 - [Security model](docs/security.md)
 - [Accessibility and keyboard navigation](docs/accessibility.md)
