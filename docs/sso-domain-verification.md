@@ -1,5 +1,8 @@
 # Domain verification and SSO enforcement
 
+For the provider-agnostic OIDC/SAML/SCIM setup status and troubleshooting, see
+the [SSO and SCIM setup guide](sso-scim-setup.md).
+
 Organizations can prove they own an email domain and then block password
 sign-in for accounts on that domain. The implementation is
 `app/services/domain_verification.py`; the data lives in `workspace_domains`
