@@ -151,6 +151,8 @@ table, quotas, budgets, alerts, invoices, and reconciliation.
 - [Admin action audit view](docs/admin-actions.md)
 - [Access review report](docs/access-review.md)
 - [Multi-factor authentication](docs/mfa.md)
+- [SSO and SCIM setup](docs/sso-scim-setup.md)
+- [Domain verification and SSO enforcement](docs/sso-domain-verification.md)
 - [Audit log integrity](docs/audit-integrity.md)
 - [Audit and compliance guide](docs/audit-compliance-guide.md)
 - [Audit retention and legal hold](docs/audit-retention.md)
