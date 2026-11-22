@@ -9,13 +9,15 @@ from __future__ import annotations
 from datetime import UTC, date, datetime, time, timedelta
 from functools import wraps
 
-from flask import Response, jsonify, render_template, request
+from flask import Response, jsonify, render_template, request, stream_with_context
 from flask_login import current_user, login_required
 
 from app.admin import bp
 from app.api.error_catalog import FORBIDDEN, INVALID_INPUT, UNAUTHORIZED, error_response
+from app.extensions import db
 from app.models import AuditLog, UsageRecord, User, Workspace
-from app.services import usage_dashboards, usage_ledger
+from app.services import audit as audit_service
+from app.services import audit_export, usage_dashboards, usage_ledger
 from app.services.classification import export_record
 from app.services.currency import get_currency_config
 
@@ -92,6 +94,73 @@ def audit():
             "has_prev": pagination.has_prev,
         }
     )
+
+
+@bp.route("/audit/export")
+@login_required
+@admin_required
+def audit_export_download():
+    """Stream a filtered audit export as JSON or CSV (admin only).
+
+    Query parameters:
+        ``format``  ``json`` (default) or ``csv``.
+        ``actor``   exact username.
+        ``action``  exact action name.
+        ``resource_type`` / ``resource_id`` filter the target.
+        ``start`` / ``end`` inclusive ``YYYY-MM-DD`` dates.
+        ``limit``   maximum rows, capped at
+        :data:`~app.services.audit_export.MAX_LIMIT`.
+
+    The projection is fixed and passes through
+    :mod:`app.services.classification` at ``internal``: actor usernames,
+    metadata blobs, secrets, and prompt content are never exported.
+    """
+    export_format = (request.args.get("format") or audit_export.FORMAT_JSON).strip().lower()
+    if export_format not in audit_export.FORMATS:
+        return error_response(INVALID_INPUT, "format must be json or csv.")
+
+    try:
+        query, limit = audit_export.build_query(
+            actor=request.args.get("actor"),
+            action=request.args.get("action"),
+            start=request.args.get("start"),
+            end=request.args.get("end"),
+            resource_type=request.args.get("resource_type"),
+            resource_id=request.args.get("resource_id"),
+            limit=request.args.get("limit"),
+        )
+    except ValueError as exc:
+        return error_response(INVALID_INPUT, str(exc))
+
+    audit_service.record(
+        audit_service.AUDIT_EXPORTED,
+        user=current_user,
+        target_type="audit_export",
+        metadata={
+            "format": export_format,
+            "actor": (request.args.get("actor") or "").strip() or None,
+            "action": (request.args.get("action") or "").strip() or None,
+            "start": request.args.get("start"),
+            "end": request.args.get("end"),
+            "limit": limit,
+        },
+    )
+    db.session.commit()
+
+    if export_format == audit_export.FORMAT_CSV:
+        body = audit_export.stream_csv(query, limit)
+        mimetype = "text/csv"
+        filename = "audit-export.csv"
+    else:
+        body = audit_export.stream_json(query, limit)
+        mimetype = "application/json"
+        filename = "audit-export.json"
+
+    response = Response(stream_with_context(body), mimetype=mimetype)
+    response.headers["Content-Disposition"] = f'attachment; filename="{filename}"'
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["X-Export-Limit"] = str(limit)
+    return response
 
 
 @bp.route("/actions")
