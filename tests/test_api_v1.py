@@ -200,6 +200,103 @@ class TestReviews:
         assert response.get_json()["code"] == "invalid_input"
 
 
+class TestFilteringAndSorting:
+    def test_projects_sort_and_filter_by_whitelisted_fields(self, client, make_user, login):
+        user = make_user()
+        login()
+        workspace = _workspace(user)
+        zulu = _project(user, workspace, "Zulu")
+        _project(user, workspace, "Alpha")
+        failed = Project(
+            workspace_id=workspace.id,
+            user_id=user.id,
+            name="Alpha",
+            source=SOURCE_ARCHIVE,
+            status="failed",
+        )
+        db.session.add(failed)
+        db.session.commit()
+
+        response = client.get("/api/v1/projects?sort=name&order=asc")
+        payload = response.get_json()
+
+        assert response.status_code == 200
+        assert payload["sort"] == "name"
+        assert payload["order"] == "asc"
+        assert [item["name"] for item in payload["items"]] == ["Alpha", "Alpha", "Zulu"]
+
+        filtered = client.get("/api/v1/projects?status=failed").get_json()
+        assert [item["id"] for item in filtered["items"]] == [failed.id]
+        assert zulu.id not in [item["id"] for item in filtered["items"]]
+
+    def test_reviews_sort_by_whitelisted_field(self, client, make_user, login):
+        user = make_user()
+        login()
+        project = _project(user, _workspace(user))
+        running = _review(user, project, kind="security")
+        running.status = "running"
+        completed = _review(user, project, kind="quality")
+        db.session.commit()
+
+        payload = client.get("/api/v1/reviews?sort=status&order=asc").get_json()
+
+        assert [item["id"] for item in payload["items"]] == [completed.id, running.id]
+
+    def test_unknown_filter_parameter_is_rejected_with_details(self, client, make_user, login):
+        make_user()
+        login()
+
+        response = client.get("/api/v1/projects?stauts=ready")
+
+        assert response.status_code == 400
+        payload = response.get_json()
+        assert payload["code"] == "invalid_input"
+        assert payload["details"]["unknown"] == ["stauts"]
+        assert "status" in payload["details"]["allowed"]
+
+    def test_unknown_sort_field_is_rejected_with_details(self, client, make_user, login):
+        make_user()
+        login()
+
+        response = client.get("/api/v1/reviews?sort=summary")
+
+        assert response.status_code == 400
+        payload = response.get_json()
+        assert payload["code"] == "invalid_input"
+        assert payload["details"]["field"] == "summary"
+
+    def test_invalid_order_is_rejected(self, client, make_user, login):
+        make_user()
+        login()
+
+        response = client.get("/api/v1/projects?sort=name&order=sideways")
+
+        assert response.status_code == 400
+        assert response.get_json()["code"] == "invalid_input"
+
+    def test_cursor_requires_the_id_ordering(self, client, make_user, login):
+        user = make_user()
+        login()
+        workspace = _workspace(user)
+        _project(user, workspace, "First")
+        _project(user, workspace, "Second")
+
+        page = client.get("/api/v1/projects?limit=1").get_json()
+        response = client.get(f"/api/v1/projects?sort=name&limit=1&cursor={page['next_cursor']}")
+
+        assert response.status_code == 400
+        assert "sort=id" in response.get_json()["error"]
+
+    def test_usage_rejects_unsupported_query_parameters(self, client, make_user, login):
+        make_user()
+        login()
+
+        response = client.get("/api/v1/usage?sort=id")
+
+        assert response.status_code == 400
+        assert response.get_json()["code"] == "invalid_input"
+
+
 class TestUsage:
     def test_usage_is_scoped_to_the_caller(self, client, make_user, login):
         user = make_user()

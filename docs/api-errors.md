@@ -26,6 +26,7 @@ fails when a code is missing.
 | `rate_limited` | 429 | `rate_limited` | Too many requests. Please try again later. |
 | `gone` | 410 | `gone` | This resource is no longer available. |
 | `internal_error` | 500 | `internal_error` | Something went wrong. |
+| `bad_gateway` | 502 | `upstream_error` | An upstream service failed to complete the request. |
 
 ## Where catalog errors are produced
 

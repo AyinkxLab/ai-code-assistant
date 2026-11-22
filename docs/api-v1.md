@@ -2,8 +2,9 @@
 
 Stable, versioned JSON resources for projects, reviews, and usage. The
 implementation is `app/api/v1.py`; errors use the
-[API error catalog](api-errors.md) and lists use the
-[pagination contract](pagination.md).
+[API error catalog](api-errors.md), lists use the
+[pagination contract](pagination.md), and filters/sort use the
+[filtering and sorting standard](api-filtering.md).
 
 All endpoints require an authenticated session or API key. Unauthenticated
 calls return `401 {"code": "unauthorized"}`.
@@ -15,9 +16,11 @@ calls return `401 {"code": "unauthorized"}`.
 | `GET` | `/api/v1/projects` | List the caller's projects (newest id first). |
 | `GET` | `/api/v1/projects/<id>` | Return one project owned by the caller. |
 
-Query parameters: `workspace_id` (optional filter), plus `page`, `limit`, and
-`cursor`. A project owned by another user is `404 not_found`, matching the web
-UI's owner-scoped project lookup.
+Query parameters: `workspace_id` (optional filter), `source`, `status`, plus
+`sort`/`order` (`id` default, then `name`, `created_at`, `updated_at`) and
+`page`, `limit`, and `cursor`. A project owned by another user is
+`404 not_found`, matching the web UI's owner-scoped project lookup. See the
+[filtering standard](api-filtering.md) for validation and error shapes.
 
 Response item schema:
 
@@ -46,8 +49,10 @@ Response item schema:
 | `GET` | `/api/v1/reviews` | List the caller's reviews (newest id first). |
 | `GET` | `/api/v1/reviews/<id>` | Return one review owned by the caller. |
 
-Query parameters: `source`, `kind`, `status`, `project_id`, plus pagination.
-Only the caller's reviews are visible; another user's review is `404`.
+Query parameters: `source`, `kind`, `status`, `project_id`, plus
+`sort`/`order` (`id` default, then `created_at`, `updated_at`, `kind`,
+`status`) and pagination. Only the caller's reviews are visible; another
+user's review is `404`.
 
 Response item schema:
 
@@ -82,7 +87,8 @@ It reuses the existing usage export service, so the schema is the same
 `page_totals`, and `records`. Optional filters are `workspace_id`,
 `project_id`, and `source`. Cursor pagination is not supported here; use
 `page` and `limit` (a cursor returns `400 invalid_input` rather than being
-silently ignored).
+silently ignored). It does not accept `sort`/`order`; those are rejected as
+unknown parameters (see the [filtering standard](api-filtering.md)).
 
 ## List envelope
 
@@ -92,6 +98,8 @@ silently ignored).
   "total": 42,
   "page": 1,
   "limit": 50,
+  "sort": "id",
+  "order": "desc",
   "next_cursor": null
 }
 ```

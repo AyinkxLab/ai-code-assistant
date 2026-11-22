@@ -25,6 +25,7 @@ VALIDATION_FAILED = "validation_failed"
 RATE_LIMITED = "rate_limited"
 GONE = "gone"
 INTERNAL_ERROR = "internal_error"
+BAD_GATEWAY = "bad_gateway"
 
 
 @dataclass(frozen=True)
@@ -73,6 +74,13 @@ CATALOG: dict[str, ApiError] = {
     ),
     INTERNAL_ERROR: ApiError(
         INTERNAL_ERROR, 500, "internal_error", "Something went wrong.", "Unexpected server error."
+    ),
+    BAD_GATEWAY: ApiError(
+        BAD_GATEWAY,
+        502,
+        "upstream_error",
+        "An upstream service failed to complete the request.",
+        "A third-party delivery failed.",
     ),
 }
 
