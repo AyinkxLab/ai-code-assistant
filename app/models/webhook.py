@@ -11,7 +11,7 @@ from __future__ import annotations
 import hashlib
 import re
 from collections.abc import Iterable
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 from app.extensions import db
 
@@ -76,6 +76,10 @@ class WebhookSubscription(db.Model):
     # SHA-256 of the signing secret. Lets the application detect rotation
     # without exposing or decrypting the secret itself.
     secret_hash = db.Column(db.String(64), nullable=True)
+    # During a rotation the previous secret stays valid for a short window so
+    # in-flight deliveries signed with it still verify.
+    previous_secret = db.Column(db.String(255), nullable=True)
+    previous_secret_expires_at = db.Column(db.DateTime(timezone=True), nullable=True)
     is_active = db.Column(db.Boolean, nullable=False, default=True)
     created_at = db.Column(
         db.DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC)
@@ -108,6 +112,48 @@ class WebhookSubscription(db.Model):
     def signing_secret(self) -> str | None:
         """Return the plaintext signing secret, when configured."""
         return self.secret
+
+    def rotate_secret(
+        self,
+        new_secret: str,
+        *,
+        window_seconds: int = 300,
+        now: datetime | None = None,
+    ) -> None:
+        """Rotate the signing secret with a short dual-secret window.
+
+        The previous secret stays valid until ``now + window_seconds`` so
+        deliveries already signed with it still verify.
+        """
+        if not isinstance(new_secret, str) or not new_secret:
+            raise ValueError("webhook secret must be a non-empty string")
+        if isinstance(window_seconds, bool) or not isinstance(window_seconds, int):
+            raise ValueError("window_seconds must be an integer")
+        if not 0 <= window_seconds <= 86_400:
+            raise ValueError("window_seconds must be between 0 and 86400")
+        moment = now or datetime.now(UTC)
+        if moment.tzinfo is None:
+            moment = moment.replace(tzinfo=UTC)
+        self.previous_secret = self.secret
+        self.previous_secret_expires_at = moment + timedelta(seconds=window_seconds)
+        self.set_secret(new_secret)
+
+    def verification_secrets(self, *, now: datetime | None = None) -> list[str]:
+        """Return the secrets a verifier should accept right now."""
+        moment = now or datetime.now(UTC)
+        if moment.tzinfo is None:
+            moment = moment.replace(tzinfo=UTC)
+        secrets: list[str] = [self.secret] if self.secret else []
+        if self.previous_secret:
+            expires = self.previous_secret_expires_at
+            if expires is None:
+                secrets.append(self.previous_secret)
+            else:
+                if expires.tzinfo is None:
+                    expires = expires.replace(tzinfo=UTC)
+                if expires >= moment:
+                    secrets.append(self.previous_secret)
+        return secrets
 
     def event_types(self) -> list[str]:
         """The subscribed event names.
