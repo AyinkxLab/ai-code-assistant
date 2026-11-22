@@ -14,7 +14,7 @@ instance with the ``testing`` configuration).
 import os
 from datetime import datetime
 
-from flask import Flask, g, render_template
+from flask import Flask, g, render_template, request
 
 from app.config import config_by_name
 from app.extensions import csrf, db, login_manager, migrate, socketio
@@ -161,6 +161,43 @@ def create_app(config_name: str | None = None) -> Flask:
         decision = getattr(g, "budget_decision", None)
         if decision is not None and getattr(decision, "warned", False):
             response.headers["X-Budget-Warning"] = "approaching_limit"
+        return response
+
+    # Documented security headers and CSP (#622). The policy matches what the
+    # templates actually load: same-origin scripts, Google Fonts styles/fonts,
+    # and same-origin WebSocket/polling for Socket.IO. Inline styles remain an
+    # explicit exception (existing templates use style attributes); there are
+    # no inline event handlers or inline executable scripts.
+    content_security_policy = (
+        "default-src 'self'; "
+        "base-uri 'self'; "
+        "object-src 'none'; "
+        "frame-ancestors 'none'; "
+        "form-action 'self'; "
+        "script-src 'self'; "
+        "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
+        "font-src 'self' https://fonts.gstatic.com; "
+        "img-src 'self' data:; "
+        "connect-src 'self' ws: wss:"
+    )
+
+    @app.after_request
+    def add_security_headers(response):
+        """Apply the documented security headers to every response."""
+        response.headers.setdefault("Content-Security-Policy", content_security_policy)
+        response.headers.setdefault("X-Content-Type-Options", "nosniff")
+        response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
+        response.headers.setdefault("X-Frame-Options", "DENY")
+        response.headers.setdefault(
+            "Permissions-Policy",
+            "camera=(), microphone=(), geolocation=(), payment=(), usb=()",
+        )
+        # HSTS is only meaningful over HTTPS and must never be sent on plain
+        # HTTP in local development.
+        if request.is_secure:
+            response.headers.setdefault(
+                "Strict-Transport-Security", "max-age=31536000; includeSubDomains"
+            )
         return response
 
     # Make the current time available to every template as ``now``.
