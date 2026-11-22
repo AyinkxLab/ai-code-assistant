@@ -121,3 +121,58 @@ The same server is the `mock_stellar` pytest fixture used by
 | Custom URL rejected | Non-loopback host with a custom network | Use a loopback host or HTTPS |
 | Contract data marked not decoded | The RPC returned unsupported XDR | Inspect the raw XDR; decoding is intentionally bounded |
 | `404` / not found | Unknown account, ledger, or contract on this network | Confirm the network and identifier |
+
+## GitHub App installations (#676)
+
+The OAuth flow above remains the default GitHub connection. Optionally, a
+workspace can also store GitHub App installations:
+
+- `github_app_installations` stores the installation id, account metadata,
+  repository selection (`all` or `selected`), selected repository ids, status,
+  and suspension/revocation timestamps.
+- Installation access tokens are encrypted with the same Fernet helper as OAuth
+  tokens. Only ciphertext is persisted, and `to_dict()` never returns the token
+  or ciphertext.
+- Owner-scoped API routes live under
+  `/integrations/api/workspaces/<workspace_id>/github-app/installations`.
+- `POST /integrations/github-app/webhook` applies signed installation events
+  (`created`, `repositories`, `suspend`, `unsuspend`, `deleted`) to existing
+  rows. It verifies `X-Hub-Signature-256` with `GITHUB_APP_WEBHOOK_SECRET`.
+  Unknown installations are acknowledged without creating workspace data.
+
+Configuration:
+
+```dotenv
+GITHUB_APP_ID=...
+GITHUB_APP_SLUG=...
+GITHUB_APP_CLIENT_ID=...
+GITHUB_APP_CLIENT_SECRET=...
+GITHUB_APP_WEBHOOK_SECRET=...
+```
+
+Errors are structured with stable codes (`invalid_input`, `permission_denied`,
+`not_found`, `installation_conflict`, `not_configured`). Tests:
+`tests/test_github_app.py`.
+
+## Jira review-finding export (#680)
+
+AI review findings can be exported as Jira issues. Credentials are stored
+encrypted in `integration_credentials` under `integration="jira"` with the names
+`base_url`, `email`, `api_token`, and `project_key` (see
+[encrypted integration credentials](integration-credentials.md)). The API token
+is never returned by an API or written to a log or error.
+
+- `PUT /integrations/api/workspaces/<workspace_id>/jira` configures the
+  integration (owner only).
+- `POST /integrations/api/workspaces/<workspace_id>/jira/findings/<finding_id>`
+  creates (or returns) the Jira issue for a finding.
+- Severity maps to priority: `critical` ? `Highest`, `high` ? `High`,
+  `medium` ? `Medium`, `low` ? `Low`, `informational` ? `Lowest`.
+- Each created issue is stored in `jira_issue_links` with its external Jira key.
+  The unique `(workspace_id, finding_id)` constraint and the stored key make
+  exports idempotent: exporting the same finding again reuses the existing issue
+  and makes no second Jira call.
+- Errors are structured (`invalid_input`, `not_configured`, `permission_denied`,
+  `not_found`, `delivery_failed`).
+
+Tests: `tests/test_jira.py`.
