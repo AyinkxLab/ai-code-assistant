@@ -13,6 +13,7 @@ from flask import Response, jsonify, render_template, request
 from flask_login import current_user, login_required
 
 from app.admin import bp
+from app.api.error_catalog import FORBIDDEN, INVALID_INPUT, UNAUTHORIZED, error_response
 from app.models import AuditLog, UsageRecord, User, Workspace
 from app.services import usage_dashboards, usage_ledger
 from app.services.currency import get_currency_config
@@ -32,9 +33,9 @@ def admin_required(view):
     @wraps(view)
     def wrapped(*args, **kwargs):
         if not current_user.is_authenticated:
-            return jsonify({"error": "Authentication required.", "kind": "unauthorized"}), 401
+            return error_response(UNAUTHORIZED)
         if not current_user.is_admin:
-            return jsonify({"error": "Admin access required.", "kind": "forbidden"}), 403
+            return error_response(FORBIDDEN, "Admin access required.")
         return view(*args, **kwargs)
 
     return wrapped
@@ -100,7 +101,7 @@ def usage():
     try:
         days = usage_dashboards.normalize_days(request.args.get("days"))
     except ValueError as exc:
-        return jsonify({"error": str(exc), "kind": "invalid"}), 400
+        return error_response(INVALID_INPUT, str(exc))
     return jsonify(usage_dashboards.admin_dashboard(days=days))
 
 
@@ -125,11 +126,11 @@ def usage_report():
     try:
         days = usage_dashboards.normalize_days(request.args.get("days"))
     except ValueError as exc:
-        return jsonify({"error": str(exc), "kind": "invalid"}), 400
+        return error_response(INVALID_INPUT, str(exc))
 
     scope = (request.args.get("scope") or "all").strip().lower()
     if scope not in REPORT_SCOPES:
-        return jsonify({"error": "scope must be all, user or workspace.", "kind": "invalid"}), 400
+        return error_response(INVALID_INPUT, "scope must be all, user or workspace.")
 
     user_id = request.args.get("user_id", type=int)
     workspace_id = request.args.get("workspace_id", type=int)
@@ -217,7 +218,7 @@ def usage_export():
     try:
         days = usage_dashboards.normalize_days(request.args.get("days"))
     except ValueError as exc:
-        return jsonify({"error": str(exc), "kind": "invalid"}), 400
+        return error_response(INVALID_INPUT, str(exc))
     text, truncated = usage_dashboards.export_csv(days=days)
     response = Response(text, mimetype="text/csv")
     response.headers["Content-Disposition"] = 'attachment; filename="usage-org-wide.csv"'

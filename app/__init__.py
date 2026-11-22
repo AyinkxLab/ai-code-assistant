@@ -168,19 +168,59 @@ def create_app(config_name: str | None = None) -> Flask:
     def inject_template_globals():
         return {"now": datetime.now()}
 
-    # Error handlers.
-    @app.errorhandler(404)
-    def not_found(_error):
-        return render_template("errors/404.html"), 404
+    # Error handlers. API requests get the stable catalog shape (#650); HTML
+    # requests keep the existing rendered pages.
+    from app.api.error_catalog import (
+        catalog_entry,
+        error_code_for_status,
+        error_response,
+        wants_json_error,
+    )
 
-    @app.errorhandler(500)
-    def internal_error(_error):
-        db.session.rollback()
-        return render_template("errors/500.html"), 500
+    def _http_error(error, template: str | None = None):
+        code = error_code_for_status(error.code)
+        if wants_json_error():
+            return error_response(code)
+        if template is not None:
+            return render_template(template), error.code
+        entry = catalog_entry(code)
+        return (
+            render_template("errors/error.html", status=error.code, message=entry.message),
+            error.code,
+        )
+
+    @app.errorhandler(400)
+    def bad_request(error):
+        return _http_error(error)
+
+    @app.errorhandler(401)
+    def unauthorized(error):
+        return _http_error(error)
 
     @app.errorhandler(403)
-    def forbidden(_error):
-        return render_template("errors/403.html"), 403
+    def forbidden(error):
+        return _http_error(error, "errors/403.html")
+
+    @app.errorhandler(404)
+    def not_found(error):
+        return _http_error(error, "errors/404.html")
+
+    @app.errorhandler(409)
+    def conflict(error):
+        return _http_error(error)
+
+    @app.errorhandler(422)
+    def unprocessable(error):
+        return _http_error(error)
+
+    @app.errorhandler(429)
+    def rate_limited(error):
+        return _http_error(error)
+
+    @app.errorhandler(500)
+    def internal_error(error):
+        db.session.rollback()
+        return _http_error(error, "errors/500.html")
 
     # CLI command to bootstrap the database in a dev environment.
     @app.cli.command("init-db")

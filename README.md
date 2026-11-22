@@ -127,6 +127,7 @@ table, quotas, budgets, alerts, invoices, and reconciliation.
 - [Webhooks, delivery logs, and dead-letter replay](docs/webhooks.md)
 - [Architecture](docs/architecture.md)
 - [Security model](docs/security.md)
+- [API error catalog](docs/api-errors.md)
 - [Accessibility and keyboard navigation](docs/accessibility.md)
 - [Accessibility audit](docs/accessibility-audit.md)
 - [Internationalization](docs/i18n.md)
