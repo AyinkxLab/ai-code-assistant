@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import html
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -53,6 +54,12 @@ TAGS = [
 ]
 
 
+def _openapi_path(rule_path: str) -> str:
+    """Convert Flask converters (``<int:id>`` / ``{int:id}``) to ``{id}``."""
+    path = re.sub(r"<[^:>]+:([^>]+)>", r"{\1}", re.sub(r"<([^>]+)>", r"{\1}", rule_path))
+    return re.sub(r"\{[^:}]+:([^}]+)\}", r"{\1}", path)
+
+
 def _summary(endpoint: str, path: str, method: str) -> str:
     description = DESCRIPTIONS.get(f"{method} {path}")
     if description:
@@ -72,7 +79,8 @@ def build_spec(app) -> dict:
     """Build an OpenAPI 3.1 document from the app's registered routes."""
     paths: dict[str, dict] = {}
     for rule in sorted(app.url_map.iter_rules(), key=lambda item: str(item)):
-        path = str(rule)
+        rule_path = str(rule)
+        path = _openapi_path(rule_path)
         if not path.startswith(PUBLIC_PREFIXES):
             continue
         if rule.endpoint == "static":

@@ -56,7 +56,7 @@
         ]
       }
     },
-    "/api/conversations/<int:conversation_id>": {
+    "/api/conversations/{conversation_id}": {
       "delete": {
         "operationId": "chat_api_delete_conversation_delete",
         "responses": {
@@ -76,7 +76,7 @@
             "description": "Resource not found"
           }
         },
-        "summary": "DELETE /api/conversations/<int:conversation_id>",
+        "summary": "DELETE /api/conversations/{conversation_id}",
         "tags": [
           "chat"
         ]
@@ -100,13 +100,13 @@
             "description": "Resource not found"
           }
         },
-        "summary": "GET /api/conversations/<int:conversation_id>",
+        "summary": "GET /api/conversations/{conversation_id}",
         "tags": [
           "chat"
         ]
       }
     },
-    "/api/conversations/<int:conversation_id>/messages": {
+    "/api/conversations/{conversation_id}/messages": {
       "post": {
         "operationId": "chat_api_send_message_post",
         "responses": {
@@ -126,7 +126,7 @@
             "description": "Resource not found"
           }
         },
-        "summary": "POST /api/conversations/<int:conversation_id>/messages",
+        "summary": "POST /api/conversations/{conversation_id}/messages",
         "tags": [
           "chat"
         ]
@@ -311,6 +311,136 @@
         "summary": "GET /api/usage/top",
         "tags": [
           "chat"
+        ]
+      }
+    },
+    "/api/v1/projects": {
+      "get": {
+        "operationId": "api_v1_list_projects_get",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          },
+          "400": {
+            "description": "Structured invalid-input error"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "Permission denied"
+          },
+          "404": {
+            "description": "Resource not found"
+          }
+        },
+        "summary": "List the caller's projects with pagination.",
+        "tags": [
+          "v1"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}": {
+      "get": {
+        "operationId": "api_v1_get_project_get",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          },
+          "400": {
+            "description": "Structured invalid-input error"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "Permission denied"
+          },
+          "404": {
+            "description": "Resource not found"
+          }
+        },
+        "summary": "Return one project owned by the caller.",
+        "tags": [
+          "v1"
+        ]
+      }
+    },
+    "/api/v1/reviews": {
+      "get": {
+        "operationId": "api_v1_list_reviews_get",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          },
+          "400": {
+            "description": "Structured invalid-input error"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "Permission denied"
+          },
+          "404": {
+            "description": "Resource not found"
+          }
+        },
+        "summary": "List the caller's reviews, newest first, with pagination.",
+        "tags": [
+          "v1"
+        ]
+      }
+    },
+    "/api/v1/reviews/{review_id}": {
+      "get": {
+        "operationId": "api_v1_get_review_get",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          },
+          "400": {
+            "description": "Structured invalid-input error"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "Permission denied"
+          },
+          "404": {
+            "description": "Resource not found"
+          }
+        },
+        "summary": "Return one review and its summary.",
+        "tags": [
+          "v1"
+        ]
+      }
+    },
+    "/api/v1/usage": {
+      "get": {
+        "operationId": "api_v1_list_usage_get",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          },
+          "400": {
+            "description": "Structured invalid-input error"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "Permission denied"
+          },
+          "404": {
+            "description": "Resource not found"
+          }
+        },
+        "summary": "Return a paginated usage ledger summary for the caller.",
+        "tags": [
+          "v1"
         ]
       }
     }

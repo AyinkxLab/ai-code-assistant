@@ -19,7 +19,8 @@ with inline CSS. Re-run it whenever a public route changes.
 
 - Paths are discovered automatically, so the endpoint inventory cannot drift
   from the code.
-- Request/response schemas are frozen only for `/api/v1` resources. Other
+- Request/response schemas are frozen only for `/api/v1` resources
+  ([v1 reference](api-v1.md)). Other
   listed paths (for example `/api/conversations`) keep their existing
   contracts and may change with the web UI; the reference says so.
 - Module-private APIs under `/reviews/api`, `/workspaces/api` and similar

@@ -29,7 +29,7 @@ code { font-family: ui-monospace, monospace; font-size: .9em; }
 <header><h1>AI Code Assistant API reference</h1></header>
 <main>
 <p>This page is generated from an OpenAPI 3.1 document. It covers
-<strong>12</strong> operations across <strong>10</strong>
+<strong>17</strong> operations across <strong>15</strong>
 public paths. Paths are discovered from the running application; only the
 <code>/api/v1</code> resources have stable, documented response schemas.</p>
 
@@ -69,9 +69,9 @@ body before parsing or re-encoding JSON. See <code>docs/webhooks.md</code>.</p>
 <tbody>
 <tr><td><code>GET</code></td><td><code>/api/conversations</code></td><td>List the caller&#x27;s chat conversations.</td></tr>
 <tr><td><code>POST</code></td><td><code>/api/conversations</code></td><td>Create a chat conversation.</td></tr>
-<tr><td><code>DELETE</code></td><td><code>/api/conversations/&lt;int:conversation_id&gt;</code></td><td>DELETE /api/conversations/&lt;int:conversation_id&gt;</td></tr>
-<tr><td><code>GET</code></td><td><code>/api/conversations/&lt;int:conversation_id&gt;</code></td><td>GET /api/conversations/&lt;int:conversation_id&gt;</td></tr>
-<tr><td><code>POST</code></td><td><code>/api/conversations/&lt;int:conversation_id&gt;/messages</code></td><td>POST /api/conversations/&lt;int:conversation_id&gt;/messages</td></tr>
+<tr><td><code>DELETE</code></td><td><code>/api/conversations/{conversation_id}</code></td><td>DELETE /api/conversations/{conversation_id}</td></tr>
+<tr><td><code>GET</code></td><td><code>/api/conversations/{conversation_id}</code></td><td>GET /api/conversations/{conversation_id}</td></tr>
+<tr><td><code>POST</code></td><td><code>/api/conversations/{conversation_id}/messages</code></td><td>POST /api/conversations/{conversation_id}/messages</td></tr>
 <tr><td><code>GET</code></td><td><code>/api/docs</code></td><td>GET /api/docs</td></tr>
 <tr><td><code>GET</code></td><td><code>/api/docs/</code></td><td>GET /api/docs/</td></tr>
 <tr><td><code>GET</code></td><td><code>/api/usage</code></td><td>Per-user token usage summary.</td></tr>
@@ -79,6 +79,11 @@ body before parsing or re-encoding JSON. See <code>docs/webhooks.md</code>.</p>
 <tr><td><code>GET</code></td><td><code>/api/usage/export</code></td><td>GET /api/usage/export</td></tr>
 <tr><td><code>GET</code></td><td><code>/api/usage/export.csv</code></td><td>GET /api/usage/export.csv</td></tr>
 <tr><td><code>GET</code></td><td><code>/api/usage/top</code></td><td>GET /api/usage/top</td></tr>
+<tr><td><code>GET</code></td><td><code>/api/v1/projects</code></td><td>List the caller&#x27;s projects with pagination.</td></tr>
+<tr><td><code>GET</code></td><td><code>/api/v1/projects/{project_id}</code></td><td>Return one project owned by the caller.</td></tr>
+<tr><td><code>GET</code></td><td><code>/api/v1/reviews</code></td><td>List the caller&#x27;s reviews, newest first, with pagination.</td></tr>
+<tr><td><code>GET</code></td><td><code>/api/v1/reviews/{review_id}</code></td><td>Return one review and its summary.</td></tr>
+<tr><td><code>GET</code></td><td><code>/api/v1/usage</code></td><td>Return a paginated usage ledger summary for the caller.</td></tr>
 </tbody>
 </table>
 
