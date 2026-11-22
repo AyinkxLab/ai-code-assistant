@@ -192,11 +192,13 @@ class TestProvisioningRoleMappingAndDeprovisioning:
         assert mapped.status_code == 200
         assert mapped.get_json()["role"] == "contributor"
 
-        member_client = app.test_client()
-        assert b"Welcome back" in _login_as(member_client, "member@partner.test").data
+        client.post("/auth/logout")
+        assert b"Welcome back" in _login_as(client, "member@partner.test").data
         members_path = f"/workspaces/api/workspaces/{workspace.id}/members"
-        assert member_client.get(members_path).status_code == 200
+        assert client.get(members_path).status_code == 200
 
+        client.post("/auth/logout")
+        login(email="owner@example.com")
         removed = client.delete(f"/workspaces/api/workspaces/{workspace.id}/members/{member.id}")
         assert removed.status_code == 200
         membership = WorkspaceMember.query.filter_by(
@@ -206,14 +208,16 @@ class TestProvisioningRoleMappingAndDeprovisioning:
 
         # The member's existing session survives the workspace removal but no
         # longer authorizes the workspace.
-        assert member_client.get(members_path).status_code == 404
+        client.post("/auth/logout")
+        assert b"Welcome back" in _login_as(client, "member@partner.test").data
+        assert client.get(members_path).status_code == 404
 
         # Deprovisioning the account itself revokes that existing session.
         member.is_active = False
         db.session.commit()
-        assert member_client.get("/auth/me").status_code == 302
+        assert client.get("/auth/me").status_code == 302
 
-        refused = _login_as(member_client, "member@partner.test")
+        refused = _login_as(client, "member@partner.test")
         assert b"account has been disabled" in refused.data
         assert User.query.filter_by(email="member@partner.test").one().is_active is False
 

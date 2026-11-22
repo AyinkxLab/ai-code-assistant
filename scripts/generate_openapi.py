@@ -32,8 +32,13 @@ _PATH_PARAM = re.compile(r"<(?:(?:[^:<>]+):)?([^<>]+)>")
 
 
 def openapi_path(rule: str) -> str:
-    """Convert ``<int:workspace_id>`` segments to ``{workspace_id}``."""
-    return _PATH_PARAM.sub(r"{\1}", rule)
+    """Convert ``<int:workspace_id>`` segments to ``{workspace_id}``.
+
+    Flask exposes some resources with and without a trailing slash. OpenAPI
+    treats those as the same public path, so normalize to a single form to keep
+    operation ids unique.
+    """
+    return _PATH_PARAM.sub(r"{\1}", rule).rstrip("/") or "/"
 
 
 def _parameters(rule: str) -> list[dict]:
@@ -66,7 +71,8 @@ def build_document(app) -> dict:
             continue
         path = openapi_path(rule.rule)
         parameters = _parameters(rule.rule)
-        for method in sorted(rule.methods & HTTP_METHODS):
+        methods = {method.lower() for method in rule.methods if method.lower() in HTTP_METHODS}
+        for method in sorted(methods):
             operation = {
                 "operationId": _operation_id(method, rule.endpoint, path),
                 "tags": [path.strip("/").split("/")[0] or "api"],
