@@ -4,6 +4,13 @@ Every entry records who did what to which target and when. Rows are written by
 :mod:`app.services.audit` and are never updated or deleted through the
 application — there is no edit/delete route for them, and the admin endpoint is
 read-only. A user deletion keeps their history by nulling ``user_id``.
+
+Phase 11 (#606) adds a per-workspace hash chain: each row stores the previous
+row's hash and its own hash, so a modified or missing row is detectable by
+``flask audit verify``. Legacy rows written before the chain existed keep
+``NULL`` hashes and are reported as unhashed rather than treated as tampered.
+``user_id`` is deliberately excluded from the hash because deleting a user
+nulls it (see :mod:`app.services.audit`).
 """
 
 import json
@@ -23,6 +30,14 @@ class AuditLog(db.Model):
     )
 
     id = db.Column(db.Integer, primary_key=True)
+    #: The workspace ("organization") whose chain this entry belongs to. Rows
+    #: written outside a workspace still chain together under ``NULL``.
+    workspace_id = db.Column(
+        db.Integer,
+        db.ForeignKey("workspaces.id", ondelete="CASCADE"),
+        nullable=True,
+        index=True,
+    )
     user_id = db.Column(
         db.Integer,
         db.ForeignKey("users.id", ondelete="SET NULL"),
@@ -36,6 +51,11 @@ class AuditLog(db.Model):
     #: ``metadata`` is reserved by SQLAlchemy's declarative base; the database
     #: column is still called ``metadata``.
     meta = db.Column("metadata", db.Text, nullable=True)
+    #: Hash of the previous entry in this workspace's chain (or the genesis
+    #: value for the first hashed entry). ``NULL`` on legacy rows.
+    prev_hash = db.Column(db.String(64), nullable=True)
+    #: SHA-256 over this row's canonical fields including ``prev_hash``.
+    record_hash = db.Column(db.String(64), nullable=True)
     created_at = db.Column(
         db.DateTime(timezone=True),
         nullable=False,
@@ -60,12 +80,15 @@ class AuditLog(db.Model):
         """Serialize the entry for the admin JSON API."""
         return {
             "id": self.id,
+            "workspace_id": self.workspace_id,
             "user_id": self.user_id,
             "username": self.user.username if self.user else None,
             "action": self.action,
             "target_type": self.target_type,
             "target_id": self.target_id,
             "metadata": self.metadata_dict,
+            "prev_hash": self.prev_hash,
+            "record_hash": self.record_hash,
             "created_at": self.created_at.isoformat() if self.created_at else None,
         }
 

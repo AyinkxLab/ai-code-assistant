@@ -16,6 +16,7 @@ from app.admin import bp
 from app.api.error_catalog import FORBIDDEN, INVALID_INPUT, UNAUTHORIZED, error_response
 from app.models import AuditLog, UsageRecord, User, Workspace
 from app.services import usage_dashboards, usage_ledger
+from app.services.classification import export_record
 from app.services.currency import get_currency_config
 
 #: Hard cap on page size so an admin cannot force an unbounded scan.
@@ -160,10 +161,15 @@ def actions():
         return jsonify(
             {
                 "items": [
-                    {
-                        **row,
-                        "created_at": row["created_at"].isoformat() if row["created_at"] else None,
-                    }
+                    export_record(
+                        {
+                            **row,
+                            "created_at": (
+                                row["created_at"].isoformat() if row["created_at"] else None
+                            ),
+                        },
+                        max_level="internal",
+                    )
                     for row in rows
                 ],
                 "page": pagination.page,

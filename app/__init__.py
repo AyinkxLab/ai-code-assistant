@@ -291,4 +291,9 @@ def create_app(config_name: str | None = None) -> Flask:
 
     register_jobs_cli(app)
 
+    # Audit hash-chain verification and retention maintenance (#606, #608).
+    from app.services.audit_cli import register_audit_cli
+
+    register_audit_cli(app)
+
     return app
