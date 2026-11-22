@@ -25,6 +25,7 @@ import json
 from flask import Response, jsonify, render_template, request
 from flask_login import current_user, login_required
 
+from app.api.error_catalog import error_code_for_status, error_response
 from app.extensions import db
 from app.models import Project, Review, ReviewConfig, ReviewFinding, Workspace
 from app.models.project import STATUS_READY
@@ -38,7 +39,7 @@ from app.models.review import (
 )
 from app.models.review_finding import CATEGORIES_BY_KIND, SEVERITIES
 from app.reviews import bp
-from app.services import budgets, chat_audit, usage_ledger
+from app.services import budgets, chat_audit, security_tickets, usage_ledger
 from app.services import metrics as metrics_service
 from app.services import reviews as reviews_service
 from app.services.events import emit_event
@@ -639,8 +640,23 @@ def api_update_finding(finding_id: int):
     data = request.get_json(silent=True) or {}
     if "addressed" in data:
         finding.addressed = bool(data["addressed"])
+    ticket = None
+    if finding.addressed and bool(data.get("addressed")):
+        # Acknowledging a high-risk finding is the trigger for the optional
+        # ticketing integration. A retried request reaches the service again
+        # and returns the stored link instead of creating a duplicate. A
+        # delivery failure rolls the acknowledgement back and returns a
+        # structured error.
+        try:
+            ticket = security_tickets.create_for_acknowledged_finding(finding)
+        except security_tickets.TicketingError as exc:
+            db.session.rollback()
+            return error_response(error_code_for_status(exc.http_status), str(exc))
     db.session.commit()
-    return jsonify(finding.to_dict())
+    payload = finding.to_dict()
+    if ticket is not None:
+        payload["ticket"] = ticket.to_dict()
+    return jsonify(payload)
 
 
 # --------------------------------------------------------------------------
