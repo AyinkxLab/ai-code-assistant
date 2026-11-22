@@ -76,9 +76,7 @@ def consume(key: str, *, max_hits: int, window: int) -> tuple[bool, int]:
         return True, 0
 
 
-def consume_details(
-    key: str, *, max_hits: int, window: int
-) -> tuple[bool, int, int, int]:
+def consume_details(key: str, *, max_hits: int, window: int) -> tuple[bool, int, int, int]:
     """Record a hit and return ``(allowed, remaining, retry_after, reset_after)``.
 
     ``remaining`` is the number of requests left in the current window,

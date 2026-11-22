@@ -1,0 +1,77 @@
+{% extends "base.html" %}
+
+{% block title %}{{ workspace.name }} usage - {{ config.APP_NAME }}{% endblock %}
+
+{% block content %}
+<div class="github-header">
+  <div>
+    <h1>{{ workspace.name }} usage &amp; billing</h1>
+    <p class="repo-meta">
+      Organization-level rollups from the Phase 10 usage ledger. Cost is an
+      <strong>estimate</strong>, never a provider invoice.
+    </p>
+  </div>
+  <div class="repo-toolbar">
+    <a class="btn btn-ghost btn-sm" href="{{ url_for('admin.organization_dashboard', workspace_id=workspace.id) }}">Overview</a>
+    <a class="btn btn-ghost btn-sm" href="{{ url_for('admin.organization_members', workspace_id=workspace.id) }}">Members</a>
+  </div>
+</div>
+
+<form method="get" action="{{ url_for('admin.organization_usage', workspace_id=workspace.id) }}" class="inline-form">
+  <label for="days">Window (days)</label>
+  <input id="days" name="days" type="number" min="1" max="365" value="{{ days }}">
+  <button class="btn" type="submit">Apply</button>
+</form>
+
+<section aria-labelledby="org-usage-heading">
+  <h2 id="org-usage-heading">Usage ({{ days }} days)</h2>
+  <div class="metric-grid">
+    <div class="metric"><span class="metric-label">Ledger rows</span><strong>{{ usage.count }}</strong></div>
+    <div class="metric"><span class="metric-label">Prompt tokens</span><strong>{{ usage.prompt_tokens }}</strong></div>
+    <div class="metric"><span class="metric-label">Completion tokens</span><strong>{{ usage.completion_tokens }}</strong></div>
+    <div class="metric"><span class="metric-label">Total tokens</span><strong>{{ usage.total_tokens }}</strong></div>
+    <div class="metric">
+      <span class="metric-label"><abbr title="Estimated from recorded token counts and the configured price table; not a provider bill or an exact charge.">Estimated cost</abbr></span>
+      <strong>{{ currency.symbol }}{{ '%.6f'|format(usage.cost_estimate) }}</strong>
+    </div>
+  </div>
+  {% if usage.estimated_records %}
+  <p class="field-hint">
+    {{ usage.estimated_records }} of {{ usage.count }} rows contain estimated token counts.
+  </p>
+  {% endif %}
+</section>
+
+<section aria-labelledby="org-budgets-heading">
+  <h2 id="org-budgets-heading">Budget status</h2>
+  {% if budgets %}
+  <table class="billing-table">
+    <thead>
+      <tr>
+        <th scope="col">Workspace</th>
+        <th scope="col">Tokens used / limit</th>
+        <th scope="col">Estimated cost / limit</th>
+        <th scope="col">Status</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for budget in budgets %}
+      <tr>
+        <td>{{ budget.workspace_id }}</td>
+        <td>{{ budget.tokens_used }}{% if budget.token_limit is not none %} / {{ budget.token_limit }}{% endif %}</td>
+        <td>{{ currency.symbol }}{{ '%.6f'|format(budget.cost_used) }}{% if budget.cost_limit is not none %} / {{ currency.symbol }}{{ '%.6f'|format(budget.cost_limit) }}{% endif %}</td>
+        <td>
+          {% if budget.limits_hit %}Limit reached: {{ budget.limits_hit|join(', ') }}
+          {% elif budget.warned %}Warning threshold reached
+          {% else %}Within budget{% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="sidebar-empty">No active workspace budget is configured for this organization.</p>
+  {% endif %}
+  <p class="field-hint">Budget usage is estimated from ledger rows in the current UTC month.</p>
+</section>
+{% endblock %}

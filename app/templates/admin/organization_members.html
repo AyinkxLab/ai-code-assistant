@@ -1,0 +1,139 @@
+{% extends "base.html" %}
+
+{% block title %}{{ workspace.name }} members - {{ config.APP_NAME }}{% endblock %}
+
+{% block content %}
+<div class="github-header">
+  <div>
+    <h1>{{ workspace.name }} members</h1>
+    <p class="repo-meta">
+      Invite, suspend, remove, and change roles. Destructive actions require
+      confirmation; suspended and removed members lose access immediately.
+    </p>
+  </div>
+  <div class="repo-toolbar">
+    <a class="btn btn-ghost btn-sm" href="{{ url_for('admin.organization_dashboard', workspace_id=workspace.id) }}">Overview</a>
+    <a class="btn btn-ghost btn-sm" href="{{ url_for('admin.organization_usage', workspace_id=workspace.id) }}">Usage &amp; billing</a>
+  </div>
+</div>
+
+<section aria-labelledby="invite-heading">
+  <h2 id="invite-heading">Invite a member</h2>
+  <form method="post" action="{{ url_for('admin.organization_members', workspace_id=workspace.id) }}" class="inline-form" data-org-admin>
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <input type="hidden" name="action" value="invite">
+    <label for="invite-email">Email</label>
+    <input id="invite-email" name="email" type="email" required placeholder="teammate@example.com">
+    <label for="invite-role">Role</label>
+    <select id="invite-role" name="role">
+      {% for role in assignable_roles %}
+      <option value="{{ role }}">{{ role }}</option>
+      {% endfor %}
+    </select>
+    <button class="btn" type="submit" data-loading-label="Inviting...">Send invitation</button>
+  </form>
+</section>
+
+<section aria-labelledby="members-heading">
+  <h2 id="members-heading">Members</h2>
+  {% if members %}
+  <table class="billing-table">
+    <thead>
+      <tr>
+        <th scope="col">Member</th>
+        <th scope="col">Role</th>
+        <th scope="col">Status</th>
+        <th scope="col">Actions</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for member in members %}
+      <tr>
+        <td>{{ member.username }}</td>
+        <td>{{ member.role }}</td>
+        <td>{{ member.status }}</td>
+        <td>
+          {% if member.is_owner %}
+          <span class="field-hint">Owner</span>
+          {% elif member.status == 'active' %}
+          <form method="post" action="{{ url_for('admin.organization_members', workspace_id=workspace.id) }}" class="inline-form" data-org-admin>
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <input type="hidden" name="action" value="role">
+            <input type="hidden" name="user_id" value="{{ member.user_id }}">
+            <select id="role-{{ member.user_id }}" name="role" aria-label="Role for {{ member.username }}">
+              {% for role in assignable_roles %}
+              <option value="{{ role }}" {% if role == member.role %}selected{% endif %}>{{ role }}</option>
+              {% endfor %}
+            </select>
+            <label>
+              <input type="checkbox" name="confirm" value="yes" required>
+              Confirm
+            </label>
+            <button class="btn btn-sm" type="submit" data-loading-label="Saving...">Change role</button>
+          </form>
+          <form method="post" action="{{ url_for('admin.organization_members', workspace_id=workspace.id) }}" class="inline-form" data-org-admin>
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <input type="hidden" name="action" value="suspend">
+            <input type="hidden" name="user_id" value="{{ member.user_id }}">
+            <label>
+              <input type="checkbox" name="confirm" value="yes" required>
+              Confirm
+            </label>
+            <button class="btn btn-sm" type="submit" data-loading-label="Suspending...">Suspend</button>
+          </form>
+          <form method="post" action="{{ url_for('admin.organization_members', workspace_id=workspace.id) }}" class="inline-form" data-org-admin>
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <input type="hidden" name="action" value="remove">
+            <input type="hidden" name="user_id" value="{{ member.user_id }}">
+            <label>
+              <input type="checkbox" name="confirm" value="yes" required>
+              Confirm
+            </label>
+            <button class="btn btn-sm btn-danger" type="submit" data-loading-label="Removing...">Remove</button>
+          </form>
+          {% else %}
+          <form method="post" action="{{ url_for('admin.organization_members', workspace_id=workspace.id) }}" class="inline-form" data-org-admin>
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <input type="hidden" name="action" value="reactivate">
+            <input type="hidden" name="user_id" value="{{ member.user_id }}">
+            <button class="btn btn-sm" type="submit" data-loading-label="Restoring...">Restore</button>
+          </form>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="sidebar-empty">No members yet. Invite a teammate above.</p>
+  {% endif %}
+</section>
+
+<section aria-labelledby="invitations-heading">
+  <h2 id="invitations-heading">Pending invitations</h2>
+  {% if invitations %}
+  <table class="billing-table">
+    <thead>
+      <tr>
+        <th scope="col">Email</th>
+        <th scope="col">Role</th>
+        <th scope="col">Expires</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for invitation in invitations %}
+      <tr>
+        <td>{{ invitation.email }}</td>
+        <td>{{ invitation.role }}</td>
+        <td>{{ invitation.expires_at.strftime('%Y-%m-%d %H:%M') if invitation.expires_at else '—' }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="sidebar-empty">No pending invitations.</p>
+  {% endif %}
+</section>
+
+<script src="{{ url_for('static', filename='js/org-admin.js') }}"></script>
+{% endblock %}
