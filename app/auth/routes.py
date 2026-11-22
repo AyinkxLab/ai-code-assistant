@@ -5,15 +5,24 @@ extend this blueprint with email verification, password reset, profile
 management, and session hardening.
 """
 
+import json
 from urllib.parse import urljoin, urlparse
 
-from flask import flash, redirect, render_template, request, url_for
+from flask import Response, flash, jsonify, redirect, render_template, request, url_for
 from flask_login import current_user, login_required, login_user, logout_user
 
+from app.api.error_catalog import (
+    CONFLICT,
+    GONE,
+    INVALID_INPUT,
+    NOT_FOUND,
+    RATE_LIMITED,
+    error_response,
+)
 from app.auth import bp
 from app.extensions import db
-from app.models import User
-from app.services import audit, chat_audit
+from app.models import User, UserDataExport
+from app.services import audit, chat_audit, data_export
 
 
 def _is_safe_redirect_target(target: str) -> bool:
@@ -155,3 +164,73 @@ def logout():
 def me():
     """Simple authenticated endpoint used to verify auth is working."""
     return render_template("auth/me.html")
+
+
+@bp.route("/api/data-export", methods=["GET", "POST"])
+@login_required
+def data_export_requests():
+    """List or create the current user's account-data export requests (#614).
+
+    A new request is rate limited, processed, and answered with a one-time
+    download token. The token is never stored in plaintext.
+    """
+    if request.method == "GET":
+        return jsonify(
+            {"items": [row.to_dict() for row in data_export.list_requests(current_user)]}
+        )
+
+    try:
+        row = data_export.request_export(current_user)
+        row, token = data_export.process_request(row.id)
+    except data_export.RateLimited as exc:
+        response = error_response(RATE_LIMITED, str(exc))
+        response.headers["Retry-After"] = str(exc.retry_after)
+        return response
+    except (ValueError, LookupError) as exc:
+        db.session.rollback()
+        return error_response(INVALID_INPUT, str(exc))
+
+    payload = row.to_dict()
+    payload["download_token"] = token
+    payload["download_path"] = f"/auth/api/data-export/{row.id}/download"
+    return jsonify(payload), 201
+
+
+@bp.route("/api/data-export/<int:request_id>", methods=["GET"])
+@login_required
+def data_export_request(request_id: int):
+    """Return one of the current user's export requests."""
+    row = db.session.get(UserDataExport, request_id)
+    if row is None or row.user_id != current_user.id:
+        return error_response(NOT_FOUND)
+    return jsonify(row.to_dict())
+
+
+@bp.route("/api/data-export/<int:request_id>/download", methods=["GET"])
+@login_required
+def data_export_download(request_id: int):
+    """Download an export through its one-time, expiring token."""
+    token = (request.args.get("token") or "").strip()
+    if not token:
+        return error_response(INVALID_INPUT, "A download token is required.")
+    try:
+        payload = data_export.download_export(request_id, token, current_user)
+    except data_export.ExportExpired as exc:
+        db.session.rollback()
+        return error_response(GONE, str(exc))
+    except data_export.ExportAlreadyDownloaded as exc:
+        db.session.rollback()
+        return error_response(CONFLICT, str(exc))
+    except LookupError:
+        db.session.rollback()
+        return error_response(NOT_FOUND)
+    except (ValueError, data_export.DataExportError) as exc:
+        db.session.rollback()
+        return error_response(CONFLICT, str(exc))
+
+    response = Response(json.dumps(payload, indent=2), mimetype="application/json")
+    response.headers["Content-Disposition"] = (
+        f'attachment; filename="account-data-export-{request_id}.json"'
+    )
+    response.headers["Cache-Control"] = "no-store"
+    return response

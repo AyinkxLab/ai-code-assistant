@@ -24,6 +24,7 @@ fails when a code is missing.
 | `conflict` | 409 | `conflict` | The request conflicts with the current state. |
 | `validation_failed` | 422 | `validation_failed` | The request could not be validated. |
 | `rate_limited` | 429 | `rate_limited` | Too many requests. Please try again later. |
+| `gone` | 410 | `gone` | This resource is no longer available. |
 | `internal_error` | 500 | `internal_error` | Something went wrong. |
 
 ## Where catalog errors are produced

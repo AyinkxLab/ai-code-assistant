@@ -13,9 +13,10 @@ from urllib.parse import urlencode
 from flask import abort, jsonify, render_template, request
 from flask_login import current_user, login_required
 
+from app.api.error_catalog import INVALID_INPUT, NOT_FOUND, error_response
 from app.extensions import db
 from app.models import WebhookSubscription, Workspace
-from app.services import job_queue, webhook_dead_letters, webhook_deliveries
+from app.services import job_queue, siem, webhook_dead_letters, webhook_deliveries
 from app.webhooks import bp
 
 
@@ -101,6 +102,58 @@ def index():
             .all()
         )
     return render_template("webhooks/index.html", subscriptions=subscriptions)
+
+
+def _siem_workspace(workspace_id: int) -> Workspace | None:
+    """Return the workspace only when the current user owns it."""
+    workspace = db.session.get(Workspace, workspace_id)
+    if workspace is None or workspace.user_id != current_user.id:
+        return None
+    return workspace
+
+
+@bp.route("/api/workspaces/<int:workspace_id>/siem", methods=["GET", "PUT", "DELETE"])
+@login_required
+def api_siem(workspace_id: int):
+    """Read, configure, or delete the workspace's SIEM forwarding endpoint."""
+    if _siem_workspace(workspace_id) is None:
+        return error_response(NOT_FOUND)
+
+    if request.method == "GET":
+        endpoint = siem.get_endpoint(workspace_id)
+        return jsonify(
+            {
+                "configured": endpoint is not None,
+                "endpoint": endpoint.to_dict() if endpoint is not None else None,
+            }
+        )
+
+    if request.method == "DELETE":
+        try:
+            siem.delete_endpoint(workspace_id, actor=current_user)
+        except LookupError:
+            db.session.rollback()
+            return error_response(NOT_FOUND)
+        return jsonify({"deleted": True})
+
+    data = request.get_json(silent=True) or {}
+    created = siem.get_endpoint(workspace_id) is None
+    try:
+        endpoint, secret = siem.configure_endpoint(
+            workspace_id,
+            url=data.get("url"),
+            secret=data.get("secret"),
+            is_active=data.get("is_active"),
+            actor=current_user,
+        )
+    except (ValueError, LookupError, PermissionError) as exc:
+        db.session.rollback()
+        return error_response(INVALID_INPUT, str(exc))
+
+    payload = endpoint.to_dict()
+    if secret:
+        payload["secret"] = secret
+    return jsonify(payload), 201 if created else 200
 
 
 @bp.route("/subscriptions/<int:subscription_id>/deliveries")

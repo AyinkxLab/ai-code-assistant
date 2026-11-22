@@ -74,6 +74,11 @@ Validation:
 
 Errors are structured: `{ "error": "...", "code": "invalid_webhook_config" }`.
 
+## SIEM forwarding (#629)
+
+Workspaces can forward signed `security.*` events to a SIEM endpoint; see
+[SIEM webhook and log forwarding](siem.md).
+
 ## Delivery logs (#672)
 
 `GET /webhooks/api/subscriptions/<id>/deliveries` lists attempts with status,
