@@ -92,6 +92,19 @@ def _is_safe_redirect_target(target: str) -> bool:
     return redirect_url.scheme in {"http", "https"} and host_url.netloc == redirect_url.netloc
 
 
+@bp.before_app_request
+def _revoke_deprovisioned_sessions():
+    """Drop a session whose account was deactivated after login (#639).
+
+    Deprovisioning an account (``User.is_active = False``) must not leave an
+    already-authenticated browser session usable. Flask-Login reloads the user
+    from the database on each request, so checking here revokes the existing
+    session on its next request without a server-side session store.
+    """
+    if current_user.is_authenticated and not current_user.is_active:
+        logout_user()
+
+
 @bp.route("/register", methods=["GET", "POST"])
 def register():
     """Create a new user account.

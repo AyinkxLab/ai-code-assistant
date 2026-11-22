@@ -91,6 +91,11 @@ def create_app(config_name: str | None = None) -> Flask:
 
     init_observability(app)
 
+    # Persisted idempotency keys for retry-safe POST requests (#649).
+    from app.services.idempotency import register_idempotency
+
+    register_idempotency(app)
+
     # Per-request query counts and the slow-query log (#696).
     from app.observability.query_profiling import init_query_profiling
 

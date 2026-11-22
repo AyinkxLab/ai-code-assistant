@@ -422,6 +422,11 @@ class Config:
     # the registry's per-metric series cap.
     METRICS_ENABLED = os.getenv("METRICS_ENABLED", "1") == "1"
     METRICS_TOKEN = os.getenv("METRICS_TOKEN", "")
+    # POST idempotency keys (#649). The stored request/response pair is kept for
+    # this many seconds; expired rows are purged on access and by
+    # ``flask purge-idempotency``. Invalid or non-positive values fall back to
+    # the 24-hour default.
+    IDEMPOTENCY_TTL_SECONDS = _positive_int_env("IDEMPOTENCY_TTL_SECONDS", 24 * 60 * 60)
     # Per-request SQL profiling (#696). Every request counts its queries; a query
     # slower than the threshold is logged as a literal-free statement shape.
     # Bound parameters, prompts and secrets are never logged.
