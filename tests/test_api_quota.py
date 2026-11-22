@@ -37,9 +37,7 @@ def test_burst_requests_are_denied_with_a_stable_body(client, make_user, login, 
     assert denied.headers["X-RateLimit-Remaining"] == "0"
 
 
-def test_sustained_requests_slide_with_the_window(
-    client, make_user, login, app, monkeypatch
-):
+def test_sustained_requests_slide_with_the_window(client, make_user, login, app, monkeypatch):
     make_user()
     login()
     app.config.update(API_QUOTA_TOKEN_MAX=2, API_QUOTA_TOKEN_WINDOW=60)
