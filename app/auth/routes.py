@@ -6,6 +6,7 @@ management, and session hardening.
 """
 
 import json
+from functools import wraps
 from urllib.parse import urljoin, urlparse
 
 from flask import Response, flash, jsonify, redirect, render_template, request, url_for
@@ -13,16 +14,62 @@ from flask_login import current_user, login_required, login_user, logout_user
 
 from app.api.error_catalog import (
     CONFLICT,
+    FORBIDDEN,
     GONE,
     INVALID_INPUT,
     NOT_FOUND,
     RATE_LIMITED,
+    UNAUTHORIZED,
     error_response,
 )
 from app.auth import bp
 from app.extensions import db
 from app.models import User, UserDataExport
-from app.services import audit, chat_audit, data_export
+from app.services import audit, chat_audit, data_export, domain_verification
+
+
+def _api_login_required(view):
+    """Reject unauthenticated JSON API calls with the catalog 401 shape."""
+
+    @wraps(view)
+    def wrapper(*args, **kwargs):
+        if not current_user.is_authenticated:
+            return error_response(UNAUTHORIZED)
+        return view(*args, **kwargs)
+
+    return wrapper
+
+
+def _domain_error_response(exc: Exception):
+    """Map a domain-verification failure to a structured catalog response."""
+    if isinstance(exc, domain_verification.DomainPermissionDenied):
+        code = FORBIDDEN
+    elif isinstance(exc, domain_verification.ChallengeExpired):
+        code = GONE
+    elif isinstance(
+        exc, (domain_verification.DomainConflict, domain_verification.DomainNotVerified)
+    ):
+        code = CONFLICT
+    elif isinstance(exc, LookupError):
+        code = NOT_FOUND
+    else:
+        code = INVALID_INPUT
+    db.session.rollback()
+    return error_response(code, str(exc))
+
+
+def _domain_payload(data: dict | None) -> tuple[int, str] | None:
+    """Return ``(workspace_id, domain)`` from a JSON body, or ``None``."""
+    if not isinstance(data, dict):
+        return None
+    try:
+        workspace_id = int(data.get("workspace_id"))
+    except (TypeError, ValueError):
+        return None
+    domain = data.get("domain")
+    if not isinstance(domain, str):
+        return None
+    return workspace_id, domain
 
 
 def _is_safe_redirect_target(target: str) -> bool:
@@ -118,6 +165,22 @@ def login():
                 status="failure",
                 reason="invalid_credentials",
             )
+        elif domain_verification.is_email_domain_enforced(user.email):
+            error = (
+                "Password sign-in is disabled for your organization. "
+                "Use single sign-on (SSO) to continue."
+            )
+            audit.record(
+                audit.LOGIN_FAILURE,
+                user=user,
+                target_type="user",
+                target_id=user.id,
+                metadata={"email": email, "reason": "sso_enforced"},
+            )
+            db.session.commit()
+            chat_audit.log_event(
+                "chat.login", user_id=user.id, status="failure", reason="sso_enforced"
+            )
         elif not user.is_active:
             error = "This account has been disabled. Contact support."
             audit.record(
@@ -164,6 +227,105 @@ def logout():
 def me():
     """Simple authenticated endpoint used to verify auth is working."""
     return render_template("auth/me.html")
+
+
+@bp.route("/api/domains", methods=["GET"])
+@_api_login_required
+def list_domains():
+    """List the workspace's verified and pending domains (owner only)."""
+    workspace_id = request.args.get("workspace_id", type=int)
+    if workspace_id is None:
+        return error_response(INVALID_INPUT, "workspace_id must be an integer.")
+    try:
+        rows = domain_verification.list_domains(workspace_id)
+    except Exception as exc:
+        return _domain_error_response(exc)
+    return jsonify({"items": [row.to_dict() for row in rows]})
+
+
+@bp.route("/api/domains/challenge", methods=["POST"])
+@_api_login_required
+def create_domain_challenge():
+    """Create or refresh a bounded DNS TXT ownership challenge."""
+    parsed = _domain_payload(request.get_json(silent=True))
+    if parsed is None:
+        return error_response(
+            INVALID_INPUT, "workspace_id (integer) and domain (string) are required."
+        )
+    workspace_id, domain = parsed
+    try:
+        row = domain_verification.create_challenge(workspace_id, domain)
+    except Exception as exc:
+        return _domain_error_response(exc)
+
+    audit.record(
+        audit.DOMAIN_CHALLENGE_CREATED,
+        workspace_id=workspace_id,
+        user=current_user,
+        target_type="workspace_domain",
+        target_id=row.id,
+        metadata={"domain": row.domain},
+    )
+    db.session.commit()
+    payload = row.to_dict()
+    payload["txt_record_name"] = domain_verification.txt_record_name(row.domain)
+    payload["txt_record_value"] = domain_verification.expected_txt_value(row.verification_token)
+    return jsonify(payload), 201
+
+
+@bp.route("/api/domains/verify", methods=["POST"])
+@_api_login_required
+def verify_domain():
+    """Verify a challenge by reading the domain's DNS TXT record."""
+    parsed = _domain_payload(request.get_json(silent=True))
+    if parsed is None:
+        return error_response(
+            INVALID_INPUT, "workspace_id (integer) and domain (string) are required."
+        )
+    workspace_id, domain = parsed
+    try:
+        row = domain_verification.verify_domain(workspace_id, domain)
+    except Exception as exc:
+        return _domain_error_response(exc)
+
+    audit.record(
+        audit.DOMAIN_VERIFIED,
+        workspace_id=workspace_id,
+        user=current_user,
+        target_type="workspace_domain",
+        target_id=row.id,
+        metadata={"domain": row.domain},
+    )
+    db.session.commit()
+    return jsonify(row.to_dict())
+
+
+@bp.route("/api/domains/<int:domain_id>", methods=["PATCH"])
+@_api_login_required
+def update_domain(domain_id: int):
+    """Enable or disable SSO enforcement for a verified domain."""
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict) or not isinstance(data.get("enforce_sso"), bool):
+        return error_response(INVALID_INPUT, "enforce_sso must be a boolean.")
+    try:
+        workspace_id = int(data.get("workspace_id"))
+    except (TypeError, ValueError):
+        return error_response(INVALID_INPUT, "workspace_id must be an integer.")
+    try:
+        row = domain_verification.set_enforcement(workspace_id, domain_id, data["enforce_sso"])
+    except Exception as exc:
+        return _domain_error_response(exc)
+
+    audit.record(
+        audit.DOMAIN_SSO_ENFORCEMENT_CHANGED,
+        workspace_id=workspace_id,
+        user=current_user,
+        target_type="workspace_domain",
+        target_id=row.id,
+        metadata={"domain": row.domain, "enforce_sso": row.enforce_sso},
+    )
+    db.session.commit()
+    return jsonify(row.to_dict())
 
 
 @bp.route("/api/data-export", methods=["GET", "POST"])

@@ -1,0 +1,467 @@
+{
+  "info": {
+    "description": "Machine-facing HTTP API. Paths are generated from the registered routes; detailed request and response schemas are documented for the /api/v1 resources only.",
+    "title": "AI Code Assistant public API",
+    "version": "1.0.0"
+  },
+  "openapi": "3.1.0",
+  "paths": {
+    "/api/conversations": {
+      "get": {
+        "operationId": "chat_api_list_conversations_get",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          },
+          "400": {
+            "description": "Structured invalid-input error"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "Permission denied"
+          },
+          "404": {
+            "description": "Resource not found"
+          }
+        },
+        "summary": "List the caller's chat conversations.",
+        "tags": [
+          "chat"
+        ]
+      },
+      "post": {
+        "operationId": "chat_api_create_conversation_post",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          },
+          "400": {
+            "description": "Structured invalid-input error"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "Permission denied"
+          },
+          "404": {
+            "description": "Resource not found"
+          }
+        },
+        "summary": "Create a chat conversation.",
+        "tags": [
+          "chat"
+        ]
+      }
+    },
+    "/api/conversations/{conversation_id}": {
+      "delete": {
+        "operationId": "chat_api_delete_conversation_delete",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          },
+          "400": {
+            "description": "Structured invalid-input error"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "Permission denied"
+          },
+          "404": {
+            "description": "Resource not found"
+          }
+        },
+        "summary": "DELETE /api/conversations/{conversation_id}",
+        "tags": [
+          "chat"
+        ]
+      },
+      "get": {
+        "operationId": "chat_api_get_conversation_get",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          },
+          "400": {
+            "description": "Structured invalid-input error"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "Permission denied"
+          },
+          "404": {
+            "description": "Resource not found"
+          }
+        },
+        "summary": "GET /api/conversations/{conversation_id}",
+        "tags": [
+          "chat"
+        ]
+      }
+    },
+    "/api/conversations/{conversation_id}/messages": {
+      "post": {
+        "operationId": "chat_api_send_message_post",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          },
+          "400": {
+            "description": "Structured invalid-input error"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "Permission denied"
+          },
+          "404": {
+            "description": "Resource not found"
+          }
+        },
+        "summary": "POST /api/conversations/{conversation_id}/messages",
+        "tags": [
+          "chat"
+        ]
+      }
+    },
+    "/api/docs": {
+      "get": {
+        "operationId": "api_docs_api_docs_get",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          },
+          "400": {
+            "description": "Structured invalid-input error"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "Permission denied"
+          },
+          "404": {
+            "description": "Resource not found"
+          }
+        },
+        "summary": "GET /api/docs",
+        "tags": [
+          "docs"
+        ]
+      }
+    },
+    "/api/docs/": {
+      "get": {
+        "operationId": "api_docs_api_docs_get",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          },
+          "400": {
+            "description": "Structured invalid-input error"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "Permission denied"
+          },
+          "404": {
+            "description": "Resource not found"
+          }
+        },
+        "summary": "GET /api/docs/",
+        "tags": [
+          "docs"
+        ]
+      }
+    },
+    "/api/usage": {
+      "get": {
+        "operationId": "chat_api_usage_summary_get",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          },
+          "400": {
+            "description": "Structured invalid-input error"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "Permission denied"
+          },
+          "404": {
+            "description": "Resource not found"
+          }
+        },
+        "summary": "Per-user token usage summary.",
+        "tags": [
+          "chat"
+        ]
+      }
+    },
+    "/api/usage/breakdown": {
+      "get": {
+        "operationId": "chat_api_usage_breakdown_get",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          },
+          "400": {
+            "description": "Structured invalid-input error"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "Permission denied"
+          },
+          "404": {
+            "description": "Resource not found"
+          }
+        },
+        "summary": "GET /api/usage/breakdown",
+        "tags": [
+          "chat"
+        ]
+      }
+    },
+    "/api/usage/export": {
+      "get": {
+        "operationId": "chat_api_usage_export_get",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          },
+          "400": {
+            "description": "Structured invalid-input error"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "Permission denied"
+          },
+          "404": {
+            "description": "Resource not found"
+          }
+        },
+        "summary": "GET /api/usage/export",
+        "tags": [
+          "chat"
+        ]
+      }
+    },
+    "/api/usage/export.csv": {
+      "get": {
+        "operationId": "chat_api_usage_export_csv_get",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          },
+          "400": {
+            "description": "Structured invalid-input error"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "Permission denied"
+          },
+          "404": {
+            "description": "Resource not found"
+          }
+        },
+        "summary": "GET /api/usage/export.csv",
+        "tags": [
+          "chat"
+        ]
+      }
+    },
+    "/api/usage/top": {
+      "get": {
+        "operationId": "chat_api_usage_top_get",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          },
+          "400": {
+            "description": "Structured invalid-input error"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "Permission denied"
+          },
+          "404": {
+            "description": "Resource not found"
+          }
+        },
+        "summary": "GET /api/usage/top",
+        "tags": [
+          "chat"
+        ]
+      }
+    },
+    "/api/v1/projects": {
+      "get": {
+        "operationId": "api_v1_list_projects_get",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          },
+          "400": {
+            "description": "Structured invalid-input error"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "Permission denied"
+          },
+          "404": {
+            "description": "Resource not found"
+          }
+        },
+        "summary": "List the caller's projects with pagination.",
+        "tags": [
+          "v1"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}": {
+      "get": {
+        "operationId": "api_v1_get_project_get",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          },
+          "400": {
+            "description": "Structured invalid-input error"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "Permission denied"
+          },
+          "404": {
+            "description": "Resource not found"
+          }
+        },
+        "summary": "Return one project owned by the caller.",
+        "tags": [
+          "v1"
+        ]
+      }
+    },
+    "/api/v1/reviews": {
+      "get": {
+        "operationId": "api_v1_list_reviews_get",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          },
+          "400": {
+            "description": "Structured invalid-input error"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "Permission denied"
+          },
+          "404": {
+            "description": "Resource not found"
+          }
+        },
+        "summary": "List the caller's reviews, newest first, with pagination.",
+        "tags": [
+          "v1"
+        ]
+      }
+    },
+    "/api/v1/reviews/{review_id}": {
+      "get": {
+        "operationId": "api_v1_get_review_get",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          },
+          "400": {
+            "description": "Structured invalid-input error"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "Permission denied"
+          },
+          "404": {
+            "description": "Resource not found"
+          }
+        },
+        "summary": "Return one review and its summary.",
+        "tags": [
+          "v1"
+        ]
+      }
+    },
+    "/api/v1/usage": {
+      "get": {
+        "operationId": "api_v1_list_usage_get",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          },
+          "400": {
+            "description": "Structured invalid-input error"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "Permission denied"
+          },
+          "404": {
+            "description": "Resource not found"
+          }
+        },
+        "summary": "Return a paginated usage ledger summary for the caller.",
+        "tags": [
+          "v1"
+        ]
+      }
+    }
+  },
+  "servers": [
+    {
+      "url": "/"
+    }
+  ],
+  "tags": [
+    {
+      "description": "Stable, versioned public resources.",
+      "name": "v1"
+    },
+    {
+      "description": "Conversation and usage endpoints.",
+      "name": "chat"
+    },
+    {
+      "description": "Documentation endpoints.",
+      "name": "docs"
+    }
+  ]
+}

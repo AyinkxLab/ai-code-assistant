@@ -203,6 +203,35 @@ class TestMigrationHead:
             columns = {col["name"] for col in insp.get_columns("budgets")}
             assert columns == expected
 
+    def test_workspace_domains_table_upgraded(self):
+        expected = {
+            "id",
+            "workspace_id",
+            "domain",
+            "verification_token",
+            "challenge_expires_at",
+            "verified_at",
+            "enforce_sso",
+            "created_at",
+            "updated_at",
+        }
+        with _migration_db() as db_url, _inspect(db_url) as insp:
+            assert "workspace_domains" in set(insp.get_table_names())
+            columns = {col["name"] for col in insp.get_columns("workspace_domains")}
+            assert columns == expected
+
+    def test_workspace_domains_downgrade_removed(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            db_url = f"sqlite:///{os.path.join(tmp, 'mig_domains.db')}"
+            up = _run_flask(["db", "upgrade"], {"DATABASE_URL": db_url})
+            assert up.returncode == 0, up.stderr
+            down = _run_flask(
+                ["db", "downgrade", "c9d1e2f3a4b5"], {"DATABASE_URL": db_url}
+            )
+            assert down.returncode == 0, down.stderr
+            with _inspect(db_url) as insp:
+                assert "workspace_domains" not in set(insp.get_table_names())
+
     def test_budgets_downgrade_removed(self):
         with tempfile.TemporaryDirectory() as tmp:
             db_url = f"sqlite:///{os.path.join(tmp, 'mig_budgets.db')}"

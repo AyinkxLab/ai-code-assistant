@@ -41,6 +41,17 @@ python run.py
 
 Open http://localhost:5000 in your browser.
 
+## API documentation
+
+- [Public API reference](docs/api/index.html) - authentication, pagination,
+  structured errors, webhook verification, and the registered endpoints.
+- [OpenAPI 3.1 spec](docs/openapi.json) - regenerate both with
+  `python scripts/render_api_docs.py`.
+
+The reference is served by the running app at `/api/docs` and is linked from
+the footer. Only `/api/v1` resources have frozen response schemas; other listed
+paths keep their existing web-UI contracts.
+
 ## Who it's for
 
 - Developers who want AI help grounded in their actual codebase

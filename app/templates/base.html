@@ -86,7 +86,9 @@
 
   <footer class="site-footer">
     <div class="container">
-      <p>&copy; {{ now.year }} {{ config.APP_NAME }}. {{ t('footer.built_with') }}</p>
+      <p>&copy; {{ now.year }} {{ config.APP_NAME }}. {{ t('footer.built_with') }}
+        &middot; <a href="{{ url_for('api_docs.api_docs') }}">API reference</a>
+      </p>
     </div>
   </footer>
 

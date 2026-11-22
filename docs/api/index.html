@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AI Code Assistant API reference</title>
+<style>
+:root { color-scheme: light dark; }
+body { font: 16px/1.6 system-ui, sans-serif; margin: 0; color: #1f2328; background: #fff; }
+body.dark { background: #0d1117; color: #e6edf3; }
+header { background: #0d1117; color: #fff; padding: 2rem 1rem; }
+main { max-width: 960px; margin: 0 auto; padding: 1rem; }
+h1 { margin: 0; font-size: 1.9rem; }
+h2 { margin-top: 2rem; border-bottom: 1px solid #d0d7de; padding-bottom: .3rem; }
+table { border-collapse: collapse; width: 100%; font-size: .95rem; }
+th, td { text-align: left; border-bottom: 1px solid #d0d7de;
+  padding: .45rem .6rem; vertical-align: top; }
+code { font-family: ui-monospace, monospace; font-size: .9em; }
+.note { background: #f6f8fa; border-left: 4px solid #0969da; padding: .7rem 1rem; }
+@media (prefers-color-scheme: dark) {
+  body { background: #0d1117; color: #e6edf3; }
+  h2 { border-color: #30363d; }
+  th, td { border-color: #30363d; }
+  .note { background: #161b22; }
+}
+</style>
+</head>
+<body>
+<header><h1>AI Code Assistant API reference</h1></header>
+<main>
+<p>This page is generated from an OpenAPI 3.1 document. It covers
+<strong>17</strong> operations across <strong>15</strong>
+public paths. Paths are discovered from the running application; only the
+<code>/api/v1</code> resources have stable, documented response schemas.</p>
+
+<h2 id="authentication">Authentication</h2>
+<p>Every public endpoint requires an authenticated session or API key, except
+the documentation page itself. Unauthenticated requests receive
+<code>401</code> with <code>{"code": "unauthorized"}</code>. Requests are
+authorized with the same ownership and workspace-role checks as the web UI.</p>
+
+<h2 id="pagination">Pagination</h2>
+<p>List endpoints accept <code>page</code> (1-based) and <code>limit</code>
+(default 50, maximum 100) and return:</p>
+<pre><code>{"items": [], "total": 0, "page": 1, "limit": 50, "next_cursor": null}</code></pre>
+<p>Oversized limits are clamped; malformed values return a structured
+<code>400 invalid_input</code> error. See <code>docs/pagination.md</code> for the
+full contract.</p>
+
+<h2 id="errors">Errors</h2>
+<p>Errors use one stable JSON shape:</p>
+<pre><code>{"error": "The request is invalid.", "kind": "invalid",
+"code": "invalid_input"}</code></pre>
+<p>Treat <code>code</code> as the contract. The catalog lives in
+<code>app/api/error_catalog.py</code>; <code>docs/api-errors.md</code> lists every
+code and HTTP status. Internal exception text is never exposed.</p>
+
+<h2 id="webhook-verification">Webhook verification</h2>
+<p>Webhook deliveries are signed over the exact raw bytes sent:
+<code>&lt;timestamp&gt;.&lt;body&gt;</code>, using HMAC-SHA256 with the
+subscription secret. Verify the <code>X-AICA-Signature: v1=&lt;hex&gt;</code>
+header against <code>X-AICA-Timestamp</code> with a constant-time comparison
+and reject timestamps outside the 300-second tolerance window. Verify the raw
+body before parsing or re-encoding JSON. See <code>docs/webhooks.md</code>.</p>
+
+<h2 id="endpoints">Endpoints</h2>
+<table>
+<thead><tr><th>Method</th><th>Path</th><th>Description</th></tr></thead>
+<tbody>
+<tr><td><code>GET</code></td><td><code>/api/conversations</code></td><td>List the caller&#x27;s chat conversations.</td></tr>
+<tr><td><code>POST</code></td><td><code>/api/conversations</code></td><td>Create a chat conversation.</td></tr>
+<tr><td><code>DELETE</code></td><td><code>/api/conversations/{conversation_id}</code></td><td>DELETE /api/conversations/{conversation_id}</td></tr>
+<tr><td><code>GET</code></td><td><code>/api/conversations/{conversation_id}</code></td><td>GET /api/conversations/{conversation_id}</td></tr>
+<tr><td><code>POST</code></td><td><code>/api/conversations/{conversation_id}/messages</code></td><td>POST /api/conversations/{conversation_id}/messages</td></tr>
+<tr><td><code>GET</code></td><td><code>/api/docs</code></td><td>GET /api/docs</td></tr>
+<tr><td><code>GET</code></td><td><code>/api/docs/</code></td><td>GET /api/docs/</td></tr>
+<tr><td><code>GET</code></td><td><code>/api/usage</code></td><td>Per-user token usage summary.</td></tr>
+<tr><td><code>GET</code></td><td><code>/api/usage/breakdown</code></td><td>GET /api/usage/breakdown</td></tr>
+<tr><td><code>GET</code></td><td><code>/api/usage/export</code></td><td>GET /api/usage/export</td></tr>
+<tr><td><code>GET</code></td><td><code>/api/usage/export.csv</code></td><td>GET /api/usage/export.csv</td></tr>
+<tr><td><code>GET</code></td><td><code>/api/usage/top</code></td><td>GET /api/usage/top</td></tr>
+<tr><td><code>GET</code></td><td><code>/api/v1/projects</code></td><td>List the caller&#x27;s projects with pagination.</td></tr>
+<tr><td><code>GET</code></td><td><code>/api/v1/projects/{project_id}</code></td><td>Return one project owned by the caller.</td></tr>
+<tr><td><code>GET</code></td><td><code>/api/v1/reviews</code></td><td>List the caller&#x27;s reviews, newest first, with pagination.</td></tr>
+<tr><td><code>GET</code></td><td><code>/api/v1/reviews/{review_id}</code></td><td>Return one review and its summary.</td></tr>
+<tr><td><code>GET</code></td><td><code>/api/v1/usage</code></td><td>Return a paginated usage ledger summary for the caller.</td></tr>
+</tbody>
+</table>
+
+<div class="note">
+<h2 id="coverage">Coverage and stability</h2>
+<p>The <code>/api/v1</code> paths are stable and versioned. Other listed paths
+keep their existing contracts and may change with the web UI. Automatic route
+discovery guarantees the inventory is current; it does not imply that every
+path has a frozen schema.</p>
+</div>
+</main>
+</body>
+</html>
