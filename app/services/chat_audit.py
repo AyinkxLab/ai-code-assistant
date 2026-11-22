@@ -24,6 +24,8 @@ from datetime import UTC, datetime
 
 from flask import g, request
 
+from app.services.classification import redact_for_log
+
 #: Correlation header echoed on responses and read from inbound requests.
 REQUEST_ID_HEADER = "X-Request-ID"
 
@@ -77,7 +79,7 @@ def log_event(
     if LOGGER.disabled:
         return
     payload = {"event": event, "user_id": user_id, "request_id": current_request_id()}
-    payload.update(fields)
+    payload.update(redact_for_log(fields))
     LOGGER.log(level, event, extra={"audit_fields": payload})
 
 

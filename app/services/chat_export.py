@@ -15,6 +15,10 @@ round trip unchanged.
 from __future__ import annotations
 
 from app.models import Conversation, Message
+from app.services.classification import CONFIDENTIAL, INTERNAL, allows, level_for
+
+#: Conversation exports are workspace content by default.
+DEFAULT_MAX_LEVEL = CONFIDENTIAL
 
 #: Human-readable headings for the roles the app stores. Unknown roles fall back
 #: to a capitalised version of the stored name.
@@ -46,26 +50,46 @@ def ordered_messages(conversation: Conversation) -> list[Message]:
     )
 
 
-def render_conversation_markdown(conversation: Conversation) -> str:
+def render_conversation_markdown(
+    conversation: Conversation, *, max_level: str = DEFAULT_MAX_LEVEL
+) -> str:
     """Render ``conversation`` as a Markdown document.
 
     User messages and assistant replies are emitted in order under ``##``
     headings. An empty conversation still produces a valid document. Content is
     never escaped or rewritten, so fenced code blocks in the stored text are
     preserved exactly as written.
-    """
-    lines: list[str] = [f"# {conversation.title or 'Conversation'}", ""]
 
-    meta = [
-        ("Conversation ID", str(conversation.id)),
-        ("Created", conversation.created_at.isoformat() if conversation.created_at else None),
-        ("Updated", conversation.updated_at.isoformat() if conversation.updated_at else None),
-        ("Messages", str(len(conversation.messages))),
-    ]
-    for label, value in meta:
-        if value:
-            lines.append(f"- **{label}:** {value}")
+    ``max_level`` is the most sensitive classification allowed in the target
+    export (see :mod:`app.services.classification`). The default is the normal
+    owner download. A public export (``max_level="public"``) withholds the
+    title and every message body with a redaction marker, so confidential
+    conversation content can never leak into it.
+    """
+    title_allowed = allows(max_level, level_for("title"))
+    content_allowed = allows(max_level, CONFIDENTIAL)
+
+    title = conversation.title or "Conversation"
+    if not title_allowed:
+        title = "[redacted:internal]"
+    lines: list[str] = [f"# {title}", ""]
+
+    if allows(max_level, INTERNAL):
+        meta = [
+            ("Conversation ID", str(conversation.id)),
+            ("Created", conversation.created_at.isoformat() if conversation.created_at else None),
+            ("Updated", conversation.updated_at.isoformat() if conversation.updated_at else None),
+            ("Messages", str(len(conversation.messages))),
+        ]
+        for label, value in meta:
+            if value:
+                lines.append(f"- **{label}:** {value}")
+    lines.append(f"- **Classification:** {CONFIDENTIAL}")
     lines.append("")
+
+    if not content_allowed:
+        lines += ["*Message content withheld: classification confidential.*", ""]
+        return "\n".join(lines)
 
     messages = ordered_messages(conversation)
     if not messages:

@@ -133,6 +133,7 @@ table, quotas, budgets, alerts, invoices, and reconciliation.
 - [Admin action audit view](docs/admin-actions.md)
 - [Audit log integrity](docs/audit-integrity.md)
 - [Audit retention and legal hold](docs/audit-retention.md)
+- [Data classification](docs/data-classification.md)
 - [Accessibility and keyboard navigation](docs/accessibility.md)
 - [Accessibility audit](docs/accessibility-audit.md)
 - [Internationalization](docs/i18n.md)
