@@ -56,6 +56,7 @@ from flask import (
 )
 from flask_login import current_user, login_required
 
+from app.api.error_catalog import INVALID_INPUT, error_response
 from app.extensions import db
 from app.models import Project, ProjectChatSession, ProjectMessage, User, Workspace, WorkspaceMember
 from app.models.activity_event import (
@@ -106,6 +107,9 @@ from app.services.importing import (
     store_project_files,
 )
 from app.services.invitations import cancel_pending_for_user
+from app.services.ip_allowlist import AllowlistError
+from app.services.ip_allowlist import get_config as get_ip_allowlist
+from app.services.ip_allowlist import set_config as set_ip_allowlist
 from app.services.llm import LLMProviderError, get_provider
 from app.services.notifications import notify
 from app.services.permissions import require_workspace_capability, resolve_workspace, role_for
@@ -1671,3 +1675,34 @@ def api_delete_workspace_pricing_override_by_path(workspace_id: int, provider: s
     if not removed:
         return jsonify({"error": "Price override not found."}), 404
     return jsonify(_pricing_payload(workspace_id))
+
+
+@bp.route("/api/workspaces/<int:workspace_id>/ip-allowlist", methods=["GET", "PUT"])
+@login_required
+@require_workspace_capability("manage_settings")
+def api_workspace_ip_allowlist(workspace_id: int):
+    """Read or replace the organization IP allowlist (owner only, #620)."""
+    if request.method == "GET":
+        row = get_ip_allowlist(workspace_id)
+        if row is None:
+            return jsonify({"workspace_id": workspace_id, "enabled": False, "cidrs": []})
+        return jsonify(row.to_dict())
+
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return error_response(INVALID_INPUT, "A JSON object is required.")
+    current = get_ip_allowlist(workspace_id)
+    enabled = data.get("enabled", bool(current.enabled) if current else False)
+    if not isinstance(enabled, bool):
+        return error_response(INVALID_INPUT, "enabled must be a boolean.")
+    try:
+        row = set_ip_allowlist(
+            workspace_id,
+            enabled=enabled,
+            cidrs=data.get("cidrs"),
+            user=current_user,
+        )
+    except AllowlistError as exc:
+        db.session.rollback()
+        return error_response(INVALID_INPUT, str(exc))
+    return jsonify(row.to_dict())

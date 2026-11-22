@@ -153,6 +153,8 @@ table, quotas, budgets, alerts, invoices, and reconciliation.
 - [Changelog](CHANGELOG.md)
 - [Admin action audit view](docs/admin-actions.md)
 - [Access review report](docs/access-review.md)
+- [Enterprise admin guide](docs/enterprise-admin-guide.md)
+- [Per-organization IP allowlist](docs/ip-allowlist.md)
 - [Multi-factor authentication](docs/mfa.md)
 - [SSO and SCIM setup](docs/sso-scim-setup.md)
 - [Domain verification and SSO enforcement](docs/sso-domain-verification.md)
@@ -178,6 +180,7 @@ table, quotas, budgets, alerts, invoices, and reconciliation.
 - [Billing](docs/billing.md)
 - [Cost precision](docs/cost-precision.md)
 - [Usage and billing data privacy](docs/usage-privacy.md)
+- [User data deletion and anonymization](docs/user-data-deletion.md)
 - [Python and TypeScript SDKs](docs/sdk.md)
 - [Roadmap](https://github.com/AyindxLab/ai-code-assistant/issues)
 

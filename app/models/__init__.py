@@ -51,6 +51,7 @@ from app.models.stellar_security_finding import StellarSecurityFinding
 from app.models.usage_record import UsageRecord
 from app.models.user import User
 from app.models.user_data_export import UserDataExport
+from app.models.user_deletion_request import UserDeletionRequest
 from app.models.webhook import (
     WebhookDeadLetter,
     WebhookDelivery,
@@ -60,6 +61,7 @@ from app.models.webhook import (
 from app.models.workspace import Workspace
 from app.models.workspace_budget_override import WorkspaceBudgetOverride
 from app.models.workspace_domain import WorkspaceDomain
+from app.models.workspace_ip_allowlist import WorkspaceIPAllowlist
 from app.models.workspace_member import WorkspaceMember
 from app.models.workspace_price_override import PriceOverride, WorkspacePriceOverride
 from app.models.workspace_settings import WorkspaceSettings
@@ -115,6 +117,7 @@ __all__ = [
     "UsageRecord",
     "User",
     "UserDataExport",
+    "UserDeletionRequest",
     "WebhookDeadLetter",
     "WebhookDelivery",
     "WebhookSubscription",
@@ -122,6 +125,7 @@ __all__ = [
     "Workspace",
     "WorkspaceBudgetOverride",
     "WorkspaceDomain",
+    "WorkspaceIPAllowlist",
     "WorkspaceInvitation",
     "WorkspaceMember",
     "WorkspacePriceOverride",

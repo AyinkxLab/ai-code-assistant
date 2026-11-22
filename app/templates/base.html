@@ -35,6 +35,7 @@
           {% if current_user.is_admin %}
           <a class="nav-link" href="{{ url_for('admin.usage_report') }}">{{ t('nav.admin_usage') }}</a>
           <a class="nav-link" href="{{ url_for('admin.actions') }}">Admin actions</a>
+          <a class="nav-link" href="https://github.com/AyindxLab/ai-code-assistant/blob/main/docs/enterprise-admin-guide.md">Admin guide</a>
           {% endif %}
           <a class="nav-link" href="{{ url_for('plugins.index') }}">{{ t('nav.plugins') }}</a>
           <a class="nav-link" href="{{ url_for('stellar.index') }}">{{ t('nav.stellar') }}</a>

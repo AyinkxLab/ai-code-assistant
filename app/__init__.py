@@ -169,6 +169,13 @@ def create_app(config_name: str | None = None) -> Flask:
 
     init_versioning(app)
 
+    # Per-organization IP allowlist guard (#620). Applies only to routes that
+    # resolve a workspace; static assets, health, metrics, and the favicon stay
+    # exempt.
+    from app.services.ip_allowlist import init_ip_allowlist
+
+    init_ip_allowlist(app)
+
     @app.after_request
     def add_budget_warning_header(response):
         """Expose a non-blocking budget warning to API/UI clients."""
