@@ -41,6 +41,8 @@ DATA_EXPORT_REQUESTED = "data_export_requested"
 DATA_EXPORT_READY = "data_export_ready"
 DATA_EXPORT_DOWNLOADED = "data_export_downloaded"
 DATA_EXPORT_EXPIRED = "data_export_expired"
+SIEM_ENDPOINT_CONFIGURED = "siem_endpoint_configured"
+SIEM_ENDPOINT_DELETED = "siem_endpoint_deleted"
 
 #: The "previous hash" of the first hashed row in a chain.
 GENESIS_HASH = "0" * 64

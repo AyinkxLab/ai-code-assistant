@@ -44,6 +44,7 @@ from app.models.review import Review
 from app.models.review_comment import ReviewComment
 from app.models.review_config import ReviewConfig
 from app.models.review_finding import ReviewFinding
+from app.models.siem_endpoint import SiemEndpoint
 from app.models.stellar_security_finding import StellarSecurityFinding
 from app.models.usage_record import UsageRecord
 from app.models.user import User
@@ -104,6 +105,7 @@ __all__ = [
     "ReviewComment",
     "ReviewConfig",
     "ReviewFinding",
+    "SiemEndpoint",
     "StellarSecurityFinding",
     "UsageRecord",
     "User",
