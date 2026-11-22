@@ -10,7 +10,6 @@ from datetime import UTC, datetime
 
 import pytest
 
-from app.extensions import db
 from app.models import User, Workspace, WorkspaceDomain
 from app.observability.enterprise import (
     FEATURE_AUDIT_EXPORT,
@@ -99,9 +98,7 @@ def test_domain_routes_emit_sso_events(client, make_user, login, db):
     assert "example.com" not in body
 
 
-def test_domain_permission_failure_is_counted_without_identifiers(
-    client, make_user, login, db
-):
+def test_domain_permission_failure_is_counted_without_identifiers(client, make_user, login, db):
     owner = make_user(username="owner", email="owner@example.com")
     make_user(username="outsider", email="outsider@example.net")
     workspace = Workspace(user_id=owner.id, name="Acme")

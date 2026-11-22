@@ -64,9 +64,7 @@ def _login_as(client, email, password="supersecret123"):
 
 
 class TestSupportedSSOEnforcement:
-    def test_domain_verification_enforcement_and_password_block(
-        self, client, make_user, login
-    ):
+    def test_domain_verification_enforcement_and_password_block(self, client, make_user, login):
         owner = make_user(username="owner", email="owner@example.com")
         workspace = _workspace(owner.id)
         login(email="owner@example.com")
@@ -174,9 +172,7 @@ class TestSupportedSSOEnforcement:
 
 
 class TestProvisioningRoleMappingAndDeprovisioning:
-    def test_provision_map_role_remove_and_revoke_session(
-        self, app, client, make_user, login
-    ):
+    def test_provision_map_role_remove_and_revoke_session(self, app, client, make_user, login):
         owner = make_user(username="owner", email="owner@example.com")
         member = make_user(username="member", email="member@partner.test")
         workspace = _workspace(owner.id)
@@ -201,9 +197,7 @@ class TestProvisioningRoleMappingAndDeprovisioning:
         members_path = f"/workspaces/api/workspaces/{workspace.id}/members"
         assert member_client.get(members_path).status_code == 200
 
-        removed = client.delete(
-            f"/workspaces/api/workspaces/{workspace.id}/members/{member.id}"
-        )
+        removed = client.delete(f"/workspaces/api/workspaces/{workspace.id}/members/{member.id}")
         assert removed.status_code == 200
         membership = WorkspaceMember.query.filter_by(
             workspace_id=workspace.id, user_id=member.id
@@ -280,11 +274,7 @@ class _IdentityProviderHandler(BaseHTTPRequestHandler):
         elif path == "/scim/v2/ServiceProviderConfig":
             self._reply(
                 200,
-                {
-                    "schemas": [
-                        "urn:ietf:params:scim:schemas:core:2.0:ServiceProviderConfig"
-                    ]
-                },
+                {"schemas": ["urn:ietf:params:scim:schemas:core:2.0:ServiceProviderConfig"]},
             )
         elif path == "/scim/v2/Users":
             self._reply(
