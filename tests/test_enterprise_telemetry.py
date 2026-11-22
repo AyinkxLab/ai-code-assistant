@@ -10,7 +10,6 @@ from datetime import UTC, datetime
 
 import pytest
 
-from app.extensions import db
 from app.models import User, Workspace, WorkspaceDomain
 from app.observability.enterprise import (
     FEATURE_AUDIT_EXPORT,
@@ -62,10 +61,10 @@ def test_feature_counters_use_fixed_labels():
 
 
 def test_unknown_values_collapse_to_other_and_never_leak_identifiers():
-    secret = "sk-live-super-secret-token"
+    identifier = "opaque-identifier-value-1234567890"
     email = "owner@example.com"
     workspace = "workspace-42"
-    record_enterprise_event(secret, email, workspace)
+    record_enterprise_event(identifier, email, workspace)
     record_enterprise_event(
         "not-a-feature",
         "not-an-action",
@@ -73,7 +72,7 @@ def test_unknown_values_collapse_to_other_and_never_leak_identifiers():
     )
 
     body = _body()
-    assert secret not in body
+    assert identifier not in body
     assert email not in body
     assert workspace not in body
     assert (
@@ -99,9 +98,7 @@ def test_domain_routes_emit_sso_events(client, make_user, login, db):
     assert "example.com" not in body
 
 
-def test_domain_permission_failure_is_counted_without_identifiers(
-    client, make_user, login, db
-):
+def test_domain_permission_failure_is_counted_without_identifiers(client, make_user, login, db):
     owner = make_user(username="owner", email="owner@example.com")
     make_user(username="outsider", email="outsider@example.net")
     workspace = Workspace(user_id=owner.id, name="Acme")
