@@ -131,6 +131,7 @@ table, quotas, budgets, alerts, invoices, and reconciliation.
 - [Dependency policy and SBOM](docs/dependency-policy.md)
 - [API error catalog](docs/api-errors.md)
 - [Admin action audit view](docs/admin-actions.md)
+- [Audit log integrity](docs/audit-integrity.md)
 - [Accessibility and keyboard navigation](docs/accessibility.md)
 - [Accessibility audit](docs/accessibility-audit.md)
 - [Internationalization](docs/i18n.md)

@@ -323,11 +323,14 @@ class TestMigrationHead:
     def test_audit_logs_table_upgraded(self):
         expected = {
             "id",
+            "workspace_id",
             "user_id",
             "action",
             "target_type",
             "target_id",
             "metadata",
+            "prev_hash",
+            "record_hash",
             "created_at",
         }
         with _migration_db() as db_url, _inspect(db_url) as insp:
@@ -345,6 +348,13 @@ class TestMigrationHead:
             assert down.returncode == 0, down.stderr
             with _inspect(db_url) as insp:
                 assert "audit_logs" not in set(insp.get_table_names())
+
+    def test_audit_hash_chain_columns_upgraded(self):
+        with _migration_db() as db_url, _inspect(db_url) as insp:
+            columns = {col["name"] for col in insp.get_columns("audit_logs")}
+            assert {"workspace_id", "prev_hash", "record_hash"} <= columns
+            indexes = {idx["name"] for idx in insp.get_indexes("audit_logs")}
+            assert "ix_audit_logs_workspace_id" in indexes
 
     def test_message_attachments_table_upgraded(self):
         expected = {
