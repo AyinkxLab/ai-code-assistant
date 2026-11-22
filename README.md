@@ -134,6 +134,7 @@ table, quotas, budgets, alerts, invoices, and reconciliation.
 - [Audit log integrity](docs/audit-integrity.md)
 - [Audit retention and legal hold](docs/audit-retention.md)
 - [Data classification](docs/data-classification.md)
+- [Compliance evidence pack](docs/compliance-evidence.md)
 - [Accessibility and keyboard navigation](docs/accessibility.md)
 - [Accessibility audit](docs/accessibility-audit.md)
 - [Internationalization](docs/i18n.md)
