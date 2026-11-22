@@ -34,6 +34,7 @@
           <a class="nav-link" href="{{ url_for('billing.index') }}">{{ t('nav.billing') }}</a>
           {% if current_user.is_admin %}
           <a class="nav-link" href="{{ url_for('admin.usage_report') }}">{{ t('nav.admin_usage') }}</a>
+          <a class="nav-link" href="{{ url_for('admin.actions') }}">Admin actions</a>
           {% endif %}
           <a class="nav-link" href="{{ url_for('plugins.index') }}">{{ t('nav.plugins') }}</a>
           <a class="nav-link" href="{{ url_for('stellar.index') }}">{{ t('nav.stellar') }}</a>

@@ -161,6 +161,46 @@ jobs:
       - name: Check for malicious assets and auto-run tasks
         run: python scripts/check_assets.py
 
+  dependency-policy:
+    name: Dependency policy & SBOM
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: |
+            requirements.txt
+            requirements-dev.txt
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-dev.txt
+
+      # Fails the job on a disallowed or unknown license and writes a bounded
+      # project-owned SBOM (not CycloneDX; see docs/dependency-policy.md).
+      - name: Enforce dependency licenses and generate SBOM
+        run: python scripts/dependency_policy.py --sbom sbom-python.json
+
+      - name: Upload SBOM artifact
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: sbom-python
+          path: sbom-python.json
+          if-no-files-found: warn
+          retention-days: 14
+
   test:
     name: Tests
     runs-on: ubuntu-latest
