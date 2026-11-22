@@ -376,3 +376,38 @@ jobs:
           tags: ai-code-assistant:ci
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+  openapi:
+    name: OpenAPI document
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements-dev.txt
+
+      - name: Generate OpenAPI document
+        run: python scripts/generate_openapi.py --output openapi.json
+
+      - name: Validate OpenAPI document
+        run: python scripts/generate_openapi.py --output openapi.json --check
+
+      - name: Upload OpenAPI artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: openapi
+          path: openapi.json
+          if-no-files-found: error
+          retention-days: 14

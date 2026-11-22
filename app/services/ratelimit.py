@@ -12,11 +12,14 @@ deployments should back it with a shared store (out of scope here).
 from __future__ import annotations
 
 import functools
+import hashlib
 import threading
 import time
 
-from flask import current_app, jsonify
+from flask import current_app, jsonify, request
 from flask_login import current_user
+
+from app.api.error_catalog import error_response
 
 _ENTRIES: dict[str, list[float]] = {}
 _LOCK = threading.Lock()
@@ -71,6 +74,30 @@ def consume(key: str, *, max_hits: int, window: int) -> tuple[bool, int]:
             return False, retry_after
         timestamps.append(now)
         return True, 0
+
+
+def consume_details(
+    key: str, *, max_hits: int, window: int
+) -> tuple[bool, int, int, int]:
+    """Record a hit and return ``(allowed, remaining, retry_after, reset_after)``.
+
+    ``remaining`` is the number of requests left in the current window,
+    ``retry_after`` is the wait before a denied request may retry, and
+    ``reset_after`` is the seconds until the oldest hit expires (the standard
+    ``X-RateLimit-Reset`` value).
+    """
+    now = time.monotonic()
+    with _LOCK:
+        _prune(key, window)
+        timestamps = _ENTRIES.setdefault(key, [])
+        if len(timestamps) >= max_hits:
+            oldest = timestamps[0]
+            retry_after = max(round(window - (now - oldest)), 1)
+            return False, 0, retry_after, retry_after
+        timestamps.append(now)
+        remaining = max(max_hits - len(timestamps), 0)
+        reset_after = max(round(window - (now - timestamps[0])), 0)
+        return True, remaining, 0, reset_after
 
 
 def count(key: str, *, window: int) -> int:
@@ -138,6 +165,92 @@ def per_user_limit(bucket: str, *, max_config: str, window_config: str):
                 response.headers["Retry-After"] = str(retry_after)
                 return response
             return view(*args, **kwargs)
+
+        return wrapper
+
+    return decorator
+
+
+def _token_subject() -> str | None:
+    """Return a hashed token subject, or ``None`` when no token is supplied.
+
+    The raw token is hashed so it is never stored as a limiter key or logged.
+    """
+    header = request.headers.get("Authorization", "")
+    token = ""
+    if header.lower().startswith("bearer "):
+        token = header[7:].strip()
+    if not token:
+        token = request.headers.get("X-API-Token", "").strip()
+    if not token:
+        return None
+    digest = hashlib.sha256(token.encode("utf-8")).hexdigest()[:24]
+    return f"token:{digest}"
+
+
+def _organization_subject(args, kwargs) -> str | None:
+    """Resolve the organization from a header, route id, or first argument."""
+    organization = request.headers.get("X-Organization-Id")
+    if not organization and "workspace_id" in kwargs:
+        organization = str(kwargs["workspace_id"])
+    if not organization and args:
+        organization = str(args[0])
+    return f"org:{organization}" if organization else None
+
+
+def api_quota(
+    bucket: str,
+    *,
+    token_max_config: str = "API_QUOTA_TOKEN_MAX",
+    token_window_config: str = "API_QUOTA_TOKEN_WINDOW",
+    org_max_config: str = "API_QUOTA_ORG_MAX",
+    org_window_config: str = "API_QUOTA_ORG_WINDOW",
+):
+    """Enforce per-token and per-organization quotas on a public view (#654).
+
+    Tokens are hashed before becoming limiter keys. Responses always carry
+    ``X-RateLimit-Limit``, ``X-RateLimit-Remaining``, and ``X-RateLimit-Reset``;
+    a denied request gets the stable ``rate_limited`` catalog body plus
+    ``Retry-After`` and is never passed to the view.
+    """
+
+    def decorator(view):
+        @functools.wraps(view)
+        def wrapper(*args, **kwargs):
+            subject = _token_subject() or f"user:{current_user.get_id()}"
+            checks = []
+
+            token_max = current_app.config.get(token_max_config) or 0
+            token_window = current_app.config.get(token_window_config) or 0
+            if token_max and token_window:
+                checks.append((f"{bucket}:{subject}", token_max, token_window))
+
+            organization = _organization_subject(args, kwargs)
+            org_max = current_app.config.get(org_max_config) or 0
+            org_window = current_app.config.get(org_window_config) or 0
+            if organization and org_max and org_window:
+                checks.append((f"{bucket}:{organization}", org_max, org_window))
+
+            headers: dict[str, str] = {}
+            for key, max_hits, window in checks:
+                allowed, remaining, retry_after, reset_after = consume_details(
+                    key, max_hits=max_hits, window=window
+                )
+                headers = {
+                    "X-RateLimit-Limit": str(max_hits),
+                    "X-RateLimit-Remaining": str(remaining),
+                    "X-RateLimit-Reset": str(reset_after),
+                }
+                if not allowed:
+                    response = error_response("rate_limited")
+                    response.headers["Retry-After"] = str(retry_after)
+                    response.headers.update(headers)
+                    return response
+
+            response = current_app.make_response(view(*args, **kwargs))
+            for name, value in headers.items():
+                response.headers.setdefault(name, value)
+            return response
 
         return wrapper
 

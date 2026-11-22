@@ -10,15 +10,17 @@ smoke test of the main API and dashboard paths, see
 
 ## What is measured
 
-The benchmark seeds a fixed in-memory SQLite database (200 plugins and 500
-plugin execution audit rows), logs in one owner, warms each request, and then
-measures the second call:
+The benchmark seeds a fixed in-memory SQLite database (200 plugins, 500
+plugin execution audit rows, and a 50-member organization), logs in one owner,
+warms each request, and then measures the second call:
 
 | Scenario | Request |
 | --- | --- |
 | `plugins_list` | `GET /plugins/api/workspaces/<id>/plugins?limit=50` |
 | `workspace_audit` | `GET /workspaces/api/workspaces/<id>/audit?per_page=50` |
 | `plugin_executions` | `GET /plugins/api/workspaces/<id>/plugin-executions?limit=50` |
+| `workspace_dashboard` | `GET /workspaces/<id>` (organization dashboard) |
+| `workspace_members` | `GET /workspaces/api/workspaces/<id>/members` |
 
 * **Queries** are counted with a SQLAlchemy `before_cursor_execute` listener.
   This is deterministic for a fixed seed and page size. The `plugins_list`
@@ -54,7 +56,7 @@ authoritative.
 
 ## Changing a budget
 
-1. Run `python scripts/perf_budget.py --advisory` and record the four numbers.
+1. Run `python scripts/perf_budget.py --advisory` and record each scenario's numbers.
 2. If the increase is intentional, update the matching scenario in
    `perf_budgets.json` in the same pull request and explain why in the PR.
 3. Do not raise a latency budget to hide a query-count regression — fix the

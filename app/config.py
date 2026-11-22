@@ -437,6 +437,13 @@ class Config:
     RATE_LIMIT_AI_PER_MINUTE = int(os.getenv("RATE_LIMIT_AI_PER_MINUTE", "60"))
     RATE_LIMIT_AI_WINDOW = int(os.getenv("RATE_LIMIT_AI_WINDOW", "60"))
     RATE_LIMIT_AI_ENABLED = True
+    # Per-token and per-organization quotas for public API endpoints (#654).
+    # A token is identified by a SHA-256 digest, never the raw credential. Set a
+    # value to 0 to disable that dimension. The limiter is process-local.
+    API_QUOTA_TOKEN_MAX = int(os.getenv("API_QUOTA_TOKEN_MAX", "600"))
+    API_QUOTA_TOKEN_WINDOW = int(os.getenv("API_QUOTA_TOKEN_WINDOW", "60"))
+    API_QUOTA_ORG_MAX = int(os.getenv("API_QUOTA_ORG_MAX", "1200"))
+    API_QUOTA_ORG_WINDOW = int(os.getenv("API_QUOTA_ORG_WINDOW", "60"))
     # Real-time collaboration (issue #50). ``threading`` keeps the development
     # server and tests dependency-free; production may use ``eventlet`` or
     # ``gevent`` when those are installed. Same-origin only by default.

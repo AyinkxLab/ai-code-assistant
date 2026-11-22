@@ -109,7 +109,7 @@ from app.services.invitations import cancel_pending_for_user
 from app.services.llm import LLMProviderError, get_provider
 from app.services.notifications import notify
 from app.services.permissions import require_workspace_capability, resolve_workspace, role_for
-from app.services.ratelimit import per_user_limit
+from app.services.ratelimit import api_quota, per_user_limit
 from app.services.search import SearchQueryError, search_project
 from app.services.stellar_detection import project_stellar_metadata
 from app.workspaces import bp
@@ -274,6 +274,7 @@ def project_explorer(workspace_id: int, project_id: int):
 
 @bp.route("/api/workspaces", methods=["GET"])
 @login_required
+@api_quota("workspaces")
 def api_list_workspaces():
     """Return a page of the current user's workspaces (issue #85).
 
@@ -419,6 +420,7 @@ def api_delete_workspace(workspace_id: int):
 
 @bp.route("/api/workspaces/<int:workspace_id>/members", methods=["GET"])
 @login_required
+@api_quota("workspace-members")
 @require_workspace_capability("view_members")
 def api_list_members(workspace_id: int):
     members = (

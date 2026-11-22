@@ -27,11 +27,15 @@ if str(ROOT) not in sys.path:  # pragma: no cover - import bootstrap
 DEFAULT_BUDGET_FILE = ROOT / "perf_budgets.json"
 PLUGIN_COUNT = 200
 AUDIT_COUNT = 500
+# Realistic organization size for the dashboard and membership budgets (#638).
+MEMBER_COUNT = 50
 
 SCENARIOS = {
     "plugins_list": "/plugins/api/workspaces/{workspace_id}/plugins?limit=50",
     "workspace_audit": "/workspaces/api/workspaces/{workspace_id}/audit?per_page=50",
     "plugin_executions": ("/plugins/api/workspaces/{workspace_id}/plugin-executions?limit=50"),
+    "workspace_dashboard": "/workspaces/{workspace_id}",
+    "workspace_members": "/workspaces/api/workspaces/{workspace_id}/members",
 }
 
 
@@ -76,8 +80,9 @@ def resolve_enforce(explicit: bool, advisory: bool) -> bool:
 
 def _seed(app):
     from app.extensions import db
-    from app.models import ActivityEvent, Plugin, User, Workspace
+    from app.models import ActivityEvent, Plugin, User, Workspace, WorkspaceMember
     from app.models.activity_event import EVENT_PLUGIN_EXECUTED
+    from app.models.workspace_member import ROLE_CONTRIBUTOR
 
     with app.app_context():
         db.create_all()
@@ -88,6 +93,28 @@ def _seed(app):
         workspace = Workspace(user_id=user.id, name="Perf")
         db.session.add(workspace)
         db.session.commit()
+
+        members = [
+            User(
+                username=f"perf-member-{index:03d}",
+                email=f"perf-member-{index:03d}@example.com",
+            )
+            for index in range(MEMBER_COUNT)
+        ]
+        for member in members:
+            member.set_password("supersecret123")
+        db.session.add_all(members)
+        db.session.commit()
+        db.session.bulk_save_objects(
+            [
+                WorkspaceMember(
+                    workspace_id=workspace.id,
+                    user_id=member.id,
+                    role=ROLE_CONTRIBUTOR,
+                )
+                for member in members
+            ]
+        )
 
         db.session.bulk_save_objects(
             [
