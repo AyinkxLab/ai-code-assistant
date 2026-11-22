@@ -148,6 +148,7 @@ table, quotas, budgets, alerts, invoices, and reconciliation.
 - [Changelog](CHANGELOG.md)
 - [Admin action audit view](docs/admin-actions.md)
 - [Audit log integrity](docs/audit-integrity.md)
+- [Audit and compliance guide](docs/audit-compliance-guide.md)
 - [Audit retention and legal hold](docs/audit-retention.md)
 - [Data classification](docs/data-classification.md)
 - [Compliance evidence pack](docs/compliance-evidence.md)
