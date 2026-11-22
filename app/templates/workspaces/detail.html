@@ -13,6 +13,9 @@
   </div>
   <div class="repo-toolbar">
     <a class="btn btn-ghost btn-sm" href="{{ url_for('collaboration.members_page', workspace_id=workspace.id) }}">Team</a>
+    {% if my_role in ['owner', 'admin'] %}
+      <a class="btn btn-ghost btn-sm" href="{{ url_for('admin.organization_dashboard', workspace_id=workspace.id) }}">Organization admin</a>
+    {% endif %}
     {% if my_role == 'owner' %}
       <a class="btn btn-ghost btn-sm" href="{{ url_for('collaboration.audit_page', workspace_id=workspace.id) }}">Audit log</a>
       <button id="rename-workspace" class="btn btn-ghost btn-sm" type="button">Rename</button>

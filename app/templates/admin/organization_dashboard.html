@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+
+{% block title %}{{ workspace.name }} organization - {{ config.APP_NAME }}{% endblock %}
+
+{% block content %}
+<div class="github-header">
+  <div>
+    <h1>{{ workspace.name }} organization</h1>
+    <p class="repo-meta">Owner and admin overview for this organization.</p>
+  </div>
+  <div class="repo-toolbar">
+    <a class="btn btn-ghost btn-sm" href="{{ url_for('admin.organization_members', workspace_id=workspace.id) }}">Members</a>
+    <a class="btn btn-ghost btn-sm" href="{{ url_for('admin.organization_usage', workspace_id=workspace.id) }}">Usage &amp; billing</a>
+  </div>
+</div>
+
+<section aria-labelledby="overview-heading">
+  <h2 id="overview-heading">Overview</h2>
+  <div class="metric-grid">
+    <div class="metric">
+      <span class="metric-label">Members</span>
+      <strong>{{ data.member_count }}</strong>
+    </div>
+    <div class="metric">
+      <span class="metric-label">Workspaces</span>
+      <strong>{{ data.workspace_count }}</strong>
+    </div>
+    <div class="metric">
+      <span class="metric-label">
+        <abbr title="Estimated from recorded token counts and the configured price table; not a provider bill.">Usage (estimated cost, {{ data.days }} days)</abbr>
+      </span>
+      <strong>{{ currency.symbol }}{{ '%.6f'|format(data.usage.cost_estimate) }}</strong>
+      <span class="field-hint">{{ data.usage.total_tokens }} tokens across {{ data.usage.count }} ledger rows</span>
+    </div>
+    <div class="metric">
+      <span class="metric-label">Open security actions</span>
+      <strong>{{ data.open_security_actions }}</strong>
+      <span class="field-hint">High and critical findings in organization projects.</span>
+    </div>
+  </div>
+  <p class="field-hint">
+    Cost and usage are estimates derived from the Phase 10 usage ledger and the
+    configured price table. They are not provider invoices.
+  </p>
+</section>
+{% endblock %}
