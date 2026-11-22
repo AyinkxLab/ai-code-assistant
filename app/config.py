@@ -437,6 +437,10 @@ class Config:
     RATE_LIMIT_AI_PER_MINUTE = int(os.getenv("RATE_LIMIT_AI_PER_MINUTE", "60"))
     RATE_LIMIT_AI_WINDOW = int(os.getenv("RATE_LIMIT_AI_WINDOW", "60"))
     RATE_LIMIT_AI_ENABLED = True
+    # MFA policy (#618). Organizations opt in per workspace; these settings
+    # control enrollment UI and a documented break-glass allow-list.
+    MFA_ISSUER = os.getenv("MFA_ISSUER", "AI Code Assistant")
+    MFA_BREAK_GLASS_EMAILS = os.getenv("MFA_BREAK_GLASS_EMAILS", "")
     # Per-token and per-organization quotas for public API endpoints (#654).
     # A token is identified by a SHA-256 digest, never the raw credential. Set a
     # value to 0 to disable that dimension. The limiter is process-local.

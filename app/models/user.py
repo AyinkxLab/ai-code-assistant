@@ -23,6 +23,10 @@ class User(UserMixin, db.Model):
     password_hash = db.Column(db.String(255), nullable=False)
     is_active = db.Column(db.Boolean, nullable=False, default=True)
     is_admin = db.Column(db.Boolean, nullable=False, default=False)
+    #: Base32 TOTP secret once MFA is enrolled. Never serialized to clients.
+    mfa_secret = db.Column(db.String(64), nullable=True)
+    #: Whether the user has completed MFA enrollment.
+    mfa_enabled = db.Column(db.Boolean, nullable=False, default=False)
     #: Optional per-user Stellar network selection (one of the supported
     #: selectable networks). ``None`` means "use the operator-configured
     #: ``STELLAR_NETWORK`` default" — mainnet is never an implicit default.
@@ -62,6 +66,7 @@ class User(UserMixin, db.Model):
             "email": self.email,
             "is_active": self.is_active,
             "is_admin": self.is_admin,
+            "mfa_enabled": self.mfa_enabled,
             "stellar_network": self.stellar_network,
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "last_login_at": self.last_login_at.isoformat() if self.last_login_at else None,

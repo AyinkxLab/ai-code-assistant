@@ -28,6 +28,10 @@ class WorkspaceSettings(db.Model):
     )
     invitations_enabled = db.Column(db.Boolean, nullable=False, default=True)
     default_member_role = db.Column(db.String(20), nullable=False, default=ROLE_VIEWER)
+    #: Require enrolled MFA for members before they can sign in (#618).
+    require_mfa = db.Column(db.Boolean, nullable=False, default=False)
+    #: When true, ``require_mfa`` applies only to owners/contributors.
+    mfa_privileged_only = db.Column(db.Boolean, nullable=False, default=False)
     created_at = db.Column(
         db.DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC)
     )
@@ -46,6 +50,8 @@ class WorkspaceSettings(db.Model):
             "workspace_id": self.workspace_id,
             "invitations_enabled": self.invitations_enabled,
             "default_member_role": self.default_member_role,
+            "require_mfa": self.require_mfa,
+            "mfa_privileged_only": self.mfa_privileged_only,
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "updated_at": self.updated_at.isoformat() if self.updated_at else None,
         }

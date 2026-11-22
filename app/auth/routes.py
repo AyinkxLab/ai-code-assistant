@@ -9,7 +9,16 @@ import json
 from functools import wraps
 from urllib.parse import urljoin, urlparse
 
-from flask import Response, flash, jsonify, redirect, render_template, request, url_for
+from flask import (
+    Response,
+    flash,
+    jsonify,
+    redirect,
+    render_template,
+    request,
+    session,
+    url_for,
+)
 from flask_login import current_user, login_required, login_user, logout_user
 
 from app.api.error_catalog import (
@@ -25,7 +34,7 @@ from app.api.error_catalog import (
 from app.auth import bp
 from app.extensions import db
 from app.models import User, UserDataExport
-from app.services import audit, chat_audit, data_export, domain_verification
+from app.services import audit, chat_audit, data_export, domain_verification, mfa
 
 
 def _api_login_required(view):
@@ -192,6 +201,28 @@ def login():
             )
             db.session.commit()
             chat_audit.log_event("chat.login", user_id=user.id, status="failure", reason="inactive")
+        elif mfa.mfa_required_for(user) and not user.mfa_enabled:
+            error = (
+                "Multi-factor authentication is required by your organization. "
+                "Enroll an authenticator app before signing in, or contact an "
+                "administrator for a break-glass recovery."
+            )
+            audit.record(
+                audit.LOGIN_FAILURE,
+                user=user,
+                target_type="user",
+                target_id=user.id,
+                metadata={"email": email, "reason": "mfa_required"},
+            )
+            db.session.commit()
+            chat_audit.log_event(
+                "chat.login", user_id=user.id, status="failure", reason="mfa_required"
+            )
+        elif user.mfa_enabled:
+            session["mfa_pending_user_id"] = user.id
+            session["mfa_pending_remember"] = remember
+            session["mfa_pending_next"] = next_url or ""
+            return redirect(url_for("auth.mfa_challenge"))
         else:
             user.touch_last_login()
             audit.record(
@@ -211,6 +242,74 @@ def login():
             return redirect(url_for("main.index"))
 
     return render_template("auth/login.html", error=error, next_url=next_url or "")
+
+
+@bp.route("/mfa", methods=["GET", "POST"])
+def mfa_challenge():
+    """Second login step for users with MFA enabled (#618)."""
+    if current_user.is_authenticated:
+        return redirect(url_for("main.index"))
+    user_id = session.get("mfa_pending_user_id")
+    if not user_id:
+        return redirect(url_for("auth.login"))
+    user = db.session.get(User, int(user_id))
+    if user is None or not user.mfa_enabled:
+        session.pop("mfa_pending_user_id", None)
+        return redirect(url_for("auth.login"))
+
+    error = None
+    if request.method == "POST":
+        if mfa.verify_code(user.mfa_secret, request.form.get("code", "")):
+            remember = bool(session.pop("mfa_pending_remember", False))
+            next_url = session.pop("mfa_pending_next", "")
+            session.pop("mfa_pending_user_id", None)
+            user.touch_last_login()
+            audit.record(
+                audit.LOGIN_SUCCESS,
+                user=user,
+                target_type="user",
+                target_id=user.id,
+                metadata={"email": user.email, "mfa": True},
+            )
+            db.session.commit()
+            chat_audit.log_event("chat.login", user_id=user.id, status="success", reason="mfa")
+            login_user(user, remember=remember)
+            flash(f"Welcome back, {user.username}!", "success")
+            if next_url and _is_safe_redirect_target(next_url):
+                return redirect(next_url)
+            return redirect(url_for("main.index"))
+        error = "Invalid authentication code."
+        chat_audit.log_event("chat.login", user_id=user.id, status="failure", reason="mfa_invalid")
+
+    return render_template("auth/mfa.html", error=error)
+
+
+@bp.route("/mfa/setup", methods=["GET", "POST"])
+@login_required
+def mfa_setup():
+    """Enroll the current user in TOTP MFA."""
+    secret = session.get("mfa_setup_secret")
+    if not secret:
+        secret = mfa.generate_secret()
+        session["mfa_setup_secret"] = secret
+
+    error = None
+    if request.method == "POST":
+        if mfa.verify_code(secret, request.form.get("code", "")):
+            current_user.mfa_secret = secret
+            current_user.mfa_enabled = True
+            db.session.commit()
+            session.pop("mfa_setup_secret", None)
+            flash("Multi-factor authentication enabled.", "success")
+            return redirect(url_for("auth.me"))
+        error = "Invalid authentication code. Try the current code."
+
+    return render_template(
+        "auth/mfa_setup.html",
+        secret=secret,
+        uri=mfa.provisioning_uri(current_user.email, secret),
+        error=error,
+    )
 
 
 @bp.route("/logout", methods=["POST"])

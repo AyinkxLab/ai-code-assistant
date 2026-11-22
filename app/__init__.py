@@ -159,6 +159,11 @@ def create_app(config_name: str | None = None) -> Flask:
 
     register_event_handlers(app)
 
+    # API version and deprecation headers (#651).
+    from app.api.versioning import init_versioning
+
+    init_versioning(app)
+
     @app.after_request
     def add_budget_warning_header(response):
         """Expose a non-blocking budget warning to API/UI clients."""

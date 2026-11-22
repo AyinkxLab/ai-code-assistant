@@ -17,6 +17,15 @@ All notable changes to this project are documented here. The format follows
   validation check and a published `openapi.json` artifact (#652).
 - An upgrade guide covering schema changes, new settings, and operator actions
   (#644).
+- TOTP multi-factor authentication with enrollment, a two-step login challenge,
+  per-workspace `require_mfa` / `mfa_privileged_only` policy, and documented
+  break-glass accounts (#618).
+- An admin-only access review report at `/admin/access-review`, available as
+  JSON or CSV with role, last activity, and stale flags (#610).
+- Deterministic end-to-end coverage for the admin actions and admin usage
+  report console pages (#635).
+- API versioning headers (`X-API-Version`) for `/api/` responses plus
+  `Deprecation` / `Sunset` / `Link` support for deprecated endpoints (#651).
 
 ### Changed
 
@@ -28,6 +37,9 @@ All notable changes to this project are documented here. The format follows
 ### Documentation
 
 - Added [`docs/upgrade-guide.md`](docs/upgrade-guide.md) and this changelog.
+- Added [`docs/mfa.md`](docs/mfa.md),
+  [`docs/access-review.md`](docs/access-review.md), and
+  [`docs/api-versioning.md`](docs/api-versioning.md) (#618, #610, #651).
 
 ## [0.1.0]
 

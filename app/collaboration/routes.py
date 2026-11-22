@@ -1098,6 +1098,10 @@ def api_update_settings(workspace_id: int):
         if role is None:
             return jsonify({"error": "default_member_role must be viewer or contributor."}), 400
         settings.default_member_role = role
+    if "require_mfa" in data:
+        settings.require_mfa = bool(data["require_mfa"])
+    if "mfa_privileged_only" in data:
+        settings.mfa_privileged_only = bool(data["mfa_privileged_only"])
     record_activity(
         workspace.id,
         EVENT_SETTINGS_CHANGED,
@@ -1106,6 +1110,8 @@ def api_update_settings(workspace_id: int):
         metadata={
             "invitations_enabled": settings.invitations_enabled,
             "default_member_role": settings.default_member_role,
+            "require_mfa": settings.require_mfa,
+            "mfa_privileged_only": settings.mfa_privileged_only,
         },
     )
     db.session.commit()
