@@ -11,6 +11,7 @@ Related references:
 - [Domain verification and SSO enforcement](sso-domain-verification.md)
 - [Audit and compliance guide](audit-compliance-guide.md)
 - [Audit retention and legal hold](audit-retention.md)
+- [Per-organization IP allowlist](ip-allowlist.md)
 - [User data export](user-data-export.md)
 - [User data deletion and anonymization](user-data-deletion.md)
 

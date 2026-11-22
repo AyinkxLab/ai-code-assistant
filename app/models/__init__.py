@@ -60,6 +60,7 @@ from app.models.webhook import (
 from app.models.workspace import Workspace
 from app.models.workspace_budget_override import WorkspaceBudgetOverride
 from app.models.workspace_domain import WorkspaceDomain
+from app.models.workspace_ip_allowlist import WorkspaceIPAllowlist
 from app.models.workspace_member import WorkspaceMember
 from app.models.workspace_price_override import PriceOverride, WorkspacePriceOverride
 from app.models.workspace_settings import WorkspaceSettings
@@ -122,6 +123,7 @@ __all__ = [
     "Workspace",
     "WorkspaceBudgetOverride",
     "WorkspaceDomain",
+    "WorkspaceIPAllowlist",
     "WorkspaceInvitation",
     "WorkspaceMember",
     "WorkspacePriceOverride",

@@ -50,6 +50,7 @@ SIEM_ENDPOINT_DELETED = "siem_endpoint_deleted"
 DOMAIN_CHALLENGE_CREATED = "domain_challenge_created"
 DOMAIN_VERIFIED = "domain_verified"
 DOMAIN_SSO_ENFORCEMENT_CHANGED = "domain_sso_enforcement_changed"
+IP_ALLOWLIST_UPDATED = "ip_allowlist_updated"
 
 #: The "previous hash" of the first hashed row in a chain.
 GENESIS_HASH = "0" * 64
