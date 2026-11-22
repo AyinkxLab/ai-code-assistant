@@ -141,6 +141,7 @@ table, quotas, budgets, alerts, invoices, and reconciliation.
 - [Security headers and CSP](docs/security-headers.md)
 - [Dependency policy and SBOM](docs/dependency-policy.md)
 - [API error catalog](docs/api-errors.md)
+- [API filtering and sorting](docs/api-filtering.md)
 - [API rate limits and quotas](docs/api-rate-limits.md)
 - [OpenAPI document](docs/api-openapi.md)
 - [Upgrade guide](docs/upgrade-guide.md)

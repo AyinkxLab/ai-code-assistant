@@ -28,4 +28,4 @@ with inline CSS. Re-run it whenever a public route changes.
 - Authentication, pagination, errors, and webhook verification are documented
   on the generated page and link to their full guides:
   [API errors](api-errors.md), [pagination](pagination.md),
-  [webhooks](webhooks.md).
+  [filtering and sorting](api-filtering.md), [webhooks](webhooks.md).
