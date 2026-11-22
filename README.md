@@ -128,6 +128,7 @@ table, quotas, budgets, alerts, invoices, and reconciliation.
 - [Architecture](docs/architecture.md)
 - [Security model](docs/security.md)
 - [Security headers and CSP](docs/security-headers.md)
+- [Dependency policy and SBOM](docs/dependency-policy.md)
 - [API error catalog](docs/api-errors.md)
 - [Admin action audit view](docs/admin-actions.md)
 - [Accessibility and keyboard navigation](docs/accessibility.md)
