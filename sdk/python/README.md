@@ -67,3 +67,20 @@ runs against a local mock HTTP server and requires no network access:
 ```bash
 pytest tests/test_sdk_python.py
 ```
+
+## Repository gates
+
+The SDK lives under the root `pyproject.toml` scope, so the normal contributor
+gate covers it without a separate configuration:
+
+```bash
+python -m ruff check .
+python -m black --check .
+python -m pytest tests/test_sdk_python.py tests/test_sdk_packaging.py
+```
+
+`tests/test_sdk_packaging.py` asserts that the `pyproject.toml` version matches
+`ai_code_assistant.__version__`, that the package has no third-party runtime
+dependencies, and that this editable-install path stays documented. The version
+is changed in both places together when the package is released (see
+[`docs/sdk-release.md`](../../docs/sdk-release.md)).
