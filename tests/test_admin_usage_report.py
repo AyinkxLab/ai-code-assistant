@@ -85,10 +85,10 @@ class TestAdminUsageReportAccess:
         _user("owner", "owner@example.com")
 
         login(email="admin@example.com")
-        assert b"Admin usage" in client.get("/").data
+        assert b'href="/admin/usage/report"' in client.get("/").data
 
         login(email="owner@example.com")
-        assert b"Admin usage" not in client.get("/").data
+        assert b'href="/admin/usage/report"' not in client.get("/").data
 
 
 class TestAdminUsageReportFilters:

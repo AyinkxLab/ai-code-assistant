@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="auth-card">
+  <h1 class="auth-title">Enable two-factor authentication</h1>
+  <p class="auth-subtitle">
+    Add this account to your authenticator app, then enter the current code.
+  </p>
+
+  {% if error %}
+    <div class="flash flash-error">{{ error }}</div>
+  {% endif %}
+
+  <p><strong>Manual setup secret:</strong> <code>{{ secret }}</code></p>
+  <p class="auth-subtitle"><small>{{ uri }}</small></p>
+
+  <form method="POST" class="auth-form" novalidate>
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <div class="field">
+      <label for="code">Authentication code</label>
+      <input type="text" id="code" name="code" inputmode="numeric" pattern="[0-9]{6}"
+             maxlength="6" required autofocus autocomplete="one-time-code">
+    </div>
+    <button type="submit" class="btn btn-primary btn-block">Enable MFA</button>
+  </form>
+</div>
+{% endblock %}

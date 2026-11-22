@@ -16,6 +16,7 @@ from app.admin import bp
 from app.api.error_catalog import FORBIDDEN, INVALID_INPUT, UNAUTHORIZED, error_response
 from app.extensions import db
 from app.models import AuditLog, UsageRecord, User, Workspace
+from app.services import access_review as access_review_service
 from app.services import audit as audit_service
 from app.services import audit_export, usage_dashboards, usage_ledger
 from app.services.classification import export_record
@@ -397,3 +398,30 @@ def usage_export():
     if truncated:
         response.headers["X-Export-Truncated"] = "true"
     return response
+
+
+@bp.route("/access-review")
+@login_required
+@admin_required
+def access_review():
+    """Who can access each workspace, with last activity and stale flags (#610)."""
+    report_format = (request.args.get("format") or "json").strip().lower()
+    if report_format not in ("json", "csv"):
+        return error_response(INVALID_INPUT, "format must be json or csv")
+
+    rows, truncated = access_review_service.build_rows()
+    if report_format == "csv":
+        response = Response(access_review_service.to_csv(rows), mimetype="text/csv")
+        response.headers["Content-Disposition"] = 'attachment; filename="access-review.csv"'
+        response.headers["Cache-Control"] = "no-store"
+        response.headers["X-Export-Truncated"] = "1" if truncated else "0"
+        return response
+
+    return jsonify(
+        {
+            "items": rows,
+            "total": len(rows),
+            "truncated": truncated,
+            "stale_days": access_review_service.DEFAULT_STALE_DAYS,
+        }
+    )
