@@ -173,6 +173,7 @@ table, quotas, budgets, alerts, invoices, and reconciliation.
 - [Billing](docs/billing.md)
 - [Cost precision](docs/cost-precision.md)
 - [Usage and billing data privacy](docs/usage-privacy.md)
+- [User data deletion and anonymization](docs/user-data-deletion.md)
 - [Python and TypeScript SDKs](docs/sdk.md)
 - [Roadmap](https://github.com/AyindxLab/ai-code-assistant/issues)
 

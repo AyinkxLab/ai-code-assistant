@@ -33,8 +33,8 @@ from app.api.error_catalog import (
 )
 from app.auth import bp
 from app.extensions import db
-from app.models import User, UserDataExport
-from app.services import audit, chat_audit, data_export, domain_verification, mfa
+from app.models import User, UserDataExport, UserDeletionRequest
+from app.services import audit, chat_audit, data_deletion, data_export, domain_verification, mfa
 
 
 def _api_login_required(view):
@@ -64,6 +64,31 @@ def _domain_error_response(exc: Exception):
     else:
         code = INVALID_INPUT
     db.session.rollback()
+    return error_response(code, str(exc))
+
+
+def _deletion_error_response(exc: Exception):
+    """Map a deletion-workflow failure to a structured catalog response."""
+    if isinstance(exc, data_deletion.RateLimited):
+        response = error_response(RATE_LIMITED, str(exc))
+        response.headers["Retry-After"] = str(exc.retry_after)
+        return response
+    if isinstance(
+        exc,
+        (
+            data_deletion.AlreadyCompleted,
+            data_deletion.DeletionConflict,
+        ),
+    ):
+        code = CONFLICT
+    elif isinstance(exc, data_deletion.ConfirmationMismatch):
+        code = INVALID_INPUT
+    elif isinstance(exc, LookupError):
+        code = NOT_FOUND
+    else:
+        code = INVALID_INPUT
+    if not isinstance(exc, data_deletion.RateLimited):
+        db.session.rollback()
     return error_response(code, str(exc))
 
 
@@ -495,3 +520,61 @@ def data_export_download(request_id: int):
     )
     response.headers["Cache-Control"] = "no-store"
     return response
+
+
+@bp.route("/api/data-deletion", methods=["GET", "POST"])
+@login_required
+def data_deletion_requests():
+    """List or create the current user's deletion/anonymization requests (#615)."""
+    if request.method == "GET":
+        return jsonify(
+            {"items": [row.to_dict() for row in data_deletion.list_requests(current_user)]}
+        )
+
+    data = request.get_json(silent=True) or {}
+    if not isinstance(data, dict):
+        return error_response(INVALID_INPUT, "The request body must be a JSON object.")
+    mode = data.get("mode") or data_deletion.MODE_DELETION
+    try:
+        row = data_deletion.request_deletion(current_user, mode=mode)
+    except (data_deletion.DeletionError, ValueError) as exc:
+        return _deletion_error_response(exc)
+    return jsonify(row.to_dict()), 201
+
+
+@bp.route("/api/data-deletion/<int:request_id>", methods=["GET"])
+@login_required
+def data_deletion_request(request_id: int):
+    """Return one of the current user's deletion requests."""
+    row = db.session.get(UserDeletionRequest, request_id)
+    if row is None or row.user_id != current_user.id:
+        return error_response(NOT_FOUND)
+    return jsonify(row.to_dict())
+
+
+@bp.route("/api/data-deletion/<int:request_id>/confirm", methods=["POST"])
+@login_required
+def data_deletion_confirm(request_id: int):
+    """Confirm and apply a deletion request after the exact phrase is supplied."""
+    data = request.get_json(silent=True) or request.form
+    confirmation = data.get("confirmation") if data else None
+    try:
+        row, summary = data_deletion.confirm_request(request_id, current_user, confirmation)
+    except (data_deletion.DeletionError, ValueError, LookupError) as exc:
+        return _deletion_error_response(exc)
+
+    logout_user()
+    payload = row.to_dict()
+    payload["summary"] = summary
+    return jsonify(payload)
+
+
+@bp.route("/api/data-deletion/<int:request_id>/cancel", methods=["POST"])
+@login_required
+def data_deletion_cancel(request_id: int):
+    """Cancel a pending deletion request without touching account data."""
+    try:
+        row = data_deletion.cancel_request(request_id, current_user)
+    except (data_deletion.DeletionError, ValueError, LookupError) as exc:
+        return _deletion_error_response(exc)
+    return jsonify(row.to_dict())
