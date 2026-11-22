@@ -23,6 +23,7 @@ NOT_FOUND = "not_found"
 CONFLICT = "conflict"
 VALIDATION_FAILED = "validation_failed"
 RATE_LIMITED = "rate_limited"
+GONE = "gone"
 INTERNAL_ERROR = "internal_error"
 
 
@@ -66,6 +67,9 @@ CATALOG: dict[str, ApiError] = {
     ),
     RATE_LIMITED: ApiError(
         RATE_LIMITED, 429, "rate_limited", "Too many requests. Please try again later.", "Limit."
+    ),
+    GONE: ApiError(
+        GONE, 410, "gone", "This resource is no longer available.", "Expired or consumed resource."
     ),
     INTERNAL_ERROR: ApiError(
         INTERNAL_ERROR, 500, "internal_error", "Something went wrong.", "Unexpected server error."
