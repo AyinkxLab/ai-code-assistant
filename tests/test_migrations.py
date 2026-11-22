@@ -356,6 +356,31 @@ class TestMigrationHead:
             indexes = {idx["name"] for idx in insp.get_indexes("audit_logs")}
             assert "ix_audit_logs_workspace_id" in indexes
 
+    def test_audit_retention_policies_table_upgraded(self):
+        expected = {
+            "id",
+            "workspace_id",
+            "retention_days",
+            "legal_hold",
+            "created_at",
+            "updated_at",
+        }
+        with _migration_db() as db_url, _inspect(db_url) as insp:
+            tables = set(insp.get_table_names())
+            assert "audit_retention_policies" in tables
+            columns = {col["name"] for col in insp.get_columns("audit_retention_policies")}
+            assert columns == expected
+
+    def test_audit_retention_policies_downgrade_removed(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            db_url = f"sqlite:///{os.path.join(tmp, 'mig_retention.db')}"
+            up = _run_flask(["db", "upgrade"], {"DATABASE_URL": db_url})
+            assert up.returncode == 0, up.stderr
+            down = _run_flask(["db", "downgrade", "a1b2c3d4e5f7"], {"DATABASE_URL": db_url})
+            assert down.returncode == 0, down.stderr
+            with _inspect(db_url) as insp:
+                assert "audit_retention_policies" not in set(insp.get_table_names())
+
     def test_message_attachments_table_upgraded(self):
         expected = {
             "id",

@@ -1,8 +1,12 @@
-"""Operator CLI for audit integrity (Phase 11, #606).
+"""Operator CLI for audit integrity and retention (Phase 11, #606, #608).
 
 Usage::
 
     flask audit verify [--workspace-id N] [--json]
+    flask audit retention show --workspace-id N [--json]
+    flask audit retention set --workspace-id N --days N
+                              [--legal-hold/--no-legal-hold] [--json]
+    flask audit purge --workspace-id N [--dry-run] [--json]
 
 With no ``--workspace-id`` every distinct chain (including the ``NULL`` chain
 used by global events) is verified. Exit status is ``0`` when every chain is
@@ -31,6 +35,17 @@ def _fail(message: str, code: str, as_json: bool) -> None:
     else:
         click.echo(message, err=True)
     raise click.exceptions.Exit(EXIT_ERROR)
+
+
+def _fail_from(exc: Exception, as_json: bool) -> None:
+    """Map a service exception to a stable CLI error code."""
+    if isinstance(exc, PermissionError):
+        code = "forbidden"
+    elif isinstance(exc, LookupError):
+        code = "not_found"
+    else:
+        code = "invalid_input"
+    _fail(str(exc), code, as_json)
 
 
 def register_audit_cli(app: Flask) -> None:
@@ -82,6 +97,95 @@ def register_audit_cli(app: Flask) -> None:
 
         if not ok:
             raise click.exceptions.Exit(EXIT_TAMPERED)
+        return EXIT_OK
+
+    @audit_group.group("retention")
+    def retention_group():
+        """Read and update the workspace audit retention policy."""
+
+    @retention_group.command("show")
+    @click.option("--workspace-id", type=int, required=True, help="Workspace to inspect.")
+    @click.option("--json", "as_json", is_flag=True, help="Emit machine-readable JSON.")
+    def retention_show(workspace_id: int, as_json: bool) -> int:
+        """Show the effective retention policy (stored or defaults)."""
+        from app.extensions import db
+        from app.models import Workspace
+        from app.services.audit_retention import policy_snapshot
+
+        if workspace_id < 1:
+            _fail("workspace-id must be a positive integer.", "invalid_input", as_json)
+        if db.session.get(Workspace, workspace_id) is None:
+            _fail("Workspace not found.", "not_found", as_json)
+
+        policy = policy_snapshot(workspace_id)
+        if as_json:
+            _write_json(policy)
+        else:
+            click.echo(
+                f"workspace={workspace_id} retention_days={policy['retention_days']} "
+                f"legal_hold={policy['legal_hold']}"
+            )
+        return EXIT_OK
+
+    @retention_group.command("set")
+    @click.option("--workspace-id", type=int, required=True, help="Workspace to update.")
+    @click.option("--days", type=int, required=True, help="Retention window in days.")
+    @click.option(
+        "--legal-hold/--no-legal-hold",
+        default=None,
+        help="Activate or release a legal hold (default: leave unchanged).",
+    )
+    @click.option("--json", "as_json", is_flag=True, help="Emit machine-readable JSON.")
+    def retention_set(
+        workspace_id: int,
+        days: int,
+        legal_hold: bool | None,
+        as_json: bool,
+    ) -> int:
+        """Create or update a validated retention policy."""
+        from app.services.audit_retention import set_policy
+
+        try:
+            policy = set_policy(
+                workspace_id,
+                retention_days=days,
+                legal_hold=legal_hold,
+            )
+        except (ValueError, LookupError, PermissionError) as exc:
+            _fail_from(exc, as_json)
+
+        if as_json:
+            _write_json(policy)
+        else:
+            click.echo(
+                f"workspace={workspace_id} retention_days={policy['retention_days']} "
+                f"legal_hold={policy['legal_hold']}"
+            )
+        return EXIT_OK
+
+    @audit_group.command("purge")
+    @click.option("--workspace-id", type=int, required=True, help="Workspace to purge.")
+    @click.option("--dry-run", is_flag=True, help="Report what would be deleted.")
+    @click.option("--json", "as_json", is_flag=True, help="Emit machine-readable JSON.")
+    def purge(workspace_id: int, dry_run: bool, as_json: bool) -> int:
+        """Delete audit rows older than the policy window (never under legal hold)."""
+        from app.services.audit_retention import purge_expired
+
+        try:
+            result = purge_expired(workspace_id, dry_run=dry_run)
+        except (ValueError, LookupError, PermissionError) as exc:
+            _fail_from(exc, as_json)
+
+        if as_json:
+            _write_json(result)
+        else:
+            action = "Dry run" if dry_run else "Purge"
+            suffix = f" skipped={result['skipped_reason']}" if result["skipped_reason"] else ""
+            click.echo(
+                f"{action} complete: deleted={result['deleted']} "
+                f"retention_days={result['retention_days']} "
+                f"cutoff={result['cutoff']}{suffix}"
+            )
         return EXIT_OK
 
 

@@ -132,6 +132,7 @@ table, quotas, budgets, alerts, invoices, and reconciliation.
 - [API error catalog](docs/api-errors.md)
 - [Admin action audit view](docs/admin-actions.md)
 - [Audit log integrity](docs/audit-integrity.md)
+- [Audit retention and legal hold](docs/audit-retention.md)
 - [Accessibility and keyboard navigation](docs/accessibility.md)
 - [Accessibility audit](docs/accessibility-audit.md)
 - [Internationalization](docs/i18n.md)
