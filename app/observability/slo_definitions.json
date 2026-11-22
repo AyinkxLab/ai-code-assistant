@@ -66,6 +66,36 @@
       "labels": ["result"],
       "source": "app/services/job_queue.py",
       "notes": "result is success or failure; failures include validation and HTTP errors."
+    },
+    "enterprise_feature_events_total": {
+      "type": "counter",
+      "labels": ["feature", "action", "outcome"],
+      "source": "app/observability/enterprise.py",
+      "notes": "Fixed enterprise feature enum labels only; identifiers and secrets are never labels."
+    },
+    "enterprise_sso_events_total": {
+      "type": "counter",
+      "labels": ["action", "outcome"],
+      "source": "app/observability/enterprise.py",
+      "notes": "Domain verification and SSO enforcement adoption events."
+    },
+    "enterprise_scim_events_total": {
+      "type": "counter",
+      "labels": ["action", "outcome"],
+      "source": "app/observability/enterprise.py",
+      "notes": "SCIM provisioning adoption events."
+    },
+    "enterprise_custom_role_events_total": {
+      "type": "counter",
+      "labels": ["action", "outcome"],
+      "source": "app/observability/enterprise.py",
+      "notes": "Custom role adoption events."
+    },
+    "enterprise_audit_export_events_total": {
+      "type": "counter",
+      "labels": ["format", "outcome"],
+      "source": "app/observability/enterprise.py",
+      "notes": "Audit export downloads by bounded format (json, csv, other)."
     }
   },
   "dashboard": {

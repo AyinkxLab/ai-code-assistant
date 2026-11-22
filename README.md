@@ -107,6 +107,7 @@ from a documented price table, not provider invoices.
 | ------- | ------- | ------- |
 | `METRICS_ENABLED` | `1` | Serves protected Prometheus metrics at `/metrics`; `0` returns 404. |
 | `METRICS_TOKEN` | empty | Bearer token for scrapers. Empty falls back to admin-session auth. |
+| `IDEMPOTENCY_TTL_SECONDS` | `86400` | Retention for POST idempotency keys and replayed responses; expired rows are purged on access and by `flask purge-idempotency`. |
 | `USAGE_RETENTION_DAYS` | `365` | Minimum age before `flask usage purge` may delete ledger rows. |
 | `BUDGET_ENFORCEMENT_ENABLED` | `1` | Refuses LLM calls that would exceed a monthly token/cost budget (fail closed). |
 | `BUDGET_DEFAULT_WARN_THRESHOLD` | `0.8` | Default warning fraction for new budgets. |
@@ -137,6 +138,8 @@ table, quotas, budgets, alerts, invoices, and reconciliation.
 - [Security ticketing (Jira and Linear)](docs/security-ticketing.md)
 - [GitLab integration](docs/gitlab.md)
 - [Webhooks, delivery logs, and dead-letter replay](docs/webhooks.md)
+- [Enterprise adoption telemetry](docs/enterprise-telemetry.md)
+- [POST idempotency keys](docs/idempotency.md)
 - [Architecture](docs/architecture.md)
 - [Security model](docs/security.md)
 - [Security headers and CSP](docs/security-headers.md)

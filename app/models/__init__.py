@@ -17,6 +17,7 @@ from app.models.file_analysis import FileAnalysis
 from app.models.github_account import GithubAccount
 from app.models.github_app_installation import GitHubAppInstallation
 from app.models.gitlab_account import GitlabAccount
+from app.models.idempotency_key import IdempotencyKey
 from app.models.integration_credential import IntegrationCredential
 from app.models.integration_health import IntegrationHealth
 from app.models.invitation import WorkspaceInvitation
@@ -78,6 +79,7 @@ __all__ = [
     "GitHubAppInstallation",
     "GithubAccount",
     "GitlabAccount",
+    "IdempotencyKey",
     "IntegrationCredential",
     "IntegrationHealth",
     "JiraIssueLink",

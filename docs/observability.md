@@ -57,6 +57,16 @@ an `other` series so a hostile label cannot grow memory without limit.
 | `llm_latency_ms` | histogram | `provider`, `model` | Provider latency in milliseconds; buckets run from 5 ms to 30 s plus `+Inf`. |
 | `job_queue_depth` | gauge | `status` | Jobs stored in the `jobs` table, by status. Refreshed at scrape time and by the worker. |
 | `webhook_deliveries_total` | counter | `result` | Webhook delivery attempts (`success`/`failure`); failures include rejected URLs and non-2xx responses. |
+| `enterprise_feature_events_total` | counter | `feature`, `action`, `outcome` | Enterprise adoption events with fixed enum labels only. |
+| `enterprise_sso_events_total` | counter | `action`, `outcome` | Domain verification and SSO enforcement events. |
+| `enterprise_scim_events_total` | counter | `action`, `outcome` | SCIM provisioning events. |
+| `enterprise_custom_role_events_total` | counter | `action`, `outcome` | Custom role events. |
+| `enterprise_audit_export_events_total` | counter | `format`, `outcome` | Audit export downloads by bounded format. |
+
+Enterprise counters never use identifiers, emails, domains, tenant names, or
+configuration secrets as labels; unknown values fold into `other`. See
+[Enterprise adoption telemetry](enterprise-telemetry.md) and the
+[Grafana dashboard](../deploy/monitoring/enterprise-adoption-dashboard.json).
 
 Token, cost and latency values are published from `usage_ledger.record_usage`, so
 every instrumented path reports the same numbers. Latency is observed only when
@@ -112,6 +122,14 @@ definitions are validated against the emitted metric set by
 availability burn, queue backlog and webhook failures, live in
 `deploy/monitoring/alert-rules.yaml`; the response procedure is the
 [incident runbook](incident-runbook.md).
+
+## Retry-safe POST requests
+
+`POST` requests may carry an `Idempotency-Key` header. The first request stores
+a body digest and response for `IDEMPOTENCY_TTL_SECONDS` (default 24 hours); a
+retry replays the response and reuse with a different body returns a structured
+`409`. Expired keys are purged on access and by `flask purge-idempotency`. See
+[POST idempotency keys](idempotency.md).
 
 ## Tracing
 
@@ -196,6 +214,7 @@ regressions by counting statements for a fixed number of conversations.
 
 | `METRICS_ENABLED` | `1` | Hides `/metrics` (404) when disabled. |
 | `METRICS_TOKEN` | empty | Bearer token for scrapers. Empty falls back to admin-session auth. |
+| `IDEMPOTENCY_TTL_SECONDS` | `86400` | How long POST idempotency keys and their stored responses are retained. |
 | `USAGE_RETENTION_DAYS` | `365` | Minimum age before `flask usage purge` may delete ledger rows. |
 | `USAGE_EXPORT_CSV_MAX_ROWS` | `5000` | CSV row cap for `/api/usage/export.csv`; values above 5,000 are clamped. |
 | `BILLING_IMPORT_MAX_BYTES` | `1048576` | Maximum accepted billing CSV upload size. |

@@ -36,6 +36,11 @@ pinned in the JSON file and checked in tests.
 | `llm_latency_ms` | histogram | `provider`, `model` | `app/services/usage_ledger.py` |
 | `job_queue_depth` | gauge | `status` | `app/services/job_queue.py` |
 | `webhook_deliveries_total` | counter | `result` | `app/services/job_queue.py` |
+| `enterprise_feature_events_total` | counter | `feature`, `action`, `outcome` | `app/observability/enterprise.py` |
+| `enterprise_sso_events_total` | counter | `action`, `outcome` | `app/observability/enterprise.py` |
+| `enterprise_scim_events_total` | counter | `action`, `outcome` | `app/observability/enterprise.py` |
+| `enterprise_custom_role_events_total` | counter | `action`, `outcome` | `app/observability/enterprise.py` |
+| `enterprise_audit_export_events_total` | counter | `format`, `outcome` | `app/observability/enterprise.py` |
 
 `status` is a status *class* (`1xx` … `5xx`), never an individual code.
 Histogram samples appear as `llm_latency_ms_bucket`, `llm_latency_ms_sum` and
