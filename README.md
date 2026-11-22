@@ -150,6 +150,7 @@ table, quotas, budgets, alerts, invoices, and reconciliation.
 - [Changelog](CHANGELOG.md)
 - [Admin action audit view](docs/admin-actions.md)
 - [Access review report](docs/access-review.md)
+- [Enterprise admin guide](docs/enterprise-admin-guide.md)
 - [Multi-factor authentication](docs/mfa.md)
 - [Audit log integrity](docs/audit-integrity.md)
 - [Audit and compliance guide](docs/audit-compliance-guide.md)
