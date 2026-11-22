@@ -14,6 +14,14 @@
     "plugin_executions": {
       "queries": 20,
       "latency_ms": 2000
+    },
+    "workspace_dashboard": {
+      "queries": 120,
+      "latency_ms": 2000
+    },
+    "workspace_members": {
+      "queries": 20,
+      "latency_ms": 2000
     }
   }
 }
