@@ -101,3 +101,11 @@ Replay body: `{ "ids": [1, 2, 3] }`.
 
 Invalid batches return `{ "error": "...", "code": "invalid_replay_request" }`.
 
+
+## Secret rotation
+
+Use `app.services.webhook_secrets.rotate_secret(subscription, new_secret, window_seconds=300)`
+to rotate a subscription's signing secret. The previous secret joins
+`verification_secrets()` for a bounded window (0-86400 seconds) so deliveries
+already signed with it still verify; after the window only the new secret is
+accepted. The old secret is never exposed in API responses.

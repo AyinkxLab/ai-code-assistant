@@ -865,15 +865,19 @@ class PluginRegistry:
                         plugin_id,
                     )
                     continue
-                from app.services.capabilities import CapabilityStore
+                from app.services.capabilities import (
+                    CapabilityDeniedError,
+                    require_capability,
+                )
 
-                if not CapabilityStore.has_capability(plugin_id, workspace_id, required_capability):
+                try:
+                    require_capability(plugin_id, workspace_id, required_capability)
+                except CapabilityDeniedError as exc:
                     logger.warning(
-                        "Refusing %s handler for %s: missing %s capability in workspace %s",
+                        "Refusing %s handler for %s: %s",
                         event_type,
                         plugin_id,
-                        required_capability,
-                        workspace_id,
+                        exc,
                     )
                     continue
             started = time.perf_counter()

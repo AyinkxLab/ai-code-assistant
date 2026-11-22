@@ -4,6 +4,7 @@ Capabilities define what actions plugins are allowed to perform within
 the application. They integrate with workspace roles and permissions.
 """
 
+import contextlib
 from enum import Enum
 
 from app.extensions import db
@@ -331,3 +332,74 @@ def validate_plugin_capability(
         )
 
     return (True, "")
+
+
+class CapabilityDeniedError(PermissionError):
+    """Raised when a plugin calls an action it has not been granted."""
+
+    def __init__(
+        self,
+        plugin_id: str,
+        workspace_id: int,
+        capability: str,
+        reason: str,
+    ) -> None:
+        super().__init__(reason)
+        self.code = "capability_denied"
+        self.plugin_id = plugin_id
+        self.workspace_id = workspace_id
+        self.capability = capability
+        self.reason = reason
+
+    def to_dict(self) -> dict:
+        return {
+            "code": self.code,
+            "plugin_id": self.plugin_id,
+            "workspace_id": self.workspace_id,
+            "capability": self.capability,
+            "message": self.reason,
+        }
+
+
+def require_capability(
+    plugin_id: str,
+    workspace_id: int,
+    capability: str,
+) -> None:
+    """Fail closed unless the plugin is installed, enabled, and granted.
+
+    Every call is re-checked against the database so a revoked grant or a
+    disabled installation takes effect immediately. Denied calls are audited
+    with ``plugin.capability.denied``.
+    """
+    from app.models.plugin import PluginInstallation
+    from app.services import audit
+
+    valid, message = validate_plugin_capability(plugin_id, workspace_id, capability)
+    installation = None
+    if valid:
+        installation = PluginInstallation.query.filter_by(
+            plugin_id=plugin_id,
+            workspace_id=workspace_id,
+        ).first()
+        if installation is None:
+            valid, message = False, "plugin is not installed in this workspace"
+        elif not installation.enabled:
+            valid, message = False, "plugin installation is disabled"
+        elif capability not in set(installation.granted_capabilities or []):
+            valid, message = False, "capability is not in the installation grant list"
+
+    if not valid:
+        # Auditing must never mask the denial itself.
+        with contextlib.suppress(Exception):
+            audit.record(
+                "plugin.capability.denied",
+                target_type="plugin",
+                metadata={
+                    "plugin_id": plugin_id,
+                    "workspace_id": workspace_id,
+                    "capability": capability,
+                    "reason": message,
+                },
+            )
+        raise CapabilityDeniedError(plugin_id, workspace_id, capability, message)
