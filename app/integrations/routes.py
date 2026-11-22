@@ -13,7 +13,8 @@ from flask_login import current_user, login_required
 
 from app.extensions import csrf, db
 from app.integrations import bp
-from app.models import Workspace
+from app.models import ReviewFinding, Workspace
+from app.services import github_app, jira
 from app.services.integrations import email as email_integration
 from app.services.integrations import health
 from app.services.integrations.common import (
@@ -195,11 +196,146 @@ def email_unsubscribe():
     return jsonify(result)
 
 
+def _structured_error(exc: Exception):
+    """Return a structured JSON error for a service exception."""
+    return (
+        jsonify({"error": str(exc), "code": getattr(exc, "code", "integration_error")}),
+        getattr(exc, "http_status", 400),
+    )
+
+
+# ---------------------------------------------------------------------------
+# GitHub App installations (#676)
+# ---------------------------------------------------------------------------
+
+
+@bp.route(
+    "/api/workspaces/<int:workspace_id>/github-app/installations",
+    methods=["GET", "POST"],
+)
+@login_required
+def api_github_app_installations(workspace_id: int):
+    """List or record a workspace's GitHub App installations (owner only)."""
+    try:
+        if request.method == "GET":
+            rows = github_app.list_installations(workspace_id, user=current_user)
+            return jsonify({"installations": [row.to_dict() for row in rows]})
+        data = request.get_json(silent=True) or {}
+        if not isinstance(data, dict):
+            raise github_app.GitHubAppValidationError("request body must be a JSON object")
+        row = github_app.record_installation(
+            workspace_id,
+            current_user,
+            data.get("installation_id"),
+            data.get("account_login"),
+            account_id=data.get("account_id"),
+            account_type=data.get("account_type") or "User",
+            repository_selection=data.get("repository_selection") or "selected",
+            repository_ids=data.get("repository_ids"),
+            access_token=data.get("access_token"),
+        )
+    except (github_app.GitHubAppError, github_app.GitHubAppPermissionError) as exc:
+        return _structured_error(exc)
+    return jsonify(row.to_dict()), 201
+
+
+@bp.route(
+    "/api/workspaces/<int:workspace_id>/github-app/installations/<int:installation_id>",
+    methods=["PATCH", "DELETE"],
+)
+@login_required
+def api_github_app_installation(workspace_id: int, installation_id: int):
+    """Update repositories/metadata or revoke one installation (owner only)."""
+    try:
+        if request.method == "DELETE":
+            row = github_app.revoke_installation(workspace_id, current_user, installation_id)
+            return jsonify(row.to_dict())
+        data = request.get_json(silent=True) or {}
+        if not isinstance(data, dict):
+            raise github_app.GitHubAppValidationError("request body must be a JSON object")
+        row = github_app.update_installation(workspace_id, current_user, installation_id, **data)
+    except (github_app.GitHubAppError, github_app.GitHubAppPermissionError) as exc:
+        return _structured_error(exc)
+    return jsonify(row.to_dict())
+
+
+@bp.route("/github-app/webhook", methods=["POST"])
+@csrf.exempt
+def github_app_webhook():
+    """Apply a signed GitHub App installation webhook to stored state."""
+    try:
+        signature = request.headers.get(github_app.WEBHOOK_SIGNATURE_HEADER, "")
+        if not github_app.verify_webhook_signature(request.get_data(cache=True), signature):
+            return jsonify({"error": "invalid signature", "code": "invalid_signature"}), 401
+        payload = request.get_json(silent=True) or {}
+        event = request.headers.get("X-GitHub-Event", "installation")
+        result = github_app.handle_webhook_event(event, payload)
+    except github_app.GitHubAppError as exc:
+        return _structured_error(exc)
+    return jsonify(result), 202
+
+
+# ---------------------------------------------------------------------------
+# Jira review-finding export (#680)
+# ---------------------------------------------------------------------------
+
+
+@bp.route("/api/workspaces/<int:workspace_id>/jira", methods=["PUT"])
+@login_required
+def api_configure_jira(workspace_id: int):
+    """Store an encrypted Jira configuration for the workspace (owner only)."""
+    try:
+        data = request.get_json(silent=True) or {}
+        if not isinstance(data, dict):
+            raise jira.JiraValidationError("request body must be a JSON object")
+        result = jira.configure_jira(
+            workspace_id,
+            current_user,
+            base_url=data.get("base_url"),
+            email=data.get("email"),
+            api_token=data.get("api_token"),
+            project_key=data.get("project_key"),
+        )
+    except (jira.JiraError, jira.JiraPermissionError) as exc:
+        return _structured_error(exc)
+    return jsonify(result)
+
+
+@bp.route(
+    "/api/workspaces/<int:workspace_id>/jira/findings/<int:finding_id>",
+    methods=["POST"],
+)
+@login_required
+def api_create_jira_issue(workspace_id: int, finding_id: int):
+    """Create (or return) the Jira issue for one review finding."""
+    finding = db.session.get(ReviewFinding, finding_id)
+    try:
+        if finding is None:
+            raise jira.JiraNotFound("Review finding not found.")
+        data = request.get_json(silent=True) or {}
+        if not isinstance(data, dict):
+            raise jira.JiraValidationError("request body must be a JSON object")
+        link, created = jira.create_or_get_issue_for_finding(
+            workspace_id,
+            finding,
+            user=current_user,
+            project_key=data.get("project_key"),
+        )
+    except (jira.JiraError, jira.JiraPermissionError) as exc:
+        return _structured_error(exc)
+    return jsonify({"issue": link.to_dict(), "created": created}), (201 if created else 200)
+
+
 __all__ = [
     "api_configure_integration",
+    "api_configure_jira",
+    "api_create_jira_issue",
+    "api_github_app_installation",
+    "api_github_app_installations",
     "api_list_health",
     "api_list_integrations",
     "api_test_integration",
     "email_inbound",
     "email_unsubscribe",
+    "github_app_webhook",
 ]

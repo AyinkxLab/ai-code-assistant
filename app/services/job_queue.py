@@ -45,7 +45,7 @@ from app.models.job import (
     STATUS_SUCCEEDED,
 )
 from app.observability.metrics import JOBS_QUEUE_DEPTH, WEBHOOK_DELIVERIES
-from app.services import webhook_signing
+from app.services import webhook_payloads, webhook_signing
 
 logger = logging.getLogger(__name__)
 
@@ -316,6 +316,17 @@ def deliver_webhook(payload: dict) -> dict:
         body = payload.get("payload")
         if not isinstance(body, dict):
             raise JobQueueError("webhook payload must be a JSON object")
+        # Enforce the documented payload cap before any network I/O. The
+        # default policy is reject; only fields explicitly named by the caller
+        # (and never required ones) may be truncated (#674).
+        try:
+            body, _truncated = webhook_payloads.prepare_payload(
+                body,
+                truncate_fields=payload.get("truncate_fields") or (),
+                required_fields=payload.get("required_fields") or (),
+            )
+        except webhook_payloads.WebhookPayloadError as exc:
+            raise JobQueueError(str(exc)) from exc
         timeout = float(_config("JOB_QUEUE_WEBHOOK_TIMEOUT", 10))
         secret = payload.get("secret")
         subscription_id = payload.get("subscription_id")

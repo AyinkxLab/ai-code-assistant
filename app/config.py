@@ -263,6 +263,16 @@ class Config:
     # warning on the GitHub dashboard (issue #77).
     GITHUB_LOW_QUOTA_THRESHOLD = int(os.getenv("GITHUB_LOW_QUOTA_THRESHOLD", "100"))
 
+    # GitHub App installations (#676). The existing OAuth app settings above are
+    # unchanged; these settings only enable the optional App integration. The
+    # webhook secret verifies installation update/revocation events; installation
+    # access tokens are encrypted at rest like OAuth tokens.
+    GITHUB_APP_ID = os.getenv("GITHUB_APP_ID", "")
+    GITHUB_APP_SLUG = os.getenv("GITHUB_APP_SLUG", "")
+    GITHUB_APP_CLIENT_ID = os.getenv("GITHUB_APP_CLIENT_ID", "")
+    GITHUB_APP_CLIENT_SECRET = os.getenv("GITHUB_APP_CLIENT_SECRET", "")
+    GITHUB_APP_WEBHOOK_SECRET = os.getenv("GITHUB_APP_WEBHOOK_SECRET", "")
+
     # GitLab OAuth and repository connection (#677). Tokens are stored with the
     # same AES-GCM helper as provider keys and integration credentials.
     GITLAB_CLIENT_ID = os.getenv("GITLAB_CLIENT_ID", "")
@@ -339,6 +349,12 @@ class Config:
     JOB_QUEUE_MAX_PAYLOAD_BYTES = int(os.getenv("JOB_QUEUE_MAX_PAYLOAD_BYTES", "16384"))
     JOB_QUEUE_WORKER_POLL_SECONDS = float(os.getenv("JOB_QUEUE_WORKER_POLL_SECONDS", "5"))
     JOB_QUEUE_WEBHOOK_TIMEOUT = float(os.getenv("JOB_QUEUE_WEBHOOK_TIMEOUT", "10"))
+
+    # Webhook payload limits (#674). Outbound bodies are measured on their exact
+    # UTF-8 JSON bytes. Oversized payloads are rejected by default; a caller
+    # may opt in to shortening explicitly named optional fields, but required
+    # fields are never truncated. See app/services/webhook_payloads.py.
+    WEBHOOK_MAX_PAYLOAD_BYTES = _positive_int_env("WEBHOOK_MAX_PAYLOAD_BYTES", 64 * 1024)
 
     # Notification integrations (#678, #679, #682, #684). Slack/Teams delivery
     # and signed inbound email all use bounded retries with exponential backoff;

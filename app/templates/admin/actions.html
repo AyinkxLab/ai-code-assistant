@@ -1,0 +1,70 @@
+{% extends "base.html" %}
+
+{% block title %}Admin actions - {{ config.APP_NAME }}{% endblock %}
+
+{% block content %}
+<h1>Admin actions</h1>
+<p>
+  Read-only history of administrative actions. Only the actor, action, target,
+  and timestamp are shown; request bodies and action details are never rendered.
+</p>
+
+<form method="get" action="{{ url_for('admin.actions') }}" class="inline-form">
+  <label for="actor">Actor</label>
+  <input id="actor" name="actor" type="text" value="{{ actor }}" placeholder="username">
+
+  <label for="action">Action</label>
+  <input id="action" name="action" type="text" value="{{ action }}" placeholder="exact action name">
+
+  <label for="start">From</label>
+  <input id="start" name="start" type="date" value="{{ start }}">
+
+  <label for="end">To</label>
+  <input id="end" name="end" type="date" value="{{ end }}">
+
+  <label for="per_page">Rows per page</label>
+  <input id="per_page" name="per_page" type="number" min="1" max="100" value="{{ per_page }}">
+
+  <button class="btn" type="submit">Apply</button>
+</form>
+
+<section aria-labelledby="actions-heading">
+  <h2 id="actions-heading">Recorded actions</h2>
+  {% if rows %}
+  <table class="billing-table">
+    <thead>
+      <tr>
+        <th scope="col">Date</th>
+        <th scope="col">Actor</th>
+        <th scope="col">Action</th>
+        <th scope="col">Target type</th>
+        <th scope="col">Target id</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in rows %}
+      <tr>
+        <td>{% if row.created_at %}{{ row.created_at.strftime('%Y-%m-%d %H:%M') }}{% endif %}</td>
+        <td>{{ row.actor }}</td>
+        <td>{{ row.action }}</td>
+        <td>{{ row.target_type or '—' }}</td>
+        <td>{{ row.target_id if row.target_id is not none else '—' }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  <nav class="inline-form" aria-label="Admin action pages">
+    {% if pagination.has_prev %}
+    <a class="btn" href="{{ url_for('admin.actions', actor=actor, action=action, start=start, end=end, per_page=per_page, page=pagination.prev_num) }}">Previous</a>
+    {% endif %}
+    <span>Page {{ pagination.page }} of {{ pagination.pages or 1 }} ({{ pagination.total }} actions)</span>
+    {% if pagination.has_next %}
+    <a class="btn" href="{{ url_for('admin.actions', actor=actor, action=action, start=start, end=end, per_page=per_page, page=pagination.next_num) }}">Next</a>
+    {% endif %}
+  </nav>
+  {% else %}
+  <p class="sidebar-empty">No administrative actions match these filters.</p>
+  {% endif %}
+</section>
+{% endblock %}

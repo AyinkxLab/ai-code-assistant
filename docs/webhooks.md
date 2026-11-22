@@ -109,3 +109,57 @@ to rotate a subscription's signing secret. The previous secret joins
 `verification_secrets()` for a bounded window (0-86400 seconds) so deliveries
 already signed with it still verify; after the window only the new secret is
 accepted. The old secret is never exposed in API responses.
+## Payload size limits (#674)
+
+Outbound bodies are measured on the exact UTF-8 JSON bytes that are signed and
+sent. The cap is `WEBHOOK_MAX_PAYLOAD_BYTES` (default 64 KiB).
+
+Policy:
+
+- **Reject by default.** A payload over the cap raises a structured
+  `WebhookPayloadTooLarge` (`code = "webhook_payload_too_large"`, HTTP 413 in
+  API callers) and is never posted.
+- **Opt-in truncation.** A producer that owns the event schema may pass
+  `truncate_fields` when enqueuing/delivering. Only those optional string/list
+  fields are shortened, and the truncation is reported to the caller.
+- **Required fields are never truncated.** Naming a field in both
+  `required_fields` and `truncate_fields` is a programming error and raises
+  `WebhookPayloadError`.
+- If shortening every allowed field still does not fit, the payload is rejected
+  rather than silently dropping data.
+
+`app/services/webhook_payloads.py` implements this policy; the job-queue webhook
+handler applies it before any network I/O. Boundary behavior is covered by
+`tests/test_webhook_payloads.py` (exactly-at-limit is accepted, one byte over is
+rejected).
+
+## Receiver contract (#675)
+
+A receiver must:
+
+1. Read the raw request body before parsing JSON.
+2. Verify `X-AICA-Signature` over `<X-AICA-Timestamp>.<raw body>` using the
+   subscription secret, and reject a timestamp outside the tolerance window.
+3. Return any `2xx` status to acknowledge. Any other status (or a network
+   error/timeout) is a failed attempt.
+4. Be idempotent: retries and owner-triggered replays may deliver the same event
+   more than once. The delivery log records each attempt separately.
+
+Failure behavior:
+
+- Transient failures are retried with bounded, jittered exponential backoff.
+- Exhausted deliveries are retained in the dead-letter queue for owner replay.
+- Replay is bounded (50 per batch), skips duplicates and expired entries, and
+  records the actor.
+- Response bodies and secrets are never stored in delivery logs or dead letters.
+
+## End-to-end tests
+
+`tests/test_webhook_e2e.py` starts a loopback-only HTTP receiver (no live
+third-party service) and exercises subscription creation, signed delivery,
+signature verification, retry after `5xx` responses, permanent failure
+retention, and dead-letter replay:
+
+```bash
+python -m pytest tests/test_webhook_e2e.py tests/test_webhook_payloads.py -o addopts=""
+```

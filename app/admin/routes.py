@@ -6,13 +6,14 @@ is deliberately no edit or delete route, for admins or anyone else.
 
 from __future__ import annotations
 
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, time, timedelta
 from functools import wraps
 
 from flask import Response, jsonify, render_template, request
 from flask_login import current_user, login_required
 
 from app.admin import bp
+from app.api.error_catalog import FORBIDDEN, INVALID_INPUT, UNAUTHORIZED, error_response
 from app.models import AuditLog, UsageRecord, User, Workspace
 from app.services import usage_dashboards, usage_ledger
 from app.services.currency import get_currency_config
@@ -25,6 +26,10 @@ REPORT_DEFAULT_PER_PAGE = 50
 REPORT_MAX_PER_PAGE = 100
 REPORT_SCOPES = ("all", "user", "workspace")
 
+#: Bounds for the admin action audit view (#632).
+ACTIONS_DEFAULT_PER_PAGE = 50
+ACTIONS_MAX_PER_PAGE = 100
+
 
 def admin_required(view):
     """Reject non-admin callers with a 403 JSON error."""
@@ -32,9 +37,9 @@ def admin_required(view):
     @wraps(view)
     def wrapped(*args, **kwargs):
         if not current_user.is_authenticated:
-            return jsonify({"error": "Authentication required.", "kind": "unauthorized"}), 401
+            return error_response(UNAUTHORIZED)
         if not current_user.is_admin:
-            return jsonify({"error": "Admin access required.", "kind": "forbidden"}), 403
+            return error_response(FORBIDDEN, "Admin access required.")
         return view(*args, **kwargs)
 
     return wrapped
@@ -88,6 +93,98 @@ def audit():
     )
 
 
+@bp.route("/actions")
+@login_required
+@admin_required
+def actions():
+    """Read-only admin action audit view with actor, action, and date filters.
+
+    Only whitelisted columns are rendered: the append-only metadata blob (which
+    may contain request context) is never read here. ``format=json`` returns the
+    same whitelisted rows for tooling.
+    """
+    actor = (request.args.get("actor") or "").strip()
+    action = (request.args.get("action") or "").strip()
+    start_raw = (request.args.get("start") or "").strip()
+    end_raw = (request.args.get("end") or "").strip()
+
+    try:
+        start = date.fromisoformat(start_raw) if start_raw else None
+        end = date.fromisoformat(end_raw) if end_raw else None
+    except ValueError:
+        return error_response(INVALID_INPUT, "Dates must use YYYY-MM-DD.")
+    if start is not None and end is not None and start > end:
+        return error_response(INVALID_INPUT, "start must not be after end.")
+
+    query = AuditLog.query
+    if actor:
+        user = User.query.filter_by(username=actor).first()
+        # An unknown actor yields an empty page rather than revealing whether
+        # the account exists.
+        query = query.filter(AuditLog.user_id == (user.id if user else -1))
+    if action:
+        query = query.filter(AuditLog.action == action)
+    if start is not None:
+        query = query.filter(AuditLog.created_at >= datetime.combine(start, time.min, tzinfo=UTC))
+    if end is not None:
+        query = query.filter(
+            AuditLog.created_at < datetime.combine(end + timedelta(days=1), time.min, tzinfo=UTC)
+        )
+
+    page = max(1, request.args.get("page", 1, type=int) or 1)
+    per_page = min(
+        max(
+            1,
+            request.args.get("per_page", ACTIONS_DEFAULT_PER_PAGE, type=int)
+            or ACTIONS_DEFAULT_PER_PAGE,
+        ),
+        ACTIONS_MAX_PER_PAGE,
+    )
+    pagination = query.order_by(AuditLog.created_at.desc(), AuditLog.id.desc()).paginate(
+        page=page, per_page=per_page, error_out=False
+    )
+
+    rows = [
+        {
+            "id": entry.id,
+            "created_at": entry.created_at,
+            "actor": entry.user.username if entry.user else "deleted user",
+            "action": entry.action,
+            "target_type": entry.target_type,
+            "target_id": entry.target_id,
+        }
+        for entry in pagination.items
+    ]
+
+    if request.args.get("format") == "json":
+        return jsonify(
+            {
+                "items": [
+                    {
+                        **row,
+                        "created_at": row["created_at"].isoformat() if row["created_at"] else None,
+                    }
+                    for row in rows
+                ],
+                "page": pagination.page,
+                "per_page": pagination.per_page,
+                "total": pagination.total,
+                "total_pages": pagination.pages,
+            }
+        )
+
+    return render_template(
+        "admin/actions.html",
+        rows=rows,
+        actor=actor,
+        action=action,
+        start=start_raw,
+        end=end_raw,
+        per_page=per_page,
+        pagination=pagination,
+    )
+
+
 @bp.route("/usage")
 @login_required
 @admin_required
@@ -100,7 +197,7 @@ def usage():
     try:
         days = usage_dashboards.normalize_days(request.args.get("days"))
     except ValueError as exc:
-        return jsonify({"error": str(exc), "kind": "invalid"}), 400
+        return error_response(INVALID_INPUT, str(exc))
     return jsonify(usage_dashboards.admin_dashboard(days=days))
 
 
@@ -125,11 +222,11 @@ def usage_report():
     try:
         days = usage_dashboards.normalize_days(request.args.get("days"))
     except ValueError as exc:
-        return jsonify({"error": str(exc), "kind": "invalid"}), 400
+        return error_response(INVALID_INPUT, str(exc))
 
     scope = (request.args.get("scope") or "all").strip().lower()
     if scope not in REPORT_SCOPES:
-        return jsonify({"error": "scope must be all, user or workspace.", "kind": "invalid"}), 400
+        return error_response(INVALID_INPUT, "scope must be all, user or workspace.")
 
     user_id = request.args.get("user_id", type=int)
     workspace_id = request.args.get("workspace_id", type=int)
@@ -217,7 +314,7 @@ def usage_export():
     try:
         days = usage_dashboards.normalize_days(request.args.get("days"))
     except ValueError as exc:
-        return jsonify({"error": str(exc), "kind": "invalid"}), 400
+        return error_response(INVALID_INPUT, str(exc))
     text, truncated = usage_dashboards.export_csv(days=days)
     response = Response(text, mimetype="text/csv")
     response.headers["Content-Disposition"] = 'attachment; filename="usage-org-wide.csv"'
