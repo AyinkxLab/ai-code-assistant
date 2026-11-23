@@ -32,6 +32,7 @@ from app.api.filtering import (
 )
 from app.models import Project, Review
 from app.services import pagination, usage_ledger
+from app.services.ratelimit import api_quota
 
 bp = Blueprint("api_v1", __name__, url_prefix="/api/v1")
 
@@ -149,6 +150,7 @@ def _optional_int(name: str):
 
 @bp.route("/projects", methods=["GET"])
 @_login_required
+@api_quota("api-v1")
 def list_projects():
     """List the caller's projects, newest id first by default.
 
@@ -176,6 +178,7 @@ def list_projects():
 
 @bp.route("/projects/<int:project_id>", methods=["GET"])
 @_login_required
+@api_quota("api-v1")
 def get_project(project_id: int):
     """Return one project owned by the caller."""
     project = Project.query.filter_by(id=project_id, user_id=current_user.id).first()
@@ -186,6 +189,7 @@ def get_project(project_id: int):
 
 @bp.route("/reviews", methods=["GET"])
 @_login_required
+@api_quota("api-v1")
 def list_reviews():
     """List the caller's reviews, newest id first by default.
 
@@ -214,6 +218,7 @@ def list_reviews():
 
 @bp.route("/reviews/<int:review_id>", methods=["GET"])
 @_login_required
+@api_quota("api-v1")
 def get_review(review_id: int):
     """Return one review owned by the caller."""
     review = Review.query.filter_by(id=review_id, user_id=current_user.id).first()
@@ -224,6 +229,7 @@ def get_review(review_id: int):
 
 @bp.route("/usage", methods=["GET"])
 @_login_required
+@api_quota("api-v1")
 def list_usage():
     """Return a bounded page of the caller's usage-ledger records."""
     page, error = _page_request()

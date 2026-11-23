@@ -16,13 +16,35 @@ import hashlib
 import threading
 import time
 
-from flask import current_app, jsonify, request
+from flask import current_app, request
 from flask_login import current_user
 
-from app.api.error_catalog import error_response
+from app.api.error_catalog import RATE_LIMITED, error_response
 
 _ENTRIES: dict[str, list[float]] = {}
 _LOCK = threading.Lock()
+
+#: Hard cap on the number of tracked limiter keys. Bounds process memory even
+#: when callers rotate IPs, tokens, or organization ids (#621). Overridable with
+#: ``RATE_LIMIT_MAX_KEYS``; the oldest inserted key is evicted first.
+MAX_KEYS = 10_000
+
+
+def _max_keys() -> int:
+    """Return the configured key cap, falling back to :data:`MAX_KEYS`."""
+    try:
+        return max(int(current_app.config.get("RATE_LIMIT_MAX_KEYS", MAX_KEYS)), 1)
+    except RuntimeError:  # outside an application context
+        return MAX_KEYS
+
+
+def _make_room(key: str) -> None:
+    """Evict the oldest keys so the mapping stays bounded (call under lock)."""
+    limit = _max_keys()
+    if key in _ENTRIES or len(_ENTRIES) < limit:
+        return
+    for oldest in list(_ENTRIES)[: len(_ENTRIES) - limit + 1]:
+        _ENTRIES.pop(oldest, None)
 
 
 def _prune(key: str, window: int) -> None:
@@ -51,6 +73,7 @@ def hit(key: str, *, max_hits: int | None = None, window: int | None = None) -> 
     now = time.monotonic()
     with _LOCK:
         _prune(key, window)
+        _make_room(key)
         timestamps = _ENTRIES.setdefault(key, [])
         allowed = len(timestamps) < max_hits
         timestamps.append(now)
@@ -67,6 +90,7 @@ def consume(key: str, *, max_hits: int, window: int) -> tuple[bool, int]:
     now = time.monotonic()
     with _LOCK:
         _prune(key, window)
+        _make_room(key)
         timestamps = _ENTRIES.setdefault(key, [])
         if len(timestamps) >= max_hits:
             oldest = timestamps[0]
@@ -87,6 +111,7 @@ def consume_details(key: str, *, max_hits: int, window: int) -> tuple[bool, int,
     now = time.monotonic()
     with _LOCK:
         _prune(key, window)
+        _make_room(key)
         timestamps = _ENTRIES.setdefault(key, [])
         if len(timestamps) >= max_hits:
             oldest = timestamps[0]
@@ -116,6 +141,7 @@ def record(key: str) -> None:
     attempts are recorded, so legitimate successes never count against the limit.
     """
     with _LOCK:
+        _make_room(key)
         _ENTRIES.setdefault(key, []).append(time.monotonic())
 
 
@@ -153,13 +179,7 @@ def per_user_limit(bucket: str, *, max_config: str, window_config: str):
             key = f"{bucket}:user:{current_user.get_id()}"
             allowed, retry_after = consume(key, max_hits=max_hits, window=window)
             if not allowed:
-                response = jsonify(
-                    {
-                        "error": "Rate limit exceeded. Please retry later.",
-                        "kind": "rate_limited",
-                    }
-                )
-                response.status_code = 429
+                response = error_response(RATE_LIMITED)
                 response.headers["Retry-After"] = str(retry_after)
                 return response
             return view(*args, **kwargs)
@@ -240,7 +260,7 @@ def api_quota(
                     "X-RateLimit-Reset": str(reset_after),
                 }
                 if not allowed:
-                    response = error_response("rate_limited")
+                    response = error_response(RATE_LIMITED)
                     response.headers["Retry-After"] = str(retry_after)
                     response.headers.update(headers)
                     return response
@@ -287,13 +307,7 @@ def ai_limit(view):
             window=window,
         )
         if not allowed:
-            response = jsonify(
-                {
-                    "error": "Rate limit exceeded. Please retry later.",
-                    "kind": "rate_limited",
-                }
-            )
-            response.status_code = 429
+            response = error_response(RATE_LIMITED)
             response.headers["Retry-After"] = str(retry_after)
             return response
         return view(*args, **kwargs)

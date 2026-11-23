@@ -396,6 +396,9 @@ class Config:
     # scope of the umbrella issues (#28/#81/#106).
     RATE_LIMIT_MAX = int(os.getenv("RATE_LIMIT_MAX", "30"))
     RATE_LIMIT_WINDOW_SECONDS = int(os.getenv("RATE_LIMIT_WINDOW_SECONDS", "300"))
+    # Hard cap on tracked limiter keys so rotating IPs/tokens/org ids cannot
+    # grow the process-local window state without bound (#621).
+    RATE_LIMIT_MAX_KEYS = int(os.getenv("RATE_LIMIT_MAX_KEYS", "10000"))
     # Per-user sliding-window limits for the costly Phase 5 endpoints (#106):
     # project import, project search, project chat, chat streaming, and project
     # analysis. Each pair is <max requests> per <window seconds>, keyed by user
