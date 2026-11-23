@@ -43,12 +43,8 @@ class TestKeyValidation:
             validate_key(value)
 
     def test_json_hash_is_order_insensitive(self):
-        first = canonical_request_hash(
-            b'{"a": 1, "b": [2, 3]}', "application/json"
-        )
-        second = canonical_request_hash(
-            b'{"b": [2, 3], "a": 1}', "application/json"
-        )
+        first = canonical_request_hash(b'{"a": 1, "b": [2, 3]}', "application/json")
+        second = canonical_request_hash(b'{"b": [2, 3], "a": 1}', "application/json")
         assert first == second
 
     def test_different_bodies_have_different_hashes(self):
@@ -65,21 +61,15 @@ class TestPostIdempotencyRoutes:
         headers = {HEADER: "challenge-key-1"}
         payload = {"workspace_id": workspace.id, "domain": "example.com"}
 
-        first = client.post(
-            "/auth/api/domains/challenge", json=payload, headers=headers
-        )
-        second = client.post(
-            "/auth/api/domains/challenge", json=payload, headers=headers
-        )
+        first = client.post("/auth/api/domains/challenge", json=payload, headers=headers)
+        second = client.post("/auth/api/domains/challenge", json=payload, headers=headers)
 
         assert first.status_code == 201
         assert second.status_code == 201
         assert second.get_json() == first.get_json()
         assert second.headers[REPLAY_HEADER] == "true"
         assert (
-            WorkspaceDomain.query.filter_by(
-                workspace_id=workspace.id, domain="example.com"
-            ).count()
+            WorkspaceDomain.query.filter_by(workspace_id=workspace.id, domain="example.com").count()
             == 1
         )
 

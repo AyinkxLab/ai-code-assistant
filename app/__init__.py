@@ -47,6 +47,14 @@ def create_app(config_name: str | None = None) -> Flask:
     login_manager.init_app(app)
     csrf.init_app(app)
 
+    # Scoped personal API tokens (#616). Registered before the other request
+    # guards so the token identity is available to them; bearer tokens
+    # authenticate JSON API requests only and are checked against read/write/
+    # admin scopes per method.
+    from app.services.api_tokens import init_api_tokens
+
+    init_api_tokens(app)
+
     # Real-time collaboration over WebSockets (issue #50). ``manage_session``
     # lets socket handlers reuse the Flask-Login session, so room joins are
     # authorized with the same identity as HTTP routes.
@@ -127,6 +135,7 @@ def create_app(config_name: str | None = None) -> Flask:
     from app.prompts import bp as prompts_bp
     from app.reviews import bp as reviews_bp
     from app.stellar import bp as stellar_bp
+    from app.tokens import bp as tokens_bp
     from app.tools import bp as tools_bp
     from app.webhooks import bp as webhooks_bp
     from app.workspaces import bp as workspaces_bp
@@ -148,6 +157,7 @@ def create_app(config_name: str | None = None) -> Flask:
     app.register_blueprint(collaboration_bp)
     app.register_blueprint(reviews_bp)
     app.register_blueprint(stellar_bp)
+    app.register_blueprint(tokens_bp)
     app.register_blueprint(billing_bp)
     app.register_blueprint(notification_settings_bp)
     app.register_blueprint(webhooks_bp)

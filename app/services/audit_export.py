@@ -18,7 +18,7 @@ import json
 from datetime import UTC, date, datetime, time, timedelta
 
 from app.models import AuditLog, User
-from app.services.classification import INTERNAL, export_record
+from app.services.classification import INTERNAL, export_record, redact
 
 FORMAT_JSON = "json"
 FORMAT_CSV = "csv"
@@ -126,7 +126,7 @@ def export_row(entry: AuditLog) -> dict:
         "prev_hash": entry.prev_hash,
         "record_hash": entry.record_hash,
     }
-    return export_record(row, max_level=INTERNAL)
+    return redact(export_record(row, max_level=INTERNAL), max_level=INTERNAL)
 
 
 def iter_rows(query, limit: int):

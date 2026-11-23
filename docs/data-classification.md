@@ -39,13 +39,31 @@ render_conversation_markdown(conversation, max_level="public")   # redacts title
 The admin action audit JSON export (`/admin/actions?format=json`) is projected
 at `internal`, and is already whitelisted to non-metadata columns.
 
+## Redaction helper
+
+`app.services.classification.redact` (also exported as `redact_for_log`) is the
+single redaction helper for logs and forwarding exports (#613). It walks nested
+dictionaries and lists at any depth and applies two rules:
+
+1. A value under a documented PII field is replaced with `[redacted:pii]`. The
+   list is the frozen set `classification.REDACT_FIELDS`, derived from every
+   `FIELD_LEVELS` entry classified `pii` (email, username, password, token,
+   access/refresh token, api_key, secret, …). Add a key to `FIELD_LEVELS` with
+   level `pii` to redact it everywhere.
+2. Email addresses embedded in otherwise allowed strings are replaced with
+   `[redacted:email]` (`redact_text` applies just this rule to one string).
+
+`redact` and `redact_for_log` both default to the `internal` ceiling, so
+confidential content and PII are hidden together. The admin audit export and
+SIEM forwarding both pass their rows through this helper.
+
 ## Logs
 
 `app.services.chat_audit.log_event` runs every structured field through
 `redact_for_log`. Fields classified `confidential` or `pii` are replaced with
-`[redacted:<level>]` before the record reaches a handler. Callers should still
-avoid passing message content or secrets; this is a backstop, not a licence to
-log them.
+`[redacted:<level>]` before the record reaches a handler, including fields
+nested inside dictionaries and lists. Callers should still avoid passing message
+content or secrets; this is a backstop, not a licence to log them.
 
 ## Known limits
 

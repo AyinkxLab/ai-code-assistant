@@ -6,8 +6,10 @@ implementation is `app/api/v1.py`; errors use the
 [pagination contract](pagination.md), and filters/sort use the
 [filtering and sorting standard](api-filtering.md).
 
-All endpoints require an authenticated session or API key. Unauthenticated
-calls return `401 {"code": "unauthorized"}`.
+All endpoints require an authenticated session or a scoped
+[API token](api-tokens.md). Unauthenticated calls return
+`401 {"code": "unauthorized"}`, and a token without the required scope returns
+`403 {"code": "forbidden"}`.
 
 ## Projects
 

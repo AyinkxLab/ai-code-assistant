@@ -76,8 +76,7 @@ def validate_key(raw: str | None) -> str:
         raise InvalidKey(f"{HEADER} is required.")
     if len(key) > MAX_KEY_LENGTH or not _KEY_RE.match(key):
         raise InvalidKey(
-            f"{HEADER} must be 1-{MAX_KEY_LENGTH} characters from "
-            "A-Z, a-z, 0-9, and ._~:/+= -."
+            f"{HEADER} must be 1-{MAX_KEY_LENGTH} characters from " "A-Z, a-z, 0-9, and ._~:/+= -."
         )
     return key
 
@@ -216,9 +215,7 @@ def begin() -> Response | None:
 
 def _resolve_existing(row: IdempotencyKey, request_hash: str) -> Response:
     if row.request_hash != request_hash:
-        return _conflict(
-            "This idempotency key was already used with a different request body."
-        )
+        return _conflict("This idempotency key was already used with a different request body.")
     if not row.is_complete:
         return _conflict("A request with this idempotency key is still in progress.")
     return _existing_response(row)
@@ -245,9 +242,7 @@ def finish(response: Response) -> Response:
             user_id=user_id,
             endpoint=_endpoint(),
             key=key,
-            request_hash=canonical_request_hash(
-                request.get_data(cache=True), request.content_type
-            ),
+            request_hash=canonical_request_hash(request.get_data(cache=True), request.content_type),
             expires_at=_now() + timedelta(seconds=_ttl_seconds()),
         )
         db.session.add(row)
@@ -259,11 +254,7 @@ def finish(response: Response) -> Response:
         except (UnicodeDecodeError, RuntimeError):  # pragma: no cover - binary body
             row.response_body = None
     row.response_headers = json.dumps(
-        {
-            name: value
-            for name, value in response.headers.items()
-            if name in _REPLAY_HEADERS
-        },
+        {name: value for name, value in response.headers.items() if name in _REPLAY_HEADERS},
         sort_keys=True,
     )
     try:
@@ -333,10 +324,10 @@ __all__ = [
     "ALT_REPLAY_HEADER",
     "DEFAULT_TTL_SECONDS",
     "HEADER",
+    "REPLAY_HEADER",
     "IdempotencyError",
     "InvalidKey",
     "KeyReuse",
-    "REPLAY_HEADER",
     "RequestInProgress",
     "begin",
     "canonical_request_hash",

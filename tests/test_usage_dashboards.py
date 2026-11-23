@@ -12,7 +12,9 @@ from app.models import UsageRecord, User, Workspace, WorkspaceMember
 from app.models.workspace_member import ROLE_VIEWER, STATUS_ACTIVE
 from app.services import usage_dashboards
 
-NOW = datetime(2026, 10, 20, 12, 0, tzinfo=UTC)
+#: Anchor test rows to the real clock: the route under test uses ``now()`` and
+#: a frozen literal would fall outside the window as the calendar moves on.
+NOW = datetime.now(UTC)
 
 
 def _user(username, email, *, is_admin=False):
@@ -111,8 +113,8 @@ class TestDashboardAggregation:
         assert sources["chat"]["total_tokens"] == 45
 
         assert [row["date"] for row in payload["daily"]] == [
-            "2026-10-19",
-            "2026-10-20",
+            (NOW - timedelta(days=1)).date().isoformat(),
+            NOW.date().isoformat(),
         ]
         assert payload["daily"][1]["total_tokens"] == 15
 
@@ -318,7 +320,7 @@ class TestDashboardFilters:
         sources = {row["source"]: row for row in payload["by_source"]}
         assert sources["analysis"]["total_tokens"] == 30
         assert sources["chat"]["total_tokens"] == 0
-        assert [row["date"] for row in payload["daily"]] == ["2026-10-20"]
+        assert [row["date"] for row in payload["daily"]] == [NOW.date().isoformat()]
         assert payload["filters"] == {"source": "analysis", "provider": None, "model": None}
         assert payload["scope"]["filters"]["source"] == "analysis"
         # Available values still describe the whole window so the UI can switch.
