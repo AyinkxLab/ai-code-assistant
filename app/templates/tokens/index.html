@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+
+{% block title %}API tokens - {{ config.APP_NAME }}{% endblock %}
+
+{% block content %}
+<div class="github-header">
+  <div>
+    <h1>API tokens</h1>
+    <p class="repo-meta">Personal tokens for the JSON API. Only the metadata is shown here; the secret is displayed once when a token is created or rotated. Revoking keeps the token's audit history.</p>
+  </div>
+</div>
+
+<div class="prompt-editor">
+  <div class="repo-toolbar">
+    <input id="token-label" class="field-input" type="text" maxlength="100" placeholder="Label (optional)">
+    <label class="field-hint"><input id="scope-read" type="checkbox" checked> read</label>
+    <label class="field-hint"><input id="scope-write" type="checkbox"> write</label>
+    <label class="field-hint"><input id="scope-admin" type="checkbox"> admin</label>
+    <button id="add-token" class="btn btn-primary" type="button">Create token</button>
+  </div>
+  <p class="field-hint">read = GET; write adds POST/PUT/PATCH; admin adds DELETE.</p>
+</div>
+
+<div id="token-secret" class="prompt-editor" hidden>
+  <h2>Copy this secret now</h2>
+  <p class="field-hint">It is shown once and cannot be recovered. Store it somewhere safe.</p>
+  <pre><code id="token-secret-value"></code></pre>
+</div>
+
+<div id="token-list" class="issue-list"><p class="sidebar-empty">Loading tokens...</p></div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/github.js') }}"></script>
+<script src="{{ url_for('static', filename='js/api_tokens.js') }}"></script>
+{% endblock %}

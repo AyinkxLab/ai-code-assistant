@@ -3,7 +3,7 @@
 Personal API tokens authenticate the public JSON API as their owning user. The
 implementation is `app/services/api_tokens.py`, the model is
 `app/models/api_token.py`, and the token settings page is described in
-`docs/api-token-management.md` (added with the rotation UI).
+[API token rotation and revocation](api-token-management.md).
 
 ## Authentication
 
@@ -40,9 +40,10 @@ view runs, so a token cannot reach an operation its scopes do not grant.
 
 ## Lifecycle
 
-- `POST` create, rotate, and revoke are performed from the settings page; the
-  list API and page only return metadata (`label`, `prefix`, `scopes`,
-  `created_at`, `last_used_at`, `expires_at`, `revoked_at`, `is_active`).
+- `POST` create, rotate, and revoke are performed from
+  [Settings → API tokens](api-token-management.md); the list API and page only
+  return metadata (`label`, `prefix`, `scopes`, `created_at`, `last_used_at`,
+  `expires_at`, `revoked_at`, `is_active`).
 - Rotation replaces the stored hash in place and keeps the row, so audit history
   and timestamps survive. The old secret stops working immediately.
 - Revocation is permanent for that row and keeps it for audit history.

@@ -148,6 +148,7 @@ table, quotas, budgets, alerts, invoices, and reconciliation.
 - [API filtering and sorting](docs/api-filtering.md)
 - [API rate limits and quotas](docs/api-rate-limits.md)
 - [Scoped API tokens](docs/api-tokens.md)
+- [API token rotation and revocation](docs/api-token-management.md)
 - [API versioning and deprecation](docs/api-versioning.md)
 - [OpenAPI document](docs/api-openapi.md)
 - [Upgrade guide](docs/upgrade-guide.md)

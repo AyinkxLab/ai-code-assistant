@@ -52,6 +52,7 @@
             <span id="notif-badge" class="notification-badge" hidden></span>
           </a>
           <a class="nav-link" href="{{ url_for('auth.me') }}">{{ t('nav.account') }}</a>
+          <a class="nav-link" href="{{ url_for('tokens.index') }}">API tokens</a>
           <form class="inline-form" method="POST" action="{{ url_for('auth.logout') }}">
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <button class="nav-link nav-button" type="submit">{{ t('nav.logout') }}</button>
