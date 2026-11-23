@@ -47,6 +47,14 @@ def create_app(config_name: str | None = None) -> Flask:
     login_manager.init_app(app)
     csrf.init_app(app)
 
+    # Scoped personal API tokens (#616). Registered before the other request
+    # guards so the token identity is available to them; bearer tokens
+    # authenticate JSON API requests only and are checked against read/write/
+    # admin scopes per method.
+    from app.services.api_tokens import init_api_tokens
+
+    init_api_tokens(app)
+
     # Real-time collaboration over WebSockets (issue #50). ``manage_session``
     # lets socket handlers reuse the Flask-Login session, so room joins are
     # authorized with the same identity as HTTP routes.

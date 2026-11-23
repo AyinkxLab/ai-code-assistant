@@ -7,6 +7,7 @@ can discover every table in the application.
 from app.models.activity_event import ActivityEvent
 from app.models.analyzed_file import AnalyzedFile
 from app.models.api_key import ApiKey
+from app.models.api_token import ApiToken
 from app.models.audit_log import AuditLog
 from app.models.audit_retention_policy import AuditRetentionPolicy
 from app.models.budget import Budget
@@ -70,6 +71,7 @@ __all__ = [
     "ActivityEvent",
     "AnalyzedFile",
     "ApiKey",
+    "ApiToken",
     "AuditLog",
     "AuditRetentionPolicy",
     "Budget",
