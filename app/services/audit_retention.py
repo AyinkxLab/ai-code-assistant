@@ -17,6 +17,7 @@ from datetime import UTC, datetime, timedelta
 
 from app.extensions import db
 from app.models import AuditLog, AuditRetentionPolicy, Workspace
+from app.services import legal_hold
 from app.services.permissions import can
 
 DEFAULT_RETENTION_DAYS = 365
@@ -113,9 +114,11 @@ def purge_expired(
     """Delete workspace audit rows older than the retention window.
 
     A legal hold makes this a no-op with ``skipped_reason="legal_hold"``; no
-    row is ever deleted while the hold is active. ``dry_run`` reports the count
-    without deleting. Raises ``LookupError`` for an unknown workspace and
-    ``PermissionError`` when ``actor`` lacks ``manage_settings``.
+    row is ever deleted while the hold is active. Either the legacy policy
+    boolean or an active :class:`~app.models.LegalHold` covering the audit scope
+    counts as a hold. ``dry_run`` reports the count without deleting. Raises
+    ``LookupError`` for an unknown workspace and ``PermissionError`` when
+    ``actor`` lacks ``manage_settings``.
     """
     _workspace(workspace_id)
     _require_manager(workspace_id, actor)
@@ -135,7 +138,7 @@ def purge_expired(
         "dry_run": bool(dry_run),
         "skipped_reason": None,
     }
-    if policy["legal_hold"]:
+    if policy["legal_hold"] or legal_hold.has_active_hold(workspace_id, legal_hold.SCOPE_AUDIT):
         result["skipped_reason"] = SKIP_LEGAL_HOLD
         return result
 

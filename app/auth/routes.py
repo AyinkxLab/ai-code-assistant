@@ -78,6 +78,7 @@ def _deletion_error_response(exc: Exception):
         (
             data_deletion.AlreadyCompleted,
             data_deletion.DeletionConflict,
+            data_deletion.LegalHoldActive,
         ),
     ):
         code = CONFLICT

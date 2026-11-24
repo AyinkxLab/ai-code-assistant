@@ -136,6 +136,7 @@ table, quotas, budgets, alerts, invoices, and reconciliation.
 - [Encrypted integration credentials](docs/integration-credentials.md)
 - [Integration setup and local mocks](docs/integrations.md)
 - [Security ticketing (Jira and Linear)](docs/security-ticketing.md)
+- [Audit retention and legal hold](docs/audit-retention.md)
 - [GitLab integration](docs/gitlab.md)
 - [Webhooks, delivery logs, and dead-letter replay](docs/webhooks.md)
 - [Enterprise adoption telemetry](docs/enterprise-telemetry.md)

@@ -24,6 +24,7 @@ from app.models.integration_health import IntegrationHealth
 from app.models.invitation import WorkspaceInvitation
 from app.models.jira_issue import JiraIssueLink
 from app.models.job import Job
+from app.models.legal_hold import LegalHold
 from app.models.message import Message
 from app.models.message_attachment import MessageAttachment
 from app.models.notification import Notification
@@ -88,6 +89,7 @@ __all__ = [
     "IntegrationHealth",
     "JiraIssueLink",
     "Job",
+    "LegalHold",
     "Message",
     "MessageAttachment",
     "Notification",

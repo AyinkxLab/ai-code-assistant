@@ -56,7 +56,7 @@ from flask import (
 )
 from flask_login import current_user, login_required
 
-from app.api.error_catalog import INVALID_INPUT, error_response
+from app.api.error_catalog import CONFLICT, FORBIDDEN, INVALID_INPUT, NOT_FOUND, error_response
 from app.extensions import db
 from app.models import Project, ProjectChatSession, ProjectMessage, User, Workspace, WorkspaceMember
 from app.models.activity_event import (
@@ -83,7 +83,7 @@ from app.models.workspace_member import (
     ROLE_VIEWER,
     STATUS_ACTIVE,
 )
-from app.services import budgets, pricing, project_analysis, usage_ledger
+from app.services import budgets, legal_hold, pricing, project_analysis, usage_ledger
 from app.services.activity import record_activity
 from app.services.events import emit_event
 from app.services.exporting import export_filename, iter_export_zip
@@ -400,6 +400,11 @@ def api_update_workspace(workspace_id: int):
 @login_required
 def api_delete_workspace(workspace_id: int):
     workspace = _get_workspace(workspace_id)
+    if legal_hold.has_active_hold(workspace_id, legal_hold.SCOPE_WORKSPACE):
+        return error_response(
+            CONFLICT,
+            "A legal hold covers this workspace. Release the hold before deleting it.",
+        )
     db.session.delete(workspace)
     db.session.commit()
     return jsonify({"ok": True})
@@ -1706,3 +1711,75 @@ def api_workspace_ip_allowlist(workspace_id: int):
         db.session.rollback()
         return error_response(INVALID_INPUT, str(exc))
     return jsonify(row.to_dict())
+
+
+@bp.route("/api/workspaces/<int:workspace_id>/legal-holds", methods=["GET", "POST"])
+@login_required
+@require_workspace_capability("manage_settings")
+def api_workspace_legal_holds(workspace_id: int):
+    """List or place legal holds for a workspace (owner only, #609)."""
+    if request.method == "GET":
+        include_released = request.args.get("include_released", "0") in ("1", "true", "yes")
+        return jsonify(
+            {
+                "workspace_id": workspace_id,
+                "holds": legal_hold.list_holds(workspace_id, include_released=include_released),
+            }
+        )
+
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return error_response(INVALID_INPUT, "A JSON object is required.")
+    try:
+        row = legal_hold.place_hold(
+            workspace_id,
+            scope=data.get("scope"),
+            reason=data.get("reason"),
+            actor=current_user,
+        )
+    except PermissionError as exc:
+        db.session.rollback()
+        return error_response(FORBIDDEN, str(exc))
+    except ValueError as exc:
+        db.session.rollback()
+        return error_response(INVALID_INPUT, str(exc))
+    return jsonify(row), 201
+
+
+@bp.route(
+    "/api/workspaces/<int:workspace_id>/legal-holds/<int:hold_id>/release",
+    methods=["POST"],
+)
+@login_required
+@require_workspace_capability("manage_settings")
+def api_release_workspace_legal_hold(workspace_id: int, hold_id: int):
+    """Release a legal hold, recording the actor and reason (owner only, #609)."""
+    from app.models import LegalHold
+
+    row = db.session.get(LegalHold, hold_id)
+    if row is None or row.workspace_id != workspace_id:
+        return error_response(NOT_FOUND, "Legal hold not found.")
+    data = request.get_json(silent=True)
+    if data is None:
+        data = {}
+    if not isinstance(data, dict):
+        return error_response(INVALID_INPUT, "A JSON object is required.")
+    try:
+        released = legal_hold.release_hold(
+            hold_id,
+            actor=current_user,
+            reason=data.get("reason"),
+        )
+    except PermissionError as exc:
+        db.session.rollback()
+        return error_response(FORBIDDEN, str(exc))
+    except legal_hold.LegalHoldConflict as exc:
+        db.session.rollback()
+        return error_response(CONFLICT, str(exc))
+    except LookupError as exc:
+        db.session.rollback()
+        return error_response(NOT_FOUND, str(exc))
+    except ValueError as exc:
+        db.session.rollback()
+        return error_response(INVALID_INPUT, str(exc))
+    return jsonify(released)

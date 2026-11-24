@@ -46,7 +46,7 @@ from app.models.user_deletion_request import (
     STATUS_CONFIRMED,
     STATUS_REQUESTED,
 )
-from app.services import audit, ratelimit
+from app.services import audit, legal_hold, ratelimit
 
 #: Exact phrase a user must submit to confirm a destructive request.
 CONFIRMATION_PHRASE = "delete my data"
@@ -78,6 +78,10 @@ class DeletionConflict(DeletionError):
 
 class AlreadyCompleted(DeletionError):
     """The account has already completed a deletion request."""
+
+
+class LegalHoldActive(DeletionError):
+    """A workspace the user belongs to is preserved by an active legal hold."""
 
 
 def _now(value: datetime | None = None) -> datetime:
@@ -236,6 +240,11 @@ def complete_request(
         raise DeletionConflict(f"Cannot complete a {row.status} deletion request.")
     moment = _now(now)
 
+    if legal_hold.user_has_active_hold(user, legal_hold.SCOPE_WORKSPACE):
+        raise LegalHoldActive(
+            "A legal hold covers data in this account. Release the hold before deleting."
+        )
+
     summary = {"mode": row.mode, "deleted": {}, "anonymized": False}
     if row.mode == MODE_DELETION:
         summary["deleted"] = _delete_personal_content(user)
@@ -326,6 +335,7 @@ __all__ = [
     "ConfirmationMismatch",
     "DeletionConflict",
     "DeletionError",
+    "LegalHoldActive",
     "RateLimited",
     "cancel_request",
     "complete_request",
