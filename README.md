@@ -137,6 +137,7 @@ table, quotas, budgets, alerts, invoices, and reconciliation.
 - [Encrypted integration credentials](docs/integration-credentials.md)
 - [Integration setup and local mocks](docs/integrations.md)
 - [Security ticketing (Jira and Linear)](docs/security-ticketing.md)
+- [Security advisory intake and response targets](docs/security-advisory-intake.md)
 - [Audit retention and legal hold](docs/audit-retention.md)
 - [Session revocation](docs/session-revocation.md)
 - [GitLab integration](docs/gitlab.md)
