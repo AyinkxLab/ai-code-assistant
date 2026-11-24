@@ -48,6 +48,10 @@ mirror.
 - We ask that you give us reasonable time to fix and release before public
   disclosure.
 
+The published process, including acknowledgement and fix targets for critical
+and high findings and what happens when a target is missed, is in
+[`docs/security-advisory-intake.md`](docs/security-advisory-intake.md).
+
 ## Reporting a malicious pull request
 
 This repository has been targeted by a supply-chain attack before: a commit

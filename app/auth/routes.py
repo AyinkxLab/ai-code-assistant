@@ -34,7 +34,15 @@ from app.api.error_catalog import (
 from app.auth import bp
 from app.extensions import db
 from app.models import User, UserDataExport, UserDeletionRequest
-from app.services import audit, chat_audit, data_deletion, data_export, domain_verification, mfa
+from app.services import (
+    audit,
+    chat_audit,
+    data_deletion,
+    data_export,
+    domain_verification,
+    mfa,
+    user_sessions,
+)
 
 
 def _api_login_required(view):
@@ -78,6 +86,7 @@ def _deletion_error_response(exc: Exception):
         (
             data_deletion.AlreadyCompleted,
             data_deletion.DeletionConflict,
+            data_deletion.LegalHoldActive,
         ),
     ):
         code = CONFLICT
@@ -119,14 +128,28 @@ def _is_safe_redirect_target(target: str) -> bool:
 
 @bp.before_app_request
 def _revoke_deprovisioned_sessions():
-    """Drop a session whose account was deactivated after login (#639).
+    """Drop sessions that were deprovisioned or centrally revoked (#619, #639).
 
     Deprovisioning an account (``User.is_active = False``) must not leave an
     already-authenticated browser session usable. Flask-Login reloads the user
     from the database on each request, so checking here revokes the existing
-    session on its next request without a server-side session store.
+    session on its next request.
+
+    The same hook enforces server-side session revocation. A cookie carrying a
+    tracked session token whose row is missing or revoked is logged out
+    immediately, so "revoke all" takes effect on the next request without
+    waiting for cookie expiry. Sessions created outside the login routes (for
+    example a test helper calling ``login_user`` directly) have no token and
+    are left alone.
     """
-    if current_user.is_authenticated and not current_user.is_active:
+    if not current_user.is_authenticated:
+        return
+    if not current_user.is_active:
+        logout_user()
+        return
+    token = user_sessions.current_token()
+    if token is not None and not user_sessions.is_active(token, current_user.id):
+        session.pop(user_sessions.SESSION_KEY, None)
         logout_user()
 
 
@@ -179,6 +202,7 @@ def register():
             db.session.commit()
             chat_audit.log_event("chat.register", user_id=user.id, status="success")
             login_user(user)
+            user_sessions.bind_current_session(user)
             flash("Welcome! Your account was created successfully.", "success")
             if next_url and _is_safe_redirect_target(next_url):
                 return redirect(next_url)
@@ -273,6 +297,7 @@ def login():
             db.session.commit()
             chat_audit.log_event("chat.login", user_id=user.id, status="success")
             login_user(user, remember=remember)
+            user_sessions.bind_current_session(user)
             flash(f"Welcome back, {user.username}!", "success")
 
             if next_url and _is_safe_redirect_target(next_url):
@@ -312,6 +337,7 @@ def mfa_challenge():
             db.session.commit()
             chat_audit.log_event("chat.login", user_id=user.id, status="success", reason="mfa")
             login_user(user, remember=remember)
+            user_sessions.bind_current_session(user)
             flash(f"Welcome back, {user.username}!", "success")
             if next_url and _is_safe_redirect_target(next_url):
                 return redirect(next_url)
@@ -354,6 +380,7 @@ def mfa_setup():
 @login_required
 def logout():
     """End the current user's session."""
+    user_sessions.revoke_current_session()
     logout_user()
     flash("You have been logged out.", "info")
     return redirect(url_for("auth.login"))
@@ -463,6 +490,28 @@ def update_domain(domain_id: int):
     )
     db.session.commit()
     return jsonify(row.to_dict())
+
+
+@bp.route("/api/sessions", methods=["GET"])
+@_api_login_required
+def list_sessions():
+    """List the current account's active sessions (#619)."""
+    rows = user_sessions.list_active_sessions(current_user)
+    return jsonify({"items": [row.to_dict() for row in rows], "count": len(rows)})
+
+
+@bp.route("/api/sessions/revoke-all", methods=["POST"])
+@_api_login_required
+def revoke_all_sessions():
+    """Revoke every active session for the current account (#619)."""
+    revoked = user_sessions.revoke_all_for_user(
+        current_user,
+        actor=current_user,
+        reason="self-service revoke-all",
+    )
+    session.pop(user_sessions.SESSION_KEY, None)
+    logout_user()
+    return jsonify({"revoked": revoked})
 
 
 @bp.route("/api/data-export", methods=["GET", "POST"])

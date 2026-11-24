@@ -41,9 +41,26 @@ window. The JSON form reports `deleted`, `retention_days`, `cutoff`, and
 ## Legal hold
 
 A legal hold always wins. While it is active, `flask audit purge` deletes
-nothing and returns `skipped_reason: "legal_hold"`; releasing the hold with
-`--no-legal-hold` lets the next run proceed. Holds are per workspace and are
-not expired automatically.
+nothing and returns `skipped_reason: "legal_hold"`; releasing the hold lets the
+next run proceed. Holds are per workspace and are not expired automatically.
+
+The legacy `--legal-hold` flag above sets a single workspace-wide boolean. The
+full hold record added in Phase 11 (#609) stores its scope, reason, actor, and
+timestamps, and can be managed through the workspace API by the workspace owner
+(`manage_settings`):
+
+```
+GET  /workspaces/api/workspaces/<id>/legal-holds
+POST /workspaces/api/workspaces/<id>/legal-holds
+POST /workspaces/api/workspaces/<id>/legal-holds/<hold_id>/release
+```
+
+`scope` is `audit`, `workspace`, or `all`. An `audit` hold blocks
+`flask audit purge`, a `workspace` hold blocks deleting the workspace and
+completing a user data deletion for accounts that belong to it, and `all`
+blocks both. Placement and release append `legal_hold_placed` and
+`legal_hold_released` audit rows. Invalid input returns a structured
+`invalid_input` error (400) and a non-owner receives `forbidden` (403).
 
 ## Effect on the hash chain
 

@@ -24,11 +24,13 @@ from app.models.integration_health import IntegrationHealth
 from app.models.invitation import WorkspaceInvitation
 from app.models.jira_issue import JiraIssueLink
 from app.models.job import Job
+from app.models.legal_hold import LegalHold
 from app.models.message import Message
 from app.models.message_attachment import MessageAttachment
 from app.models.notification import Notification
 from app.models.notification_channel import NotificationChannelPreference
 from app.models.notification_preference import NotificationPreference
+from app.models.organization_plugin_policy import OrganizationPluginPolicy, PluginApproval
 from app.models.plugin import CapabilityGrant, Plugin, PluginInstallation, PluginLockEntry
 from app.models.plugin_collection import PluginCollection
 from app.models.plugin_error_report import PluginErrorReport
@@ -53,6 +55,7 @@ from app.models.usage_record import UsageRecord
 from app.models.user import User
 from app.models.user_data_export import UserDataExport
 from app.models.user_deletion_request import UserDeletionRequest
+from app.models.user_session import UserSession
 from app.models.webhook import (
     WebhookDeadLetter,
     WebhookDelivery,
@@ -88,12 +91,15 @@ __all__ = [
     "IntegrationHealth",
     "JiraIssueLink",
     "Job",
+    "LegalHold",
     "Message",
     "MessageAttachment",
     "Notification",
     "NotificationChannelPreference",
     "NotificationPreference",
+    "OrganizationPluginPolicy",
     "Plugin",
+    "PluginApproval",
     "PluginCollection",
     "PluginErrorReport",
     "PluginInstallEvent",
@@ -120,6 +126,7 @@ __all__ = [
     "User",
     "UserDataExport",
     "UserDeletionRequest",
+    "UserSession",
     "WebhookDeadLetter",
     "WebhookDelivery",
     "WebhookSubscription",

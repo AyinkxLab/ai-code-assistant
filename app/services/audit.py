@@ -51,9 +51,15 @@ DOMAIN_CHALLENGE_CREATED = "domain_challenge_created"
 DOMAIN_VERIFIED = "domain_verified"
 DOMAIN_SSO_ENFORCEMENT_CHANGED = "domain_sso_enforcement_changed"
 IP_ALLOWLIST_UPDATED = "ip_allowlist_updated"
+LEGAL_HOLD_PLACED = "legal_hold_placed"
+LEGAL_HOLD_RELEASED = "legal_hold_released"
 API_TOKEN_CREATED = "api_token_created"
 API_TOKEN_ROTATED = "api_token_rotated"
 API_TOKEN_REVOKED = "api_token_revoked"
+SESSIONS_REVOKED = "sessions_revoked"
+PLUGIN_POLICY_UPDATED = "plugin_policy_updated"
+PLUGIN_INSTALL_BLOCKED = "plugin_install_blocked"
+PLUGIN_INSTALL_APPROVED = "plugin_install_approved"
 
 #: The "previous hash" of the first hashed row in a chain.
 GENESIS_HASH = "0" * 64
