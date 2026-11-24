@@ -13,12 +13,12 @@ from flask import Response, jsonify, render_template, request, stream_with_conte
 from flask_login import current_user, login_required
 
 from app.admin import bp
-from app.api.error_catalog import FORBIDDEN, INVALID_INPUT, UNAUTHORIZED, error_response
+from app.api.error_catalog import FORBIDDEN, INVALID_INPUT, NOT_FOUND, UNAUTHORIZED, error_response
 from app.extensions import db
 from app.models import AuditLog, UsageRecord, User, Workspace
 from app.services import access_review as access_review_service
 from app.services import audit as audit_service
-from app.services import audit_export, usage_dashboards, usage_ledger
+from app.services import audit_export, usage_dashboards, usage_ledger, user_sessions
 from app.services.classification import export_record
 from app.services.currency import get_currency_config
 
@@ -398,6 +398,32 @@ def usage_export():
     if truncated:
         response.headers["X-Export-Truncated"] = "true"
     return response
+
+
+@bp.route("/users/<int:user_id>/sessions/revoke-all", methods=["POST"])
+@login_required
+@admin_required
+def revoke_user_sessions(user_id: int):
+    """Revoke every active session for an account and audit actor + reason (#619)."""
+    user = db.session.get(User, user_id)
+    if user is None:
+        return error_response(NOT_FOUND, "User not found.")
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return error_response(INVALID_INPUT, "A JSON object is required.")
+    reason = data.get("reason")
+    if not isinstance(reason, str) or not reason.strip():
+        return error_response(INVALID_INPUT, "reason is required.")
+    try:
+        revoked = user_sessions.revoke_all_for_user(
+            user,
+            actor=current_user,
+            reason=reason,
+        )
+    except user_sessions.SessionError as exc:
+        db.session.rollback()
+        return error_response(INVALID_INPUT, str(exc))
+    return jsonify({"user_id": user.id, "revoked": revoked})
 
 
 @bp.route("/access-review")

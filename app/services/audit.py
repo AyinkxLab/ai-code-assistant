@@ -56,6 +56,7 @@ LEGAL_HOLD_RELEASED = "legal_hold_released"
 API_TOKEN_CREATED = "api_token_created"
 API_TOKEN_ROTATED = "api_token_rotated"
 API_TOKEN_REVOKED = "api_token_revoked"
+SESSIONS_REVOKED = "sessions_revoked"
 
 #: The "previous hash" of the first hashed row in a chain.
 GENESIS_HASH = "0" * 64
