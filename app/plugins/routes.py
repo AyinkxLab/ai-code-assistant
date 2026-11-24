@@ -18,6 +18,7 @@ import json
 from flask import abort, current_app, flash, jsonify, redirect, render_template, request, url_for
 from flask_login import current_user, login_required
 
+from app.api.error_catalog import FORBIDDEN, INVALID_INPUT, error_response
 from app.extensions import db
 from app.models import (
     ActivityEvent,
@@ -31,6 +32,7 @@ from app.models.activity_event import EVENT_PLUGIN_EXECUTED
 from app.models.plugin_install_event import ACTION_INSTALL, ACTION_ROLLBACK, ACTION_UPDATE
 from app.models.workspace_member import STATUS_ACTIVE
 from app.plugins import bp
+from app.services import organizations, plugin_governance
 from app.services.capabilities import Capability, CapabilityStore
 from app.services.events import emit_event
 from app.services.marketplace import (
@@ -412,7 +414,10 @@ def _install_in_workspace(manifest: PluginManifest, workspace_id: int) -> Plugin
     Raises:
         PluginAlreadyInstalledError: If the plugin is already installed in the
             workspace (or a concurrent request won the unique constraint).
+        PluginBlocked/PluginApprovalRequired: The organization policy refused
+            the install.
     """
+    plugin_governance.enforce_install(workspace_id, manifest.id, actor=current_user)
     plugin = _upsert_plugin(manifest)
     if _installation(manifest.id, workspace_id) is not None:
         db.session.rollback()
@@ -859,6 +864,8 @@ def api_install_plugin(workspace_id: int):
 
     try:
         plugin = _install_in_workspace(manifest, workspace_id)
+    except (plugin_governance.PluginBlocked, plugin_governance.PluginApprovalRequired) as exc:
+        return error_response(FORBIDDEN, str(exc))
     except PluginEntryPointMismatchError:
         db.session.rollback()
         return jsonify({"error": "Manifest entry_point does not match the registered plugin."}), 409
@@ -1049,6 +1056,8 @@ def api_install_plugin_from_catalog(workspace_id: int):
 
     try:
         plugin = _install_in_workspace(manifest, workspace_id)
+    except (plugin_governance.PluginBlocked, plugin_governance.PluginApprovalRequired) as exc:
+        return error_response(FORBIDDEN, str(exc))
     except PluginEntryPointMismatchError:
         db.session.rollback()
         record_plugin_audit(
@@ -1096,6 +1105,65 @@ def api_install_plugin_from_catalog(workspace_id: int):
     return jsonify(payload), 201
 
 
+@bp.route("/api/workspaces/<int:workspace_id>/plugins/policy", methods=["GET", "PUT"])
+@login_required
+def api_plugin_policy(workspace_id: int):
+    """Read or replace the organization's plugin install policy (#634)."""
+    resolve_workspace(workspace_id)
+    if not organizations.is_organization_admin(workspace_id):
+        return error_response(FORBIDDEN, "Organization admin access required.")
+    if request.method == "GET":
+        return jsonify(plugin_governance.policy_for(workspace_id))
+
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return error_response(INVALID_INPUT, "A JSON object is required.")
+    try:
+        policy = plugin_governance.set_policy(
+            workspace_id,
+            mode=data.get("mode"),
+            actor=current_user,
+        )
+    except PermissionError as exc:
+        db.session.rollback()
+        return error_response(FORBIDDEN, str(exc))
+    except ValueError as exc:
+        db.session.rollback()
+        return error_response(INVALID_INPUT, str(exc))
+    return jsonify(policy)
+
+
+@bp.route(
+    "/api/workspaces/<int:workspace_id>/plugins/<plugin_id>/approve",
+    methods=["POST"],
+)
+@login_required
+def api_approve_plugin(workspace_id: int, plugin_id: str):
+    """Approve one plugin id under a require-approval policy (#634)."""
+    resolve_workspace(workspace_id)
+    if not organizations.is_organization_admin(workspace_id):
+        return error_response(FORBIDDEN, "Organization admin access required.")
+    data = request.get_json(silent=True)
+    if data is None:
+        data = {}
+    if not isinstance(data, dict):
+        return error_response(INVALID_INPUT, "A JSON object is required.")
+    try:
+        approval = plugin_governance.approve_plugin(
+            workspace_id,
+            plugin_id,
+            reason=data.get("reason"),
+            actor=current_user,
+        )
+    except PermissionError as exc:
+        db.session.rollback()
+        return error_response(FORBIDDEN, str(exc))
+    except ValueError as exc:
+        db.session.rollback()
+        return error_response(INVALID_INPUT, str(exc))
+    return jsonify(approval), 201
+
+
 @bp.route("/api/workspaces/<int:workspace_id>/plugins/<plugin_id>/install", methods=["POST"])
 @login_required
 @require_workspace_capability("manage_plugins")
@@ -1111,6 +1179,11 @@ def api_install_registered_plugin(workspace_id: int, plugin_id: str):
         return jsonify({"error": "Plugin not found."}), 404
     if _installation(plugin_id, workspace_id) is not None:
         return jsonify({"error": "Plugin is already installed in this workspace."}), 409
+
+    try:
+        plugin_governance.enforce_install(workspace_id, plugin.id, actor=current_user)
+    except (plugin_governance.PluginBlocked, plugin_governance.PluginApprovalRequired) as exc:
+        return error_response(FORBIDDEN, str(exc))
 
     try:
         enforce_compatible(plugin.compatibility, subject=f"Plugin {plugin.id}")
@@ -1656,6 +1729,11 @@ def api_install_from_marketplace(workspace_id: int):
         return jsonify({"error": "plugin_id is required."}), 400
     if version is not None and (not isinstance(version, str) or not version.strip()):
         return jsonify({"error": "version must be a non-empty string when provided."}), 400
+
+    try:
+        plugin_governance.enforce_install(workspace_id, plugin_id.strip(), actor=current_user)
+    except (plugin_governance.PluginBlocked, plugin_governance.PluginApprovalRequired) as exc:
+        return error_response(FORBIDDEN, str(exc))
 
     try:
         plugin, entry = install_from_marketplace(

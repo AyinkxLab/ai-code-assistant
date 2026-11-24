@@ -30,6 +30,7 @@ from app.models.message_attachment import MessageAttachment
 from app.models.notification import Notification
 from app.models.notification_channel import NotificationChannelPreference
 from app.models.notification_preference import NotificationPreference
+from app.models.organization_plugin_policy import OrganizationPluginPolicy, PluginApproval
 from app.models.plugin import CapabilityGrant, Plugin, PluginInstallation, PluginLockEntry
 from app.models.plugin_collection import PluginCollection
 from app.models.plugin_error_report import PluginErrorReport
@@ -96,7 +97,9 @@ __all__ = [
     "Notification",
     "NotificationChannelPreference",
     "NotificationPreference",
+    "OrganizationPluginPolicy",
     "Plugin",
+    "PluginApproval",
     "PluginCollection",
     "PluginErrorReport",
     "PluginInstallEvent",

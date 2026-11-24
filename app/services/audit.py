@@ -57,6 +57,9 @@ API_TOKEN_CREATED = "api_token_created"
 API_TOKEN_ROTATED = "api_token_rotated"
 API_TOKEN_REVOKED = "api_token_revoked"
 SESSIONS_REVOKED = "sessions_revoked"
+PLUGIN_POLICY_UPDATED = "plugin_policy_updated"
+PLUGIN_INSTALL_BLOCKED = "plugin_install_blocked"
+PLUGIN_INSTALL_APPROVED = "plugin_install_approved"
 
 #: The "previous hash" of the first hashed row in a chain.
 GENESIS_HASH = "0" * 64

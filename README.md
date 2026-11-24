@@ -131,6 +131,7 @@ table, quotas, budgets, alerts, invoices, and reconciliation.
 - [GitHub integration](docs/reviews.md)
 - [Stellar / Soroban tooling](docs/stellar.md)
 - [Plugin system](docs/plugins.md)
+- [Organization plugin governance](docs/plugin-governance.md)
 - [Isolated plugin runner](docs/plugin-runner.md)
 - [Plugin artifact cache](docs/plugin-artifact-cache.md)
 - [Encrypted integration credentials](docs/integration-credentials.md)
