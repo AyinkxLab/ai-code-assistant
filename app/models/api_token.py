@@ -34,8 +34,9 @@ class ApiToken(db.Model):
     prefix = db.Column(db.String(16), nullable=False)
     #: SHA-256 of the full secret. The secret is never stored.
     token_hash = db.Column(db.String(64), nullable=False, unique=True, index=True)
-    #: Canonical comma-separated scopes, e.g. ``"read,write"``.
-    scopes = db.Column(db.String(100), nullable=False)
+    #: Canonical comma-separated scopes, e.g. ``"read,project:write"``.
+    #: Legacy ranked scopes come first, followed by sorted capability scopes.
+    scopes = db.Column(db.String(512), nullable=False)
     created_at = db.Column(
         db.DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC)
     )
@@ -45,9 +46,16 @@ class ApiToken(db.Model):
 
     @property
     def scope_list(self) -> list[str]:
-        """Return the granted scopes in canonical order."""
+        """Return granted scopes: legacy ranks first, then capability names."""
         granted = {part.strip() for part in (self.scopes or "").split(",") if part.strip()}
-        return [scope for scope in SCOPES if scope in granted]
+        legacy = [scope for scope in SCOPES if scope in granted]
+        capabilities = sorted(scope for scope in granted if scope not in SCOPES and ":" in scope)
+        return legacy + capabilities
+
+    @property
+    def capability_scopes(self) -> list[str]:
+        """Return only the capability scopes granted to this token."""
+        return [scope for scope in self.scope_list if scope not in SCOPES]
 
     @property
     def is_active(self) -> bool:

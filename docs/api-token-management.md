@@ -12,7 +12,7 @@ The list contains metadata only and never the secret:
 | ----- | ------- |
 | `label` | User-chosen name, shown first. |
 | `prefix` | First 12 characters of the secret, so tokens can be told apart. |
-| `scopes` | Granted scopes (`read`, `write`, `admin`). |
+| `scopes` | Granted scopes (`read`, `write`, `admin`) and optional `domain:action` capability scopes. |
 | `created_at` | When the token was created. |
 | `last_used_at` | Updated on every authenticated request; `null` until first use. |
 | `expires_at` | Optional expiry; expired tokens are inactive. |
@@ -35,8 +35,14 @@ not token-authenticated.
 | `DELETE` | `/settings/tokens/api/<id>` | Revoke the token (the UI asks for confirmation first). |
 
 Errors use the [catalog](api-errors.md): invalid scopes or missing scopes are
-`400 invalid_input`, another user's token is `404 not_found`, and rotating or
-revoking an already revoked token is `409 conflict`.
+`400 invalid_input` (including a capability the owner does not hold), another
+user's token is `404 not_found`, and rotating or revoking an already revoked
+token is `409 conflict`.
+
+The creation form offers the three legacy ranks and the owner's capability
+values. Selecting a capability makes the token least-privilege; the API prefix
+and HTTP method determine the single capability required for each request, as
+documented in [Scoped API tokens](api-tokens.md).
 
 ## Rotation
 

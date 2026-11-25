@@ -71,12 +71,27 @@ class TestTokenMetadata:
         login()
 
         unknown = _create(client, scopes=["superuser"])
+        over_scoped = _create(client, scopes=["superuser:read"])
         empty = _create(client, scopes=[])
 
         assert unknown.status_code == 400
         assert unknown.get_json()["code"] == "invalid_input"
+        assert over_scoped.status_code == 400
+        assert over_scoped.get_json()["code"] == "invalid_input"
         assert empty.status_code == 400
         assert empty.get_json()["code"] == "invalid_input"
+
+    def test_capability_scopes_round_trip_without_secret(self, client, make_user, login):
+        make_user()
+        login()
+
+        created = _create(client, scopes=["project:read"]).get_json()
+        secret = created["secret"]
+        listing = client.get(API).get_json()
+
+        assert created["token"]["scopes"] == ["project:read"]
+        assert listing[0]["scopes"] == ["project:read"]
+        assert secret not in json.dumps(listing)
 
 
 class TestRotation:

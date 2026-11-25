@@ -38,6 +38,34 @@ At least one scope is required and unknown scope names are rejected with
 `400 invalid_input`. Scope enforcement happens in authentication, before the
 view runs, so a token cannot reach an operation its scopes do not grant.
 
+### Capability scopes (#603)
+
+Tokens can instead (or additionally) request capability scopes. A capability
+scope is a `domain:action` value from the owner's capability set
+(`app/services/capabilities.py`); a token can never grant a capability its owner
+does not already hold. Capabilities are canonicalized after the legacy ranks.
+Selecting any capability makes the token least-privilege: the legacy method
+ranks are no longer used for that token and only the mapped capability for the
+endpoint is accepted.
+
+| API prefix | Required capability |
+| ---------- | ------------------- |
+| `/api/v1/projects`, `/workspaces/api/projects` | `project:read`, `project:write`, `project:delete` |
+| `/api/v1/reviews`, `/reviews/api` | `review:read`, `review:create` |
+| `/api/v1/usage` | `workspace:read` |
+| `/workspaces/api/workspaces` | `workspace:read`, `workspace:write` |
+| `/api/conversations` | `ai:access`, `ai:analysis` |
+| `/github/api` | `github:read`, `github:write` |
+| `/stellar/api` | `stellar:read`, `stellar:write` |
+
+Safe methods (`GET`, `HEAD`, `OPTIONS`) require the domain's `read` capability
+(`ai:access` for AI conversations). Mutations require `write`, except review
+creation uses `review:create` and project deletion uses `project:delete`.
+Unmapped API paths are denied with `403 forbidden`; the structured body includes
+`details.required_capability` and `details.granted_scopes` and never contains
+the token secret or hash. Creating a token with a capability outside the
+owner's set returns `400 invalid_input`.
+
 ## Lifecycle
 
 - `POST` create, rotate, and revoke are performed from

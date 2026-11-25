@@ -13,12 +13,18 @@
 <div class="prompt-editor">
   <div class="repo-toolbar">
     <input id="token-label" class="field-input" type="text" maxlength="100" placeholder="Label (optional)">
-    <label class="field-hint"><input id="scope-read" type="checkbox" checked> read</label>
-    <label class="field-hint"><input id="scope-write" type="checkbox"> write</label>
-    <label class="field-hint"><input id="scope-admin" type="checkbox"> admin</label>
+    <label class="field-hint"><input type="checkbox" data-scope="read" checked> read</label>
+    <label class="field-hint"><input type="checkbox" data-scope="write"> write</label>
+    <label class="field-hint"><input type="checkbox" data-scope="admin"> admin</label>
     <button id="add-token" class="btn btn-primary" type="button">Create token</button>
   </div>
   <p class="field-hint">read = GET; write adds POST/PUT/PATCH; admin adds DELETE.</p>
+  <p class="field-hint">Capability scopes are optional. Selecting any capability restricts the token to those capabilities only; each is a subset of the owner's capabilities.</p>
+  <div class="repo-toolbar">
+    {% for capability in capabilities %}
+    <label class="field-hint"><input type="checkbox" data-scope="{{ capability }}"> {{ capability }}</label>
+    {% endfor %}
+  </div>
 </div>
 
 <div id="token-secret" class="prompt-editor" hidden>

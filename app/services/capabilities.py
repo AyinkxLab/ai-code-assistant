@@ -130,6 +130,16 @@ ROLE_CAPABILITY_MAPPING = {
     ],
 }
 
+# The owner role is the capability ceiling for personal API tokens (#603).
+# Tokens may request only a subset of this set; there is no token-only escape
+# hatch that can grant a capability the owner does not already hold.
+OWNER_CAPABILITIES = frozenset(cap.value for cap in ROLE_CAPABILITY_MAPPING["owner"])
+
+
+def is_owner_capability(value: str) -> bool:
+    """Return ``True`` when ``value`` is a capability an owner can hold."""
+    return value in OWNER_CAPABILITIES
+
 
 class CapabilityStore:
     """Manage plugin capability grants.

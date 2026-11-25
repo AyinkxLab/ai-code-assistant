@@ -16,7 +16,7 @@ from app.api.error_catalog import (
     error_response,
 )
 from app.extensions import db
-from app.services import api_tokens, audit
+from app.services import api_tokens, audit, capabilities
 from app.tokens import bp
 
 
@@ -31,7 +31,9 @@ def _payload(row, secret=None):
 @login_required
 def index():
     """Render the token management page."""
-    return render_template("tokens/index.html")
+    return render_template(
+        "tokens/index.html", capabilities=sorted(capabilities.OWNER_CAPABILITIES)
+    )
 
 
 @bp.route("/api", methods=["GET"])

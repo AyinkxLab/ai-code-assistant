@@ -29,12 +29,26 @@ class TestTokenLifecycle:
             api_tokens.create_token(user, scopes=[])
         with pytest.raises(api_tokens.ApiTokenError):
             api_tokens.create_token(user, scopes=["superuser"])
+        with pytest.raises(api_tokens.ApiTokenError):
+            api_tokens.create_token(user, scopes=["project:admin"])
 
     def test_scope_normalization_is_canonical(self, app, make_user):
         user = make_user()
         row, _ = api_tokens.create_token(user, scopes="write,read")
         assert row.scopes == "read,write"
         assert row.scope_list == ["read", "write"]
+
+    def test_capability_scopes_are_a_subset_of_owner_capabilities(self, app, make_user):
+        user = make_user()
+        row, _ = api_tokens.create_token(user, scopes=["project:write", "read", "project:read"])
+
+        assert row.scopes == "read,project:read,project:write"
+        assert row.scope_list == ["read", "project:read", "project:write"]
+        assert row.capability_scopes == ["project:read", "project:write"]
+        assert row.to_dict()["scopes"] == row.scope_list
+
+        with pytest.raises(api_tokens.ApiTokenError):
+            api_tokens.create_token(user, scopes=["superuser:read"])
 
     def test_rotate_invalidates_the_old_secret(self, app, make_user):
         user = make_user()
@@ -96,6 +110,17 @@ class TestScopeHierarchy:
         assert api_tokens.token_allows(write_row, "write")
         assert not api_tokens.token_allows(write_row, "admin")
         assert api_tokens.token_allows(admin_row, "admin")
+
+    def test_capability_scopes_do_not_break_ranked_checks(self, app, make_user):
+        user = make_user()
+        row, _ = api_tokens.create_token(user, scopes=["project:read"])
+
+        assert api_tokens.token_allows(row, "read") is False
+        assert api_tokens.token_has_capability(row, "project:read") is True
+        assert api_tokens.token_has_capability(row, "project:write") is False
+        assert api_tokens.required_capability("/api/v1/projects", "GET") == "project:read"
+        assert api_tokens.required_capability("/api/v1/projects", "POST") == "project:write"
+        assert api_tokens.required_capability("/api/v1/unknown", "GET") is None
 
 
 class TestBearerAuthentication:
@@ -179,3 +204,59 @@ class TestBearerAuthentication:
 
         refreshed = db.session.get(ApiToken, row.id)
         assert refreshed.last_used_at is not None
+
+    def test_capability_token_can_call_its_mapped_read_endpoint(self, client, make_user):
+        user = make_user()
+        _, secret = api_tokens.create_token(user, scopes=["project:read"])
+
+        response = client.get("/api/v1/projects", headers={"Authorization": f"Bearer {secret}"})
+
+        assert response.status_code == 200
+
+    def test_over_scoped_capability_token_is_forbidden_with_details(self, client, make_user):
+        user = make_user()
+        _, secret = api_tokens.create_token(user, scopes=["project:write"])
+
+        response = client.get("/api/v1/projects", headers={"Authorization": f"Bearer {secret}"})
+
+        assert response.status_code == 403
+        body = response.get_json()
+        assert body["code"] == "forbidden"
+        assert body["details"]["required_capability"] == "project:read"
+        assert body["details"]["granted_scopes"] == ["project:write"]
+        assert secret not in response.get_data(as_text=True)
+
+    def test_capability_token_on_unmapped_api_path_is_forbidden(self, client, make_user):
+        user = make_user()
+        _, secret = api_tokens.create_token(user, scopes=["project:read"])
+
+        response = client.get("/api/v1/unknown", headers={"Authorization": f"Bearer {secret}"})
+
+        assert response.status_code in (403, 404)
+        if response.status_code == 403:
+            assert response.get_json()["details"]["required_capability"] == "unmapped"
+
+    def test_expired_capability_token_is_unauthorized(self, client, make_user):
+        from datetime import UTC, datetime, timedelta
+
+        user = make_user()
+        _, secret = api_tokens.create_token(
+            user,
+            scopes=["project:read"],
+            expires_at=datetime.now(UTC) - timedelta(seconds=1),
+        )
+
+        response = client.get("/api/v1/projects", headers={"Authorization": f"Bearer {secret}"})
+
+        assert response.status_code == 401
+        assert response.get_json()["code"] == "unauthorized"
+
+    def test_revoked_capability_token_is_unauthorized(self, client, make_user):
+        user = make_user()
+        row, secret = api_tokens.create_token(user, scopes=["project:read"])
+        api_tokens.revoke_token(user, row.id)
+
+        response = client.get("/api/v1/projects", headers={"Authorization": f"Bearer {secret}"})
+
+        assert response.status_code == 401
+        assert response.get_json()["code"] == "unauthorized"

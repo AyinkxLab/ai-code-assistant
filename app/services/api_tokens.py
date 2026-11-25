@@ -1,10 +1,12 @@
-"""Scoped API token lifecycle and request authentication (#616).
+"""Scoped API token lifecycle and request authentication (#616, #603).
 
 Tokens are personal access tokens for the public JSON API:
 
 * the secret is generated once and only its SHA-256 hash is stored;
-* scopes are ranked ``read`` < ``write`` < ``admin`` and enforced on every
-  request that authenticates with a token;
+* legacy scopes are ranked ``read`` < ``write`` < ``admin`` and enforced on
+  every request that authenticates with a token;
+* capability scopes are an opt-in subset of the owner's capabilities (#603)
+  and are enforced per endpoint instead of by HTTP method alone;
 * ``read`` allows safe methods, ``write`` adds POST/PUT/PATCH, and ``admin``
   adds DELETE (destructive operations).
 
@@ -24,9 +26,25 @@ from flask import g, request, session
 from app.api.error_catalog import CONFLICT, FORBIDDEN, INVALID_INPUT, UNAUTHORIZED, error_response
 from app.extensions import db
 from app.models.api_token import ADMIN, READ, SCOPE_RANK, SCOPES, WRITE, ApiToken
+from app.services.capabilities import is_owner_capability
 
 SECRET_PREFIX = "aat_"
 SAFE_METHODS = frozenset({"GET", "HEAD", "OPTIONS"})
+
+# Capability-scoped tokens are least-privilege: a capability is derived from
+# the API prefix and method, and unmapped API paths are denied. Legacy ranked
+# tokens keep the method-only behaviour below and are unaffected.
+CAPABILITY_PATHS = (
+    ("/api/v1/projects", "project"),
+    ("/api/v1/reviews", "review"),
+    ("/api/v1/usage", "workspace"),
+    ("/api/conversations", "ai"),
+    ("/reviews/api", "review"),
+    ("/workspaces/api/workspaces", "workspace"),
+    ("/workspaces/api/projects", "project"),
+    ("/github/api", "github"),
+    ("/stellar/api", "stellar"),
+)
 
 
 class ApiTokenError(ValueError):
@@ -43,17 +61,27 @@ def hash_secret(secret: str) -> str:
 
 
 def normalize_scopes(scopes) -> str:
-    """Validate and canonicalize a scope iterable (or comma-separated string)."""
+    """Validate and canonicalize legacy and capability scopes (#603).
+
+    Capability values must be in the owner's capability set; a token can never
+    grant a capability its owner does not already hold. The canonical order is
+    legacy ranks first, then sorted capability names.
+    """
     if isinstance(scopes, str):
         requested = {part.strip() for part in scopes.split(",") if part.strip()}
     else:
         requested = {str(part).strip() for part in (scopes or []) if str(part).strip()}
-    unknown = requested - set(SCOPES)
-    if unknown:
-        raise ApiTokenError(f"Unknown scope(s): {', '.join(sorted(unknown))}.")
     if not requested:
         raise ApiTokenError("At least one scope is required.")
-    return ",".join(scope for scope in SCOPES if scope in requested)
+
+    legacy = requested.intersection(SCOPES)
+    capabilities = {scope for scope in requested if scope not in SCOPES and ":" in scope}
+    unknown = (requested - legacy - capabilities) | {
+        scope for scope in capabilities if not is_owner_capability(scope)
+    }
+    if unknown:
+        raise ApiTokenError(f"Unknown scope(s): {', '.join(sorted(unknown))}.")
+    return ",".join([*(scope for scope in SCOPES if scope in legacy), *sorted(capabilities)])
 
 
 def _new_secret() -> str:
@@ -156,7 +184,42 @@ def required_scope(method: str) -> str:
 
 def token_allows(token: ApiToken, scope: str) -> bool:
     """Return ``True`` when ``token`` grants ``scope`` (ranked hierarchy)."""
-    return any(SCOPE_RANK[granted] >= SCOPE_RANK[scope] for granted in token.scope_list)
+    legacy = [granted for granted in token.scope_list if granted in SCOPE_RANK]
+    return any(SCOPE_RANK[granted] >= SCOPE_RANK[scope] for granted in legacy)
+
+
+def capability_domain(path: str) -> str | None:
+    """Return the capability domain for an API path, or ``None`` if unmapped."""
+    for prefix, domain in CAPABILITY_PATHS:
+        if path == prefix or path.startswith(f"{prefix}/"):
+            return domain
+    return None
+
+
+def required_capability(path: str, method: str) -> str | None:
+    """Return the capability required for an API request, when mapped (#603).
+
+    Capability-scoped tokens are least-privilege: read for safe methods,
+    domain-specific write/create/delete for mutations. Unmapped paths are denied
+    rather than silently falling back to the legacy method-only scope.
+    """
+    domain = capability_domain(path)
+    if domain is None:
+        return None
+    if method in SAFE_METHODS:
+        return "ai:access" if domain == "ai" else f"{domain}:read"
+    if domain == "review" and method == "POST":
+        return "review:create"
+    if domain == "project" and method == "DELETE":
+        return "project:delete"
+    if domain == "ai":
+        return "ai:analysis"
+    return f"{domain}:write"
+
+
+def token_has_capability(token: ApiToken, capability: str | None) -> bool:
+    """Return ``True`` when ``token`` grants exactly ``capability`` (#603)."""
+    return bool(capability) and capability in token.capability_scopes
 
 
 def _is_api_path(path: str) -> bool:
@@ -200,7 +263,18 @@ def init_api_tokens(app) -> None:
         g.api_token = token
         # Flask-Login's ``current_user`` reads this request-scoped value.
         g._login_user = row_user(token)
-        if not token_allows(token, required_scope(request.method)):
+        if token.capability_scopes:
+            needed = required_capability(request.path, request.method)
+            if not token_has_capability(token, needed):
+                return error_response(
+                    FORBIDDEN,
+                    "This token does not grant the required capability.",
+                    details={
+                        "required_capability": needed or "unmapped",
+                        "granted_scopes": token.scope_list,
+                    },
+                )
+        elif not token_allows(token, required_scope(request.method)):
             return error_response(FORBIDDEN, "This token does not grant the required scope.")
         return None
 
@@ -220,8 +294,10 @@ __all__ = [
     "init_api_tokens",
     "list_tokens",
     "normalize_scopes",
+    "required_capability",
     "required_scope",
     "revoke_token",
     "rotate_token",
     "token_allows",
+    "token_has_capability",
 ]

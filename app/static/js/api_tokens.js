@@ -57,11 +57,12 @@
   }
 
   function scopes() {
-    var chosen = [];
-    if (document.getElementById("scope-read").checked) chosen.push("read");
-    if (document.getElementById("scope-write").checked) chosen.push("write");
-    if (document.getElementById("scope-admin").checked) chosen.push("admin");
-    return chosen;
+    return Array.prototype.map.call(
+      document.querySelectorAll("input[data-scope]:checked"),
+      function (input) {
+        return input.dataset.scope;
+      }
+    );
   }
 
   function create() {
