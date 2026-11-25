@@ -8,5 +8,6 @@ from app.admin import (  # noqa: E402, F401  (import routes to register them)
     organization_dashboard,
     organization_members,
     organization_usage,
+    role_preview,
     routes,
 )
