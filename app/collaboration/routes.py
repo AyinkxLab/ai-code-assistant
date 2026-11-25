@@ -68,7 +68,7 @@ from app.services import currency as currency_service
 from app.services import email as email_service
 from app.services import ratelimit, workspace_usage
 from app.services import review_comments as review_comments_service
-from app.services.activity import record_activity
+from app.services.activity import record_activity, record_role_change
 from app.services.invitations import (
     cancel_pending_for_user,
     effective_status,
@@ -222,6 +222,7 @@ def api_leave_workspace(workspace_id: int):
     membership = WorkspaceMember.query.filter_by(
         workspace_id=workspace.id, user_id=current_user.id, status=STATUS_ACTIVE
     ).first_or_404()
+    previous_role = membership.role
     membership.mark_removed()
     cancel_pending_for_user(workspace.id, current_user.id, current_user)
     record_activity(
@@ -229,7 +230,15 @@ def api_leave_workspace(workspace_id: int):
         EVENT_MEMBER_LEFT,
         actor=current_user,
         target=membership,
-        metadata={"role": membership.role},
+        metadata={"role": previous_role},
+    )
+    record_role_change(
+        workspace_id=workspace.id,
+        actor=current_user,
+        target_user=current_user,
+        previous_role=previous_role,
+        new_role=None,
+        membership_id=membership.id,
     )
     db.session.commit()
     return jsonify({"ok": True})
@@ -263,6 +272,8 @@ def api_transfer_ownership(workspace_id: int):
         return jsonify({"error": "The target must be an active member of this workspace."}), 400
 
     previous_owner = current_user
+    previous_owner_role = ROLE_OWNER
+    target_previous_role = target.role
 
     old_membership = WorkspaceMember.query.filter_by(
         workspace_id=workspace.id, user_id=previous_owner.id
@@ -296,6 +307,22 @@ def api_transfer_ownership(workspace_id: int):
             "to_user_id": target.user_id,
             "to_username": target.user.username,
         },
+    )
+    record_role_change(
+        workspace_id=workspace.id,
+        actor=previous_owner,
+        target_user=previous_owner,
+        previous_role=previous_owner_role,
+        new_role="contributor",
+        membership_id=old_membership.id if old_membership is not None else None,
+    )
+    record_role_change(
+        workspace_id=workspace.id,
+        actor=previous_owner,
+        target_user=target.user,
+        previous_role=target_previous_role,
+        new_role=ROLE_OWNER,
+        membership_id=target.id,
     )
     notify(
         target.user,
@@ -527,6 +554,7 @@ def invitation_accept(token: str):
         db.session.commit()
         return jsonify({"membership": membership.to_dict(), "idempotent": True}), 200
 
+    previous_role = membership.role if membership is not None else None
     if membership is not None:
         membership.reactivate()
         membership.role = role
@@ -537,6 +565,7 @@ def invitation_accept(token: str):
             role=role,
         )
         db.session.add(membership)
+    db.session.flush()
 
     invitation.mark(INVITE_STATUS_ACCEPTED, accepted_by=current_user.id)
     record_activity(
@@ -545,6 +574,14 @@ def invitation_accept(token: str):
         actor=current_user,
         target=membership,
         metadata={"role": role},
+    )
+    record_role_change(
+        workspace_id=workspace.id,
+        actor=current_user,
+        target_user=current_user,
+        previous_role=previous_role,
+        new_role=role,
+        membership_id=membership.id,
     )
     notify(
         invitation.inviter,

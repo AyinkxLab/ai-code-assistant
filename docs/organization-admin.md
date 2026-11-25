@@ -66,6 +66,11 @@ The `admin` membership role is an organization role only. It does not widen the
 workspace capability matrix in `app/services/permissions.py`, so adding an
 organization admin never grants workspace content capabilities implicitly.
 
+Every invite acceptance, role change, restore, suspension, and removal writes a
+`role.changed` event with the before/after roles, acting admin, target member,
+and request id. Owners can review those events in the workspace audit view; see
+the [audit and compliance guide](audit-compliance-guide.md#role-change-events).
+
 ## Tests
 
 `tests/test_org_admin.py` covers owner/admin access, non-admin refusals, invalid
