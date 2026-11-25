@@ -13,6 +13,7 @@ from app.models.audit_retention_policy import AuditRetentionPolicy
 from app.models.budget import Budget
 from app.models.conversation import Conversation
 from app.models.conversation_share import ConversationShare
+from app.models.custom_role import CustomRole, RoleAssignment
 from app.models.email_suppression import EmailSuppression
 from app.models.file_analysis import FileAnalysis
 from app.models.github_account import GithubAccount
@@ -51,6 +52,7 @@ from app.models.review_finding import ReviewFinding
 from app.models.security_ticket import SecurityTicketLink
 from app.models.siem_endpoint import SiemEndpoint
 from app.models.stellar_security_finding import StellarSecurityFinding
+from app.models.team import Team, TeamMember
 from app.models.usage_record import UsageRecord
 from app.models.user import User
 from app.models.user_data_export import UserDataExport
@@ -81,6 +83,7 @@ __all__ = [
     "CapabilityGrant",
     "Conversation",
     "ConversationShare",
+    "CustomRole",
     "EmailSuppression",
     "FileAnalysis",
     "GitHubAppInstallation",
@@ -119,9 +122,12 @@ __all__ = [
     "ReviewComment",
     "ReviewConfig",
     "ReviewFinding",
+    "RoleAssignment",
     "SecurityTicketLink",
     "SiemEndpoint",
     "StellarSecurityFinding",
+    "Team",
+    "TeamMember",
     "UsageRecord",
     "User",
     "UserDataExport",

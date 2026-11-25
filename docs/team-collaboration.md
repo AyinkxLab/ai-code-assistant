@@ -47,6 +47,9 @@ The full capability matrix lives in `CAPABILITIES` in
 `app/services/permissions.py` (issue #136) and is rendered in the
 [API reference](api-collaboration.md#permission-matrix).
 
+Optional organization, team, and workspace custom roles are resolved with the
+deterministic [role precedence rules](role-precedence.md) (#599).
+
 ## Invitation flow
 
 1. The **owner** creates an invitation for an email

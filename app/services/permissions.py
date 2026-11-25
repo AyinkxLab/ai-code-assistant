@@ -34,7 +34,7 @@ from functools import wraps
 from flask import abort
 from flask_login import current_user
 
-from app.models import Workspace, WorkspaceMember
+from app.models import Team, TeamMember, Workspace, WorkspaceMember
 from app.models.workspace_member import ROLE_OWNER, STATUS_ACTIVE
 
 # Role ordering: higher rank implies every capability of lower ranks.
@@ -100,15 +100,35 @@ def role_for(workspace_id: int, user) -> str | None:
     if _owner_of(workspace_id) == user.id:
         return ROLE_OWNER
     membership = WorkspaceMember.query.filter_by(workspace_id=workspace_id, user_id=user.id).first()
-    if membership is None or membership.status != STATUS_ACTIVE:
-        return None
-    return membership.role
+    if membership is not None and membership.status == STATUS_ACTIVE:
+        return membership.role
+    # Team membership is enough to resolve the workspace, but grants no
+    # capabilities by itself: custom role resolution happens in ``can`` (#599).
+    team_member = (
+        TeamMember.query.join(Team, Team.id == TeamMember.team_id)
+        .filter(
+            Team.workspace_id == workspace_id,
+            TeamMember.user_id == user.id,
+            TeamMember.status == STATUS_ACTIVE,
+        )
+        .first()
+    )
+    if team_member is not None:
+        return "viewer"
+    return None
 
 
 def can(capability: str, workspace_id: int, user=None) -> bool:
     """Return ``True`` when ``user`` may perform ``capability`` in the workspace."""
     if user is None:
         user = current_user
+    from app.services import role_assignments
+
+    workspace = Workspace.query.filter_by(id=workspace_id).first()
+    if workspace is not None:
+        custom = role_assignments.effective_capabilities(workspace, user)
+        if custom is not None:
+            return capability in custom
     return role_can(role_for(workspace_id, user), capability)
 
 

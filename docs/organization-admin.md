@@ -17,6 +17,7 @@ console. Every refusal is a structured error from
 | `GET /admin/organizations/<workspace_id>` | Single overview: member count, workspace count, estimated usage, and open high/critical security findings. |
 | `GET /admin/organizations/<workspace_id>/members` | Member list, invite form, pending invitations, and member actions. |
 | `GET /admin/organizations/<workspace_id>/usage` | Organization usage and budget rollups for the selected window. |
+| `GET/POST /admin/organizations/<workspace_id>/roles` | Custom roles, teams, and assignments (#599). |
 
 The workspace detail page shows an **Organization admin** link to owners and
 organization admins.
@@ -65,6 +66,13 @@ Authorization is centralized in `app/services/organizations.py`:
 The `admin` membership role is an organization role only. It does not widen the
 workspace capability matrix in `app/services/permissions.py`, so adding an
 organization admin never grants workspace content capabilities implicitly.
+
+## Custom roles (#599)
+
+Organization admins can create teams and custom roles at organization, team, and
+workspace scope through the roles endpoint. Precedence is workspace over team
+over organization over the built-in membership role, with no capability union;
+see [role precedence](role-precedence.md) for the full rules and error contract.
 
 ## Tests
 
