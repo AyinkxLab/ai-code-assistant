@@ -118,6 +118,7 @@ def create_app(config_name: str | None = None) -> Flask:
     from app.admin import bp as admin_bp
     from app.api.docs import bp as api_docs_bp
     from app.api.v1 import bp as api_v1_bp
+    from app.approvals import bp as approvals_bp
     from app.auth import bp as auth_bp
     from app.billing import bp as billing_bp
     from app.chat import bp as chat_bp
@@ -148,6 +149,7 @@ def create_app(config_name: str | None = None) -> Flask:
     app.register_blueprint(chat_api_bp)
     app.register_blueprint(api_docs_bp)
     app.register_blueprint(api_v1_bp)
+    app.register_blueprint(approvals_bp)
     app.register_blueprint(prompts_bp)
     app.register_blueprint(tools_bp)
     app.register_blueprint(github_bp)
@@ -326,5 +328,10 @@ def create_app(config_name: str | None = None) -> Flask:
     from app.services.audit_cli import register_audit_cli
 
     register_audit_cli(app)
+
+    # Sensitive-action approval request expiry maintenance (#601).
+    from app.services.approvals_cli import register_approval_cli
+
+    register_approval_cli(app)
 
     return app

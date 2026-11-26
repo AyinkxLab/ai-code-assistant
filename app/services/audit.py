@@ -60,6 +60,10 @@ SESSIONS_REVOKED = "sessions_revoked"
 PLUGIN_POLICY_UPDATED = "plugin_policy_updated"
 PLUGIN_INSTALL_BLOCKED = "plugin_install_blocked"
 PLUGIN_INSTALL_APPROVED = "plugin_install_approved"
+APPROVAL_REQUESTED = "approval_requested"
+APPROVAL_APPROVED = "approval_approved"
+APPROVAL_REJECTED = "approval_rejected"
+APPROVAL_EXPIRED = "approval_expired"
 
 #: The "previous hash" of the first hashed row in a chain.
 GENESIS_HASH = "0" * 64

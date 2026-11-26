@@ -14,6 +14,7 @@ Related references:
 - [Per-organization IP allowlist](ip-allowlist.md)
 - [User data export](user-data-export.md)
 - [User data deletion and anonymization](user-data-deletion.md)
+- [Sensitive-action approval workflow](approval-workflow.md)
 
 ## Organization model
 
