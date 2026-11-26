@@ -163,6 +163,11 @@ def _is_api_path(path: str) -> bool:
     return path == "/api" or path.startswith("/api/") or "/api/" in path
 
 
+def _is_scim_path(path: str) -> bool:
+    """Return ``True`` for the independently authenticated SCIM surface."""
+    return path == "/scim/v2" or path.startswith("/scim/v2/")
+
+
 def _header_secret() -> str | None:
     """Read a token from ``Authorization: Bearer`` or ``X-API-Token``."""
     header = request.headers.get("Authorization", "")
@@ -184,6 +189,11 @@ def init_api_tokens(app) -> None:
     @app.before_request
     def _authenticate_and_enforce_scope():
         g.api_token = None
+        # SCIM uses its own organization bearer-token guard. An ordinary API
+        # token must never authenticate (or reject) a /scim/v2 request here,
+        # and this guard must never create a login identity for SCIM.
+        if _is_scim_path(request.path):
+            return None
         secret = _header_secret()
         if secret is None:
             return None

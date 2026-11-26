@@ -174,11 +174,16 @@ error table.
 
 ## SCIM
 
-**SCIM is not implemented.** There is no SCIM 2.0 endpoint, bearer token, user
-or group provisioning API, or automatic deprovisioning in this repository. Do
-not point an identity provider's SCIM client at this application. Member
-creation, role changes, suspension, and removal are manual through the member
-routes above. Treat SCIM as out of scope until a future issue adds it.
+SCIM 2.0 **Users** provisioning is implemented at `/scim/v2/Users`, protected by
+an organization bearer token issued in the admin console. Supported operations
+are list/filter/paginate, get, create, patch, and deactivate; the full contract
+and setup steps are in [the SSO/SCIM setup guide](sso-scim-setup.md). The SCIM
+guard accepts only `Authorization: Bearer`, never `X-API-Token` or a personal
+API token, and it never creates a browser login session.
+
+`/scim/v2/Groups`, OIDC/SAML login, and automatic group-to-role sync remain
+unimplemented. Member creation, role changes, suspension, and removal outside
+SCIM are still performed through the member routes above.
 
 ## Audit
 

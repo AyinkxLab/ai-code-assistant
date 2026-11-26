@@ -23,6 +23,7 @@ from app.observability.enterprise import (
     record_sso_event,
 )
 from app.observability.metrics import REGISTRY
+from app.services import scim_tokens
 
 
 @pytest.fixture(autouse=True)
@@ -187,3 +188,45 @@ def test_scim_token_routes_emit_bounded_events(client, make_user, login, db):
     assert 'enterprise_scim_events_total{action="revoke",outcome="success"} 1' in body
     assert issued.get_json()["secret"] not in body
     assert owner.email not in body
+
+
+def test_scim_user_routes_emit_bounded_events(client, make_user, db):
+    owner = make_user()
+    workspace = Workspace(user_id=owner.id, name="Acme")
+    db.session.add(workspace)
+    db.session.commit()
+    _, secret = scim_tokens.create_token(owner.id, workspace.id)
+    headers = {"Authorization": f"Bearer {secret}"}
+
+    created = client.post(
+        "/scim/v2/Users",
+        headers=headers,
+        json={
+            "schemas": ["urn:ietf:params:scim:schemas:core:2.0:User"],
+            "userName": "alice",
+            "emails": [{"value": "alice@example.com"}],
+        },
+    )
+    assert created.status_code == 201
+    resource = created.get_json()
+    assert (
+        client.patch(
+            f"/scim/v2/Users/{resource['id']}",
+            headers=headers,
+            json={
+                "schemas": ["urn:ietf:params:scim:api:messages:2.0:PatchOp"],
+                "Operations": [{"op": "replace", "value": {"active": False}}],
+            },
+        ).status_code
+        == 200
+    )
+    assert client.delete(f"/scim/v2/Users/{resource['id']}", headers=headers).status_code == 204
+
+    body = _body()
+    assert 'enterprise_scim_events_total{action="provision",outcome="success"} 1' in body
+    assert 'enterprise_scim_events_total{action="update",outcome="success"} 1' in body
+    assert 'enterprise_scim_events_total{action="deprovision",outcome="success"} 1' in body
+    assert "alice@example.com" not in body
+    assert secret not in body
+    assert f'user_id="{resource["id"]}"' not in body
+    assert f'id="{resource["id"]}"' not in body

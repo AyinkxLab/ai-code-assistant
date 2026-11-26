@@ -55,6 +55,13 @@ def create_app(config_name: str | None = None) -> Flask:
 
     init_api_tokens(app)
 
+    # Organization-scoped SCIM 2.0 bearer tokens (#592). This guard owns the
+    # /scim/v2 URL space and intentionally does not create a Flask-Login
+    # identity; the personal API-token guard above skips those paths.
+    from app.scim.auth import init_scim_auth
+
+    init_scim_auth(app)
+
     # Real-time collaboration over WebSockets (issue #50). ``manage_session``
     # lets socket handlers reuse the Flask-Login session, so room joins are
     # authorized with the same identity as HTTP routes.
@@ -134,6 +141,7 @@ def create_app(config_name: str | None = None) -> Flask:
     from app.plugins import bp as plugins_bp
     from app.prompts import bp as prompts_bp
     from app.reviews import bp as reviews_bp
+    from app.scim import bp as scim_bp
     from app.stellar import bp as stellar_bp
     from app.tokens import bp as tokens_bp
     from app.tools import bp as tools_bp
@@ -156,6 +164,7 @@ def create_app(config_name: str | None = None) -> Flask:
     app.register_blueprint(workspaces_bp)
     app.register_blueprint(collaboration_bp)
     app.register_blueprint(reviews_bp)
+    app.register_blueprint(scim_bp)
     app.register_blueprint(stellar_bp)
     app.register_blueprint(tokens_bp)
     app.register_blueprint(billing_bp)

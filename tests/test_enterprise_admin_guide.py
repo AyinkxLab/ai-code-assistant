@@ -84,7 +84,7 @@ def test_guide_is_linked_from_readme_and_admin_ui():
         assert "enterprise-admin-guide.md" in template.read_text(encoding="utf-8")
 
 
-def test_guide_links_existing_docs_and_marks_scim_not_implemented():
+def test_guide_links_existing_docs_and_describes_scim_support():
     text = _guide()
 
     for target in (
@@ -98,6 +98,7 @@ def test_guide_links_existing_docs_and_marks_scim_not_implemented():
     ):
         assert f"]({target})" in text, f"guide does not link {target}"
 
-    assert "SCIM is not implemented" in text
+    assert "SCIM 2.0 **Users** provisioning is implemented" in text
+    assert "sso-scim-setup.md" in text
     assert "delete my data" in text
     assert "3650" in text

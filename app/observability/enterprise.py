@@ -187,6 +187,18 @@ def record_from_request(request, response) -> None:
             record_scim_event(ACTION_UPDATE, outcome)
         elif request.method == "DELETE":
             record_scim_event(ACTION_REVOKE, outcome)
+    elif route == "/scim/v2/Users":
+        if request.method == "POST":
+            record_scim_event(ACTION_PROVISION, outcome)
+        elif request.method == "GET":
+            record_scim_event(ACTION_USE, outcome)
+    elif route == "/scim/v2/Users/<user_id>":
+        if request.method == "PATCH":
+            record_scim_event(ACTION_UPDATE, outcome)
+        elif request.method == "DELETE":
+            record_scim_event(ACTION_DEPROVISION, outcome)
+        elif request.method == "GET":
+            record_scim_event(ACTION_USE, outcome)
 
 
 __all__ = [

@@ -21,15 +21,17 @@ and the [API error catalog](api-errors.md).
 | OIDC relying party (authorization-code login, ID token validation) | **Not implemented** | — |
 | SAML 2.0 service provider (ACS, metadata, assertion validation) | **Not implemented** | — |
 | SCIM 2.0 bearer tokens (issue/rotate/revoke) | Supported | `app/services/scim_tokens.py`, `scim_tokens` |
-| SCIM 2.0 server (`/scim/v2/Users`, `/scim/v2/Groups`) | **Not implemented** | — |
+| SCIM 2.0 Users API (`/scim/v2/Users`, `/ServiceProviderConfig`) | Supported | `app/scim/`, organization bearer token |
+| SCIM 2.0 Groups API (`/scim/v2/Groups`) | **Not implemented** | — |
 | Automatic JIT user provisioning on first SSO login | **Not implemented** | — |
 | Automatic IdP-group-to-role sync | **Not implemented** | — |
 
 The practical consequence is important: this application does not receive an
 identity-provider OIDC/SAML callback, and it does not perform JIT login
 provisioning. It records that a domain is owned by a workspace and uses that
-fact to refuse password sign-in for accounts on that domain. Organization SCIM
-bearer tokens are managed here, but no SCIM server consumes them yet.
+fact to refuse password sign-in for accounts on that domain. A provisioner can
+call the SCIM Users API with an organization bearer token, but SCIM never
+creates a browser login session.
 
 ## Protocol setup: what to configure (and what not to)
 
@@ -68,14 +70,35 @@ assertion would 404 and no XML signature validation exists.
 
 | Setting | Required value for this application |
 | --- | --- |
-| SCIM base URL | **None yet.** Token management is available; there is no `/scim/v2` blueprint. |
-| Bearer token | Issued per organization in the admin console (see below). |
-| Supported resources | None exposed by the application yet. |
+| SCIM base URL | `<application-root>/scim/v2` |
+| Bearer token | `Authorization: Bearer <organization SCIM token>` (see below). `X-API-Token` and personal API tokens are rejected. |
+| Supported resources | `Users` and `ServiceProviderConfig`. `/scim/v2/Groups` is not implemented. |
 
-Until a SCIM server exists, use the workspace member API or admin UI described
-below. Map directory groups to workspace roles in your provisioning runbook
-(for example, "Contractors" -> `viewer`, "Engineers" -> `contributor`,
-"Owners" -> workspace owner) and apply the mapping with the member API.
+Point the provisioner at `/scim/v2/Users`. The token's default workspace
+receives new users as active `contributor` members; the workspace owner is also
+visible in list/get responses. Map directory groups to workspace roles in your
+provisioning runbook (for example, "Contractors" -> `viewer`, "Engineers" ->
+`contributor`, "Owners" -> workspace owner) and apply the mapping with the
+member API, because automatic group-to-role sync is not implemented.
+
+### SCIM Users API
+
+| Action | Route |
+| --- | --- |
+| Describe supported features | `GET /scim/v2/ServiceProviderConfig` |
+| List/filter/paginate users | `GET /scim/v2/Users` |
+| Get one user | `GET /scim/v2/Users/<id>` |
+| Create and provision a user | `POST /scim/v2/Users` |
+| Update a user (SCIM PATCH) | `PATCH /scim/v2/Users/<id>` |
+| Deactivate a user | `DELETE /scim/v2/Users/<id>` |
+
+Requests and responses follow RFC 7644 shapes. Supported filters are
+`userName eq "value"` and `emails.value eq "value"`; `startIndex` and `count`
+are bounded. Errors use the SCIM error schema with a string `status` and, where
+applicable, a `scimType` such as `invalidFilter` or `uniqueness`. Deactivation
+sets `active=false` and revokes tracked sessions; it never deletes audit
+history. SCIM-created accounts have an unusable random password and cannot sign
+in with it.
 
 ### SCIM bearer tokens (#594)
 
@@ -94,8 +117,7 @@ POST accepts an optional `label` and an ISO-8601 `expires_at`. The full secret
 is returned **only** by issue and rotate; listings and audit entries keep only a
 short prefix. The database stores only a SHA-256 hash. Revocation keeps the row
 for history. Every mutation is written to the workspace audit chain. Missing,
-expired, and revoked tokens all fail authentication identically once the SCIM
-API is enabled.
+expired, and revoked tokens all fail authentication identically on `/scim/v2`.
 
 ## Supported setup: domain verification and SSO enforcement
 
@@ -207,8 +229,8 @@ DELETE /workspaces/api/workspaces/12/members/42
 
 The removed member's next request to the workspace resolves as a non-member
 (`404`). To deprovision the account globally as well, deactivate it
-(`User.is_active = False`, for example from an operator script or a future SCIM
-handler). The existing browser session is logged out on its next request and
+(`User.is_active = False`, for example from an operator script or a SCIM
+deactivation). The existing browser session is logged out on its next request and
 future password logins are refused with the disabled-account message.
 
 ## Security notes

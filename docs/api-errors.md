@@ -37,6 +37,11 @@ fails when a code is missing.
 - Other routes keep their existing `{"error": ...}` bodies until they are
   migrated; those responses do not yet carry a stable `code`.
 
+The SCIM 2.0 surface under `/scim/v2` is an exception: its errors use the RFC
+7644 schema `urn:ietf:params:scim:api:messages:2.0:Error`, a string `status`, and
+an optional `scimType` such as `invalidFilter` or `uniqueness`. SCIM clients must
+not expect a catalog `code` there.
+
 ## Versioning
 
 Codes are never renamed or reused for a different meaning. A new failure mode
