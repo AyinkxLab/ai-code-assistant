@@ -117,6 +117,26 @@ Representative owner-only surfaces:
 - `GET /admin/actions`
 - `GET /admin/access-review`
 
+## Custom roles (#597)
+
+Roles are scoped to the organization owner and named from the plain capability
+actions in `app.services.permissions.CAPABILITIES`. The migration backfills the
+immutable `owner`, `admin`, and `member` built-ins for every existing owner;
+`ensure_builtin_roles(owner_id)` performs the same seeding for fresh
+`db.create_all()` databases.
+
+| Action | Route |
+| --- | --- |
+| List roles and capabilities | `GET /admin/organizations/<workspace_id>/roles` |
+| Create a role | `POST /admin/organizations/<workspace_id>/roles` |
+| Update a role | `PATCH /admin/organizations/<workspace_id>/roles/<role_id>` |
+| Delete a role | `DELETE /admin/organizations/<workspace_id>/roles/<role_id>` |
+
+Only owners and organization admins can use these routes. Invalid input uses
+`invalid_input` (400), duplicates and changes to built-ins use `conflict`
+(409), unknown roles use `not_found` (404), and other callers get `forbidden`
+(403). See [the organization console](organization-admin.md) for payloads.
+
 ## SSO and domain verification
 
 SSO enforcement proves domain ownership, then blocks password sign-in for

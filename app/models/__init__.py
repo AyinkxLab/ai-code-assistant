@@ -31,6 +31,11 @@ from app.models.notification import Notification
 from app.models.notification_channel import NotificationChannelPreference
 from app.models.notification_preference import NotificationPreference
 from app.models.organization_plugin_policy import OrganizationPluginPolicy, PluginApproval
+from app.models.organization_role import (
+    OrganizationRole,
+    OrganizationRoleCapability,
+    RoleCapability,
+)
 from app.models.plugin import CapabilityGrant, Plugin, PluginInstallation, PluginLockEntry
 from app.models.plugin_collection import PluginCollection
 from app.models.plugin_error_report import PluginErrorReport
@@ -98,6 +103,8 @@ __all__ = [
     "NotificationChannelPreference",
     "NotificationPreference",
     "OrganizationPluginPolicy",
+    "OrganizationRole",
+    "OrganizationRoleCapability",
     "Plugin",
     "PluginApproval",
     "PluginCollection",
@@ -119,6 +126,7 @@ __all__ = [
     "ReviewComment",
     "ReviewConfig",
     "ReviewFinding",
+    "RoleCapability",
     "SecurityTicketLink",
     "SiemEndpoint",
     "StellarSecurityFinding",

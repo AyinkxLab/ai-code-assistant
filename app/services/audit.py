@@ -60,6 +60,9 @@ SESSIONS_REVOKED = "sessions_revoked"
 PLUGIN_POLICY_UPDATED = "plugin_policy_updated"
 PLUGIN_INSTALL_BLOCKED = "plugin_install_blocked"
 PLUGIN_INSTALL_APPROVED = "plugin_install_approved"
+CUSTOM_ROLE_CREATED = "custom_role_created"
+CUSTOM_ROLE_UPDATED = "custom_role_updated"
+CUSTOM_ROLE_DELETED = "custom_role_deleted"
 
 #: The "previous hash" of the first hashed row in a chain.
 GENESIS_HASH = "0" * 64

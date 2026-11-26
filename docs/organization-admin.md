@@ -42,6 +42,34 @@ returns `invalid_input`. The forms set `aria-busy` and disable the submit button
 while the request is in flight so slow requests have a visible loading state.
 Empty member and invitation lists render an explicit empty state.
 
+## Custom roles (#597)
+
+Owners and organization admins can define reusable roles from the plain
+capability actions in `app.services.permissions.CAPABILITIES` (for example
+`view_members` or `manage_plugins`). The migration backfills three immutable
+built-ins for every organization owner — `owner`, `admin`, and `member` — and
+the service seeds the same rows on databases created with `db.create_all()`.
+Built-in roles cannot be renamed or deleted.
+
+| Action | Route |
+| --- | --- |
+| List roles and available capabilities | `GET /admin/organizations/<workspace_id>/roles` |
+| Create a custom role | `POST /admin/organizations/<workspace_id>/roles` |
+| Rename/change capabilities | `PATCH /admin/organizations/<workspace_id>/roles/<role_id>` |
+| Delete a custom role | `DELETE /admin/organizations/<workspace_id>/roles/<role_id>` |
+
+POST/PATCH accept JSON or form fields: `name`, a `capabilities` list (or
+comma-separated string), and an optional `description`. Names are lowercased and
+must be unique per owner. Unknown capabilities, invalid names, and reserved
+built-in names return `invalid_input` (400) or `conflict` (409); non-admin
+callers receive `forbidden` (403) and unknown roles `not_found` (404). Custom
+role mutations are recorded in the audit log and adoption telemetry.
+
+Defining a custom role does not automatically assign it to members: it remains
+a named capability set until a future issue wires assignments into membership.
+It also never widens the workspace capability matrix for the `admin`
+membership role.
+
 ## Usage and billing (#633)
 
 The usage page reuses the Phase 10 ledger queries (`usage_ledger` and

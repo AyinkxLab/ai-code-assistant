@@ -171,6 +171,14 @@ def record_from_request(request, response) -> None:
     elif route == "/admin/audit/export":
         export_format = (request.args.get("format") or FORMAT_JSON).strip().lower()
         record_audit_export(export_format, outcome)
+    elif route == "/admin/organizations/<int:workspace_id>/roles":
+        if request.method == "POST":
+            record_custom_role_event(ACTION_CREATE, outcome)
+    elif route == "/admin/organizations/<int:workspace_id>/roles/<int:role_id>":
+        if request.method == "PATCH":
+            record_custom_role_event(ACTION_UPDATE, outcome)
+        elif request.method == "DELETE":
+            record_custom_role_event(ACTION_DELETE, outcome)
 
 
 __all__ = [
