@@ -126,6 +126,7 @@ def create_app(config_name: str | None = None) -> Flask:
     from app.collaboration import bp as collaboration_bp
     from app.github import bp as github_bp
     from app.gitlab import bp as gitlab_bp
+    from app.group_roles import bp as group_roles_bp
     from app.i18n import bp as i18n_bp
     from app.i18n import init_i18n
     from app.integrations import bp as integrations_bp
@@ -135,6 +136,7 @@ def create_app(config_name: str | None = None) -> Flask:
     from app.plugins import bp as plugins_bp
     from app.prompts import bp as prompts_bp
     from app.reviews import bp as reviews_bp
+    from app.scim import bp as scim_bp
     from app.stellar import bp as stellar_bp
     from app.tokens import bp as tokens_bp
     from app.tools import bp as tools_bp
@@ -158,12 +160,14 @@ def create_app(config_name: str | None = None) -> Flask:
     app.register_blueprint(workspaces_bp)
     app.register_blueprint(collaboration_bp)
     app.register_blueprint(reviews_bp)
+    app.register_blueprint(scim_bp)
     app.register_blueprint(stellar_bp)
     app.register_blueprint(tokens_bp)
     app.register_blueprint(billing_bp)
     app.register_blueprint(notification_settings_bp)
     app.register_blueprint(webhooks_bp)
     app.register_blueprint(gitlab_bp)
+    app.register_blueprint(group_roles_bp)
     app.register_blueprint(integrations_bp)
     app.register_blueprint(admin_bp)
 

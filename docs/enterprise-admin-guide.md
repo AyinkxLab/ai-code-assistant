@@ -155,11 +155,14 @@ error table.
 
 ## SCIM
 
-**SCIM is not implemented.** There is no SCIM 2.0 endpoint, bearer token, user
-or group provisioning API, or automatic deprovisioning in this repository. Do
-not point an identity provider's SCIM client at this application. Member
-creation, role changes, suspension, and removal are manual through the member
-routes above. Treat SCIM as out of scope until a future issue adds it.
+A minimal SCIM 2.0 **Groups** endpoint is available at
+`/scim/v2/Groups?workspace_id=<id>`. It reuses hashed API tokens and supports
+group create/list/get/replace/patch/delete. Directory groups can be mapped to
+`viewer` or `contributor` through `/api/group-roles/<workspace_id>`; SCIM never
+grants the built-in owner role, an organization admin role, or global admin.
+There is still no `/scim/v2/Users` endpoint and no JIT user creation: users must
+already exist, and account deactivation remains manual. See
+[SSO/SCIM setup](sso-scim-setup.md) for the supported payloads and error table.
 
 ## Audit
 

@@ -64,6 +64,13 @@ APPROVAL_REQUESTED = "approval_requested"
 APPROVAL_APPROVED = "approval_approved"
 APPROVAL_REJECTED = "approval_rejected"
 APPROVAL_EXPIRED = "approval_expired"
+SCIM_GROUP_CREATED = "scim_group_created"
+SCIM_GROUP_UPDATED = "scim_group_updated"
+SCIM_GROUP_DELETED = "scim_group_deleted"
+SCIM_ROLE_MAPPING_CREATED = "scim_role_mapping_created"
+SCIM_ROLE_MAPPING_UPDATED = "scim_role_mapping_updated"
+SCIM_ROLE_MAPPING_DELETED = "scim_role_mapping_deleted"
+SCIM_ROLE_APPLIED = "scim_role_applied"
 
 #: The "previous hash" of the first hashed row in a chain.
 GENESIS_HASH = "0" * 64

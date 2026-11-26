@@ -19,6 +19,7 @@ access.
 from datetime import UTC, datetime
 
 from app.extensions import db
+from app.models.group_role_mapping import PROVISIONING_MANUAL
 
 ROLE_OWNER = "owner"
 ROLE_CONTRIBUTOR = "contributor"
@@ -51,6 +52,8 @@ class WorkspaceMember(db.Model):
         db.Integer, db.ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
     )
     role = db.Column(db.String(20), nullable=False, default=ROLE_VIEWER)
+    #: ``manual`` memberships are never removed by SCIM group changes (#593).
+    provisioning_source = db.Column(db.String(16), nullable=False, default=PROVISIONING_MANUAL)
     status = db.Column(db.String(20), nullable=False, default=STATUS_ACTIVE)
     joined_at = db.Column(
         db.DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC)

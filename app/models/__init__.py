@@ -19,6 +19,7 @@ from app.models.file_analysis import FileAnalysis
 from app.models.github_account import GithubAccount
 from app.models.github_app_installation import GitHubAppInstallation
 from app.models.gitlab_account import GitlabAccount
+from app.models.group_role_mapping import GroupRoleMapping, ScimGroup, ScimGroupMember
 from app.models.idempotency_key import IdempotencyKey
 from app.models.integration_credential import IntegrationCredential
 from app.models.integration_health import IntegrationHealth
@@ -88,6 +89,7 @@ __all__ = [
     "GitHubAppInstallation",
     "GithubAccount",
     "GitlabAccount",
+    "GroupRoleMapping",
     "IdempotencyKey",
     "IntegrationCredential",
     "IntegrationHealth",
@@ -121,6 +123,8 @@ __all__ = [
     "ReviewComment",
     "ReviewConfig",
     "ReviewFinding",
+    "ScimGroup",
+    "ScimGroupMember",
     "SecurityTicketLink",
     "SiemEndpoint",
     "StellarSecurityFinding",

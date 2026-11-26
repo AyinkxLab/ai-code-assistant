@@ -20,14 +20,17 @@ and the [API error catalog](api-errors.md).
 | Workspace deprovisioning (soft removal) | Supported | `DELETE /workspaces/api/workspaces/<id>/members/<uid>` |
 | OIDC relying party (authorization-code login, ID token validation) | **Not implemented** | — |
 | SAML 2.0 service provider (ACS, metadata, assertion validation) | **Not implemented** | — |
-| SCIM 2.0 server (`/scim/v2/Users`, `/scim/v2/Groups`) | **Not implemented** | — |
+| SCIM 2.0 Groups (`/scim/v2/Groups`) | Supported (minimal) | `app/scim/routes.py`, `app/services/scim_groups.py` |
+| SCIM 2.0 Users (`/scim/v2/Users`) | **Not implemented** | — |
 | Automatic JIT user provisioning on first SSO login | **Not implemented** | — |
-| Automatic IdP-group-to-role sync | **Not implemented** | — |
+| IdP-group-to-role sync for existing users | Supported (safe roles only) | `/api/group-roles/<workspace_id>` |
 
 The practical consequence is important: this application does not receive an
-identity-provider callback or SCIM token. It only records that a domain is
-owned by a workspace and uses that fact to refuse password sign-in for
-accounts on that domain.
+identity-provider callback and does not issue a dedicated SCIM secret. It
+records that a domain is owned by a workspace and uses that fact to refuse
+password sign-in for accounts on that domain. The minimal Groups endpoint
+below accepts the existing hashed API tokens described in
+[API tokens](api-tokens.md).
 
 ## Protocol setup: what to configure (and what not to)
 
@@ -66,14 +69,29 @@ assertion would 404 and no XML signature validation exists.
 
 | Setting | Required value for this application |
 | --- | --- |
-| SCIM base URL | **None.** There is no `/scim/v2` blueprint. |
-| Bearer token | Not used. Do not provision a SCIM token for this app. |
-| Supported resources | None exposed by the application. |
+| SCIM Groups base URL | `/scim/v2/Groups?workspace_id=<id>` (minimal implementation only) |
+| Bearer token | An existing [API token](api-tokens.md) with `read` for list/get, `write` for create/update, or `admin` for delete. Only its SHA-256 hash is stored. |
+| Supported resources | `Groups` only. There is no `/scim/v2/Users` endpoint and no JIT user creation. |
 
-Until a SCIM server exists, use the workspace member API or admin UI described
-below. Map directory groups to workspace roles in your provisioning runbook
-(for example, "Contractors" -> `viewer`, "Engineers" -> `contributor`,
-"Owners" -> workspace owner) and apply the mapping with the member API.
+Map directory groups to workspace roles with the organization API:
+
+```http
+POST /api/group-roles/<workspace_id>
+GET /api/group-roles/<workspace_id>
+PUT /api/group-roles/<workspace_id>/<mapping_id>
+DELETE /api/group-roles/<workspace_id>/<mapping_id>
+```
+
+The body is `{"group_external_id": "engineering", "role": "contributor"}`.
+Only `viewer` and `contributor` are accepted: a directory group can never grant
+the built-in `owner` role, an organization `admin` role, or global admin. A
+mapping is applied when group membership changes through SCIM. SCIM-managed
+memberships are tracked so removing a group or mapping revokes only roles that
+SCIM itself granted; manual memberships are never overwritten downward.
+
+Use the workspace member API or admin UI described below for owners, manual
+overrides, and account deactivation. All SCIM and mapping failures use the
+[API error catalog](api-errors.md).
 
 ## Supported setup: domain verification and SSO enforcement
 
@@ -191,8 +209,9 @@ future password logins are refused with the disabled-account message.
 
 ## Security notes
 
-- **There are no OIDC/SAML/SCIM secrets to store yet.** Do not invent a client
-  secret, signing certificate, or SCIM bearer token for this application.
+- **There are no OIDC/SAML secrets to store yet.** Do not invent a client
+  secret or signing certificate for this application. SCIM uses existing hashed
+  API tokens; do not create or store a separate plaintext SCIM token.
 - **Store `SECRET_KEY` in a real secret manager.** It signs Flask session
   cookies; the production configuration refuses to start without it. Rotating
   it invalidates every browser session.
@@ -231,7 +250,7 @@ future password logins are refused with the disabled-account message.
 | Correct password is rejected with "Password sign-in is disabled" | `enforce_sso` is on for the account's domain | Expected. Use the organization's approved SSO path, or turn enforcement off for the domain. |
 | Login says the account is disabled | `User.is_active` is false | Reactivate the account through your operator tooling; the session is already revoked. |
 | Login demands MFA enrollment | Workspace MFA policy applies and the user has no TOTP secret | Enroll MFA or use the documented break-glass recovery. |
-| An OIDC/SAML callback or SCIM request returns `404` | Those protocol endpoints are not implemented in this repository | Do not configure them; see [Implementation status](#implementation-status). |
+| An OIDC/SAML callback or `/scim/v2/Users` request returns `404` | Those protocol endpoints are not implemented in this repository | Do not configure them; see [Implementation status](#implementation-status). |
 | A deprovisioned user still shows as authenticated in an old tab | The session had not made another request yet | The next request logs the session out. If it persists, revoke the API keys and confirm `is_active` is actually false in the database. |
 
 ## Tests

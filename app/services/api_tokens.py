@@ -160,7 +160,18 @@ def token_allows(token: ApiToken, scope: str) -> bool:
 
 
 def _is_api_path(path: str) -> bool:
-    return path == "/api" or path.startswith("/api/") or "/api/" in path
+    """Return whether a bearer token is accepted on ``path``.
+
+    The minimal SCIM Groups surface (#593) reuses the same hash-only personal
+    access tokens as the JSON API; no separate SCIM secret is introduced.
+    """
+    return (
+        path == "/api"
+        or path.startswith("/api/")
+        or "/api/" in path
+        or path == "/scim/v2"
+        or path.startswith("/scim/v2/")
+    )
 
 
 def _header_secret() -> str | None:
