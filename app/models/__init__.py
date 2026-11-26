@@ -53,6 +53,7 @@ from app.models.review import Review
 from app.models.review_comment import ReviewComment
 from app.models.review_config import ReviewConfig
 from app.models.review_finding import ReviewFinding
+from app.models.scim_token import ScimToken
 from app.models.security_ticket import SecurityTicketLink
 from app.models.siem_endpoint import SiemEndpoint
 from app.models.stellar_security_finding import StellarSecurityFinding
@@ -127,6 +128,7 @@ __all__ = [
     "ReviewConfig",
     "ReviewFinding",
     "RoleCapability",
+    "ScimToken",
     "SecurityTicketLink",
     "SiemEndpoint",
     "StellarSecurityFinding",

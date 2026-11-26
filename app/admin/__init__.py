@@ -10,4 +10,5 @@ from app.admin import (  # noqa: E402, F401  (import routes to register them)
     organization_roles,
     organization_usage,
     routes,
+    scim_tokens,
 )

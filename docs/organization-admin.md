@@ -70,6 +70,25 @@ a named capability set until a future issue wires assignments into membership.
 It also never widens the workspace capability matrix for the `admin`
 membership role.
 
+## SCIM bearer tokens (#594)
+
+Organization owners and admins can issue, rotate, and revoke SCIM bearer tokens
+from the console. Each token is scoped to the organization owner and names the
+workspace used as the default provisioning target. Only a SHA-256 hash is
+stored; the full secret appears once in the issue/rotate response.
+
+| Action | Route |
+| --- | --- |
+| List token metadata | `GET /admin/organizations/<workspace_id>/scim-tokens` |
+| Issue | `POST /admin/organizations/<workspace_id>/scim-tokens` |
+| Rotate | `PATCH /admin/organizations/<workspace_id>/scim-tokens/<token_id>` |
+| Revoke | `DELETE /admin/organizations/<workspace_id>/scim-tokens/<token_id>` |
+
+POST accepts `label` and an ISO-8601 `expires_at`. Invalid input is
+`invalid_input` (400), another owner's token is `not_found` (404), and rotating
+a revoked token is `conflict` (409). See
+[the SSO/SCIM setup guide](sso-scim-setup.md) for provisioning details.
+
 ## Usage and billing (#633)
 
 The usage page reuses the Phase 10 ledger queries (`usage_ledger` and

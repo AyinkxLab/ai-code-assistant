@@ -165,3 +165,25 @@ def test_domain_row_does_not_become_a_label(client, make_user, login, db):
     assert "top-secret-token" not in body
     # The list route is not an adoption mutation.
     assert "enterprise_sso_events_total{" not in body
+
+
+def test_scim_token_routes_emit_bounded_events(client, make_user, login, db):
+    owner = make_user()
+    login()
+    workspace = Workspace(user_id=owner.id, name="Acme")
+    db.session.add(workspace)
+    db.session.commit()
+
+    base = f"/admin/organizations/{workspace.id}/scim-tokens"
+    issued = client.post(base, json={"label": "Okta"})
+    assert issued.status_code == 201
+    token_id = issued.get_json()["token"]["id"]
+    assert client.patch(f"{base}/{token_id}").status_code == 200
+    assert client.delete(f"{base}/{token_id}").status_code == 200
+
+    body = _body()
+    assert 'enterprise_scim_events_total{action="create",outcome="success"} 1' in body
+    assert 'enterprise_scim_events_total{action="update",outcome="success"} 1' in body
+    assert 'enterprise_scim_events_total{action="revoke",outcome="success"} 1' in body
+    assert issued.get_json()["secret"] not in body
+    assert owner.email not in body

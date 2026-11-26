@@ -20,14 +20,16 @@ and the [API error catalog](api-errors.md).
 | Workspace deprovisioning (soft removal) | Supported | `DELETE /workspaces/api/workspaces/<id>/members/<uid>` |
 | OIDC relying party (authorization-code login, ID token validation) | **Not implemented** | — |
 | SAML 2.0 service provider (ACS, metadata, assertion validation) | **Not implemented** | — |
+| SCIM 2.0 bearer tokens (issue/rotate/revoke) | Supported | `app/services/scim_tokens.py`, `scim_tokens` |
 | SCIM 2.0 server (`/scim/v2/Users`, `/scim/v2/Groups`) | **Not implemented** | — |
 | Automatic JIT user provisioning on first SSO login | **Not implemented** | — |
 | Automatic IdP-group-to-role sync | **Not implemented** | — |
 
 The practical consequence is important: this application does not receive an
-identity-provider callback or SCIM token. It only records that a domain is
-owned by a workspace and uses that fact to refuse password sign-in for
-accounts on that domain.
+identity-provider OIDC/SAML callback, and it does not perform JIT login
+provisioning. It records that a domain is owned by a workspace and uses that
+fact to refuse password sign-in for accounts on that domain. Organization SCIM
+bearer tokens are managed here, but no SCIM server consumes them yet.
 
 ## Protocol setup: what to configure (and what not to)
 
@@ -66,14 +68,34 @@ assertion would 404 and no XML signature validation exists.
 
 | Setting | Required value for this application |
 | --- | --- |
-| SCIM base URL | **None.** There is no `/scim/v2` blueprint. |
-| Bearer token | Not used. Do not provision a SCIM token for this app. |
-| Supported resources | None exposed by the application. |
+| SCIM base URL | **None yet.** Token management is available; there is no `/scim/v2` blueprint. |
+| Bearer token | Issued per organization in the admin console (see below). |
+| Supported resources | None exposed by the application yet. |
 
 Until a SCIM server exists, use the workspace member API or admin UI described
 below. Map directory groups to workspace roles in your provisioning runbook
 (for example, "Contractors" -> `viewer`, "Engineers" -> `contributor`,
 "Owners" -> workspace owner) and apply the mapping with the member API.
+
+### SCIM bearer tokens (#594)
+
+Organization owners and admins can issue, rotate, and revoke SCIM bearer tokens
+in the organization console. The token is scoped to the organization owner and
+carries a default provisioning workspace.
+
+| Action | Route |
+| --- | --- |
+| List token metadata | `GET /admin/organizations/<workspace_id>/scim-tokens` |
+| Issue a token | `POST /admin/organizations/<workspace_id>/scim-tokens` |
+| Rotate a token | `PATCH /admin/organizations/<workspace_id>/scim-tokens/<token_id>` |
+| Revoke a token | `DELETE /admin/organizations/<workspace_id>/scim-tokens/<token_id>` |
+
+POST accepts an optional `label` and an ISO-8601 `expires_at`. The full secret
+is returned **only** by issue and rotate; listings and audit entries keep only a
+short prefix. The database stores only a SHA-256 hash. Revocation keeps the row
+for history. Every mutation is written to the workspace audit chain. Missing,
+expired, and revoked tokens all fail authentication identically once the SCIM
+API is enabled.
 
 ## Supported setup: domain verification and SSO enforcement
 
@@ -191,8 +213,10 @@ future password logins are refused with the disabled-account message.
 
 ## Security notes
 
-- **There are no OIDC/SAML/SCIM secrets to store yet.** Do not invent a client
-  secret, signing certificate, or SCIM bearer token for this application.
+- **There are no OIDC/SAML secrets to store yet.** Do not invent a client secret
+  or signing certificate for this application. SCIM bearer tokens are the only
+  identity-provider credential this app accepts; they are stored as hashes and
+  shown once when issued or rotated.
 - **Store `SECRET_KEY` in a real secret manager.** It signs Flask session
   cookies; the production configuration refuses to start without it. Rotating
   it invalidates every browser session.

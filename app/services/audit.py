@@ -63,6 +63,9 @@ PLUGIN_INSTALL_APPROVED = "plugin_install_approved"
 CUSTOM_ROLE_CREATED = "custom_role_created"
 CUSTOM_ROLE_UPDATED = "custom_role_updated"
 CUSTOM_ROLE_DELETED = "custom_role_deleted"
+SCIM_TOKEN_ISSUED = "scim_token_issued"
+SCIM_TOKEN_ROTATED = "scim_token_rotated"
+SCIM_TOKEN_REVOKED = "scim_token_revoked"
 
 #: The "previous hash" of the first hashed row in a chain.
 GENESIS_HASH = "0" * 64

@@ -179,6 +179,14 @@ def record_from_request(request, response) -> None:
             record_custom_role_event(ACTION_UPDATE, outcome)
         elif request.method == "DELETE":
             record_custom_role_event(ACTION_DELETE, outcome)
+    elif route == "/admin/organizations/<int:workspace_id>/scim-tokens":
+        if request.method == "POST":
+            record_scim_event(ACTION_CREATE, outcome)
+    elif route == "/admin/organizations/<int:workspace_id>/scim-tokens/<int:token_id>":
+        if request.method == "PATCH":
+            record_scim_event(ACTION_UPDATE, outcome)
+        elif request.method == "DELETE":
+            record_scim_event(ACTION_REVOKE, outcome)
 
 
 __all__ = [
