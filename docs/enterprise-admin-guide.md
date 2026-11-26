@@ -164,6 +164,15 @@ There is still no `/scim/v2/Users` endpoint and no JIT user creation: users must
 already exist, and account deactivation remains manual. See
 [SSO/SCIM setup](sso-scim-setup.md) for the supported payloads and error table.
 
+## Session policy
+
+Owners can opt in to a maximum session age, an idle timeout, and fresh-password
+checks before sensitive actions through
+`/api/session-policy/<workspace_id>`. The guard applies on every authenticated
+request; organizations without a policy keep the existing behaviour. See
+[organization session policy](session-policy.md) for the limits, re-auth
+endpoint, and audit actions.
+
 ## Audit
 
 Every sensitive action appends to `audit_logs`. Rows are append-only through the

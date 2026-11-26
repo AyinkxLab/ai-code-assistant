@@ -19,6 +19,10 @@ from app.services import audit
 
 #: Cookie key holding the opaque session token.
 SESSION_KEY = "auth_session_id"
+#: Cookie key holding the last successful password verification (#591).
+LAST_AUTH_KEY = "last_auth_at"
+#: Cookie key for the explicit sensitive-action re-authentication marker (#591).
+SENSITIVE_REAUTH_KEY = "sensitive_reauth_at"
 #: Longest accepted reason; keeps the stored/audited string bounded.
 MAX_REASON_LENGTH = 255
 #: Maximum stored user-agent prefix; only used for display.
@@ -65,6 +69,7 @@ def bind_current_session(user, *, commit: bool = True) -> str:
         )
     )
     session[SESSION_KEY] = token
+    session[LAST_AUTH_KEY] = moment.isoformat()
     if commit:
         db.session.commit()
     return token
@@ -105,6 +110,8 @@ def revoke_current_session(*, reason: str = "logout", commit: bool = True) -> bo
     row.revoked_at = datetime.now(UTC)
     row.revoke_reason = _normalize_reason(reason)
     session.pop(SESSION_KEY, None)
+    session.pop(LAST_AUTH_KEY, None)
+    session.pop(SENSITIVE_REAUTH_KEY, None)
     if commit:
         db.session.commit()
     return True
@@ -155,7 +162,9 @@ def revoke_all_for_user(
 
 
 __all__ = [
+    "LAST_AUTH_KEY",
     "MAX_REASON_LENGTH",
+    "SENSITIVE_REAUTH_KEY",
     "SESSION_KEY",
     "SessionError",
     "bind_current_session",

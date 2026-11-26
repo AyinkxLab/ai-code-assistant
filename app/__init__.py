@@ -137,6 +137,7 @@ def create_app(config_name: str | None = None) -> Flask:
     from app.prompts import bp as prompts_bp
     from app.reviews import bp as reviews_bp
     from app.scim import bp as scim_bp
+    from app.session_policy import bp as session_policy_bp
     from app.stellar import bp as stellar_bp
     from app.tokens import bp as tokens_bp
     from app.tools import bp as tools_bp
@@ -161,6 +162,7 @@ def create_app(config_name: str | None = None) -> Flask:
     app.register_blueprint(collaboration_bp)
     app.register_blueprint(reviews_bp)
     app.register_blueprint(scim_bp)
+    app.register_blueprint(session_policy_bp)
     app.register_blueprint(stellar_bp)
     app.register_blueprint(tokens_bp)
     app.register_blueprint(billing_bp)

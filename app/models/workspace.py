@@ -84,6 +84,12 @@ class Workspace(db.Model):
         cascade="all, delete-orphan",
         uselist=False,
     )
+    session_policy = db.relationship(
+        "OrganizationSessionPolicy",
+        back_populates="workspace",
+        cascade="all, delete-orphan",
+        uselist=False,
+    )
 
     def __init__(self, **kwargs):
         # Auto-derive slug from name when not explicitly provided.

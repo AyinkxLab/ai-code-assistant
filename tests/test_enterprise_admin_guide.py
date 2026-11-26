@@ -96,10 +96,12 @@ def test_guide_links_existing_docs_and_describes_minimal_scim():
         "user-data-export.md",
         "user-data-deletion.md",
         "sso-scim-setup.md",
+        "session-policy.md",
     ):
         assert f"]({target})" in text, f"guide does not link {target}"
 
     assert "/scim/v2/Groups" in text
+    assert "/api/session-policy" in text
     assert "viewer" in text
     assert "delete my data" in text
     assert "3650" in text

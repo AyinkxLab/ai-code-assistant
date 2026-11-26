@@ -48,3 +48,6 @@ an unknown account returns `not_found` (404), and a non-administrator receives
   password; use the API token management surface for those credentials.
 - A disabled account is still dropped on its next request by the existing
   deprovisioning check, independent of tracked sessions.
+- Organizations may additionally expire sessions by age or inactivity and
+  require fresh password checks; see
+  [organization session policy](session-policy.md).

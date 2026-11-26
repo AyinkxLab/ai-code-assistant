@@ -71,6 +71,10 @@ SCIM_ROLE_MAPPING_CREATED = "scim_role_mapping_created"
 SCIM_ROLE_MAPPING_UPDATED = "scim_role_mapping_updated"
 SCIM_ROLE_MAPPING_DELETED = "scim_role_mapping_deleted"
 SCIM_ROLE_APPLIED = "scim_role_applied"
+SESSION_POLICY_UPDATED = "session_policy_updated"
+SESSION_POLICY_DELETED = "session_policy_deleted"
+SESSION_POLICY_EXPIRED = "session_policy_expired"
+SESSION_REAUTHENTICATED = "session_reauthenticated"
 
 #: The "previous hash" of the first hashed row in a chain.
 GENESIS_HASH = "0" * 64

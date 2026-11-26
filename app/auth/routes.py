@@ -12,6 +12,7 @@ from urllib.parse import urljoin, urlparse
 from flask import (
     Response,
     flash,
+    g,
     jsonify,
     redirect,
     render_template,
@@ -41,6 +42,7 @@ from app.services import (
     data_export,
     domain_verification,
     mfa,
+    session_policy,
     user_sessions,
 )
 
@@ -128,7 +130,7 @@ def _is_safe_redirect_target(target: str) -> bool:
 
 @bp.before_app_request
 def _revoke_deprovisioned_sessions():
-    """Drop sessions that were deprovisioned or centrally revoked (#619, #639).
+    """Drop revoked sessions and enforce the organization policy (#619, #639, #591).
 
     Deprovisioning an account (``User.is_active = False``) must not leave an
     already-authenticated browser session usable. Flask-Login reloads the user
@@ -141,6 +143,10 @@ def _revoke_deprovisioned_sessions():
     waiting for cookie expiry. Sessions created outside the login routes (for
     example a test helper calling ``login_user`` directly) have no token and
     are left alone.
+
+    With an opt-in organization policy (#591), this guard also expires sessions
+    past their maximum age or idle limit and requires a fresh password check
+    before sensitive JSON mutations.
     """
     if not current_user.is_authenticated:
         return
@@ -150,7 +156,20 @@ def _revoke_deprovisioned_sessions():
     token = user_sessions.current_token()
     if token is not None and not user_sessions.is_active(token, current_user.id):
         session.pop(user_sessions.SESSION_KEY, None)
+        session_policy.clear_reauth_marker()
         logout_user()
+        return None
+
+    # API tokens have no browser session to age out (#591); their scopes are
+    # enforced by ``init_api_tokens`` before this hook runs.
+    if getattr(g, "api_token", None) is not None:
+        return None
+    expiry_message = session_policy.enforce_session_age(current_user)
+    if expiry_message is not None:
+        logout_user()
+        return error_response(UNAUTHORIZED, expiry_message)
+    if session_policy.requires_reauth(current_user):
+        return error_response(UNAUTHORIZED, "Recent re-authentication is required.")
 
 
 @bp.route("/register", methods=["GET", "POST"])
@@ -381,6 +400,7 @@ def mfa_setup():
 def logout():
     """End the current user's session."""
     user_sessions.revoke_current_session()
+    session_policy.clear_reauth_marker()
     logout_user()
     flash("You have been logged out.", "info")
     return redirect(url_for("auth.login"))

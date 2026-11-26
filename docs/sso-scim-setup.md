@@ -6,8 +6,9 @@ else. It separates what this repository **actually implements today** from the
 OIDC/SAML/SCIM protocol features that are **not implemented yet**, so you do not
 configure an identity provider against endpoints that do not exist.
 
-Related: [domain verification and SSO enforcement](sso-domain-verification.md)
-and the [API error catalog](api-errors.md).
+Related: [domain verification and SSO enforcement](sso-domain-verification.md),
+[organization session policy](session-policy.md), and the
+[API error catalog](api-errors.md).
 
 ## Implementation status
 
@@ -24,6 +25,7 @@ and the [API error catalog](api-errors.md).
 | SCIM 2.0 Users (`/scim/v2/Users`) | **Not implemented** | — |
 | Automatic JIT user provisioning on first SSO login | **Not implemented** | — |
 | IdP-group-to-role sync for existing users | Supported (safe roles only) | `/api/group-roles/<workspace_id>` |
+| Organization browser-session policy (age, idle, re-auth) | Supported (opt-in) | `/api/session-policy/<workspace_id>` |
 
 The practical consequence is important: this application does not receive an
 identity-provider callback and does not issue a dedicated SCIM secret. It
