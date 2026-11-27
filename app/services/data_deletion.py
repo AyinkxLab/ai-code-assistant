@@ -47,6 +47,7 @@ from app.models.user_deletion_request import (
     STATUS_REQUESTED,
 )
 from app.services import audit, legal_hold, ratelimit
+from app.services.activity import record_role_change
 
 #: Exact phrase a user must submit to confirm a destructive request.
 CONFIRMATION_PHRASE = "delete my data"
@@ -322,7 +323,16 @@ def _remove_memberships(user) -> None:
     memberships = WorkspaceMember.query.filter_by(user_id=user.id).all()
     for membership in memberships:
         if membership.is_active_member:
+            previous_role = membership.role
             membership.mark_removed()
+            record_role_change(
+                workspace_id=membership.workspace_id,
+                actor=user,
+                target_user=user,
+                previous_role=previous_role,
+                new_role=None,
+                membership_id=membership.id,
+            )
 
 
 __all__ = [

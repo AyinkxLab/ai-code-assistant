@@ -126,6 +126,28 @@ Owners can read the defined workspace audit event subset at
 `view_audit` capability. Non-members receive a uniform `404`; members without
 the capability receive `403`.
 
+#### Role-change events
+
+Every role assignment, change, and removal writes `event_type: "role.changed"`
+through `app.services.activity.record_role_change`. Failed or unauthorized
+mutations write nothing. The event metadata always carries:
+
+| Field | Meaning |
+| --- | --- |
+| `action` | `assigned`, `changed`, or `removed`. |
+| `old_role`, `new_role` | Before/after role; `null` means no role on that side. |
+| `actor_id`, `actor_username` | Who performed the mutation. |
+| `target_user_id`, `target_username` | Whose role changed. |
+| `membership_id` | Membership row when one exists. |
+| `request_id` | Correlation id from `X-Request-ID`, or a generated id. |
+| `reason` | Present only when the caller supplied one. |
+
+The same transition is emitted as a structured `role.changed` record by
+`app.services.chat_audit`, with `request_id` added automatically. These events
+live in the workspace audit view and the structured log; they are distinct from
+the append-only `audit_logs` hash chain described above. The audit page renders
+the role transition, target, and request id for owners.
+
 ### Evidence pack
 
 ```python

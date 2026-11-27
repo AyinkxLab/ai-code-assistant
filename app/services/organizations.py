@@ -42,6 +42,12 @@ ORG_ROLES = (ORG_ROLE_OWNER, ORG_ROLE_ADMIN)
 #: Membership roles that grant organization administration.
 ADMIN_MEMBER_ROLES = (ROLE_OWNER, ORG_ROLE_ADMIN)
 
+#: Organization-only capabilities for the read-only role preview. This is a
+#: separate namespace from workspace capabilities and plugin capability strings.
+ORGANIZATION_CAPABILITIES = {
+    "administer_organization": (ORG_ROLES, "Use the organization admin console"),
+}
+
 #: Usage windows allowed on the console.
 DEFAULT_DAYS = 30
 MAX_DAYS = 365
@@ -82,6 +88,15 @@ def organization_role(workspace_id: int, user=None) -> str | None:
 def is_organization_admin(workspace_id: int, user=None) -> bool:
     """Return ``True`` when the caller may use the organization admin console."""
     return organization_role(workspace_id, user) in ORG_ROLES
+
+
+def capabilities_for_organization_role(role: str | None) -> list[str]:
+    """Return organization capabilities for ``role`` (sorted, fail closed)."""
+    return sorted(
+        capability
+        for capability, (roles, _description) in ORGANIZATION_CAPABILITIES.items()
+        if role in roles
+    )
 
 
 def organization_workspace_ids(workspace: Workspace) -> list[int]:

@@ -71,7 +71,12 @@
     var parts = [];
     if (meta.email) parts.push(meta.email);
     if (meta.role) parts.push("role: " + meta.role);
+    if (meta.target_username) parts.push("target: " + meta.target_username);
+    if (meta.action && meta.action !== "changed") parts.push("role " + meta.action);
     if (meta.old_role && meta.new_role) parts.push(meta.old_role + " -> " + meta.new_role);
+    else if (meta.new_role) parts.push("role: " + meta.new_role);
+    else if (meta.old_role) parts.push("role removed: " + meta.old_role);
+    if (meta.request_id) parts.push("request: " + meta.request_id);
     if (meta.from_username && meta.to_username) parts.push(meta.from_username + " -> " + meta.to_username);
     if (meta.reactivated) parts.push("reactivated");
     if (meta.idempotent) parts.push("idempotent");

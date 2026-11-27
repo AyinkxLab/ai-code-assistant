@@ -16,10 +16,18 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from app.extensions import db
-from app.models.activity_event import ActivityEvent
+from app.models.activity_event import EVENT_ROLE_CHANGED, ActivityEvent
+from app.services.chat_audit import current_request_id, log_event
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
     from app.models.user import User
+
+
+#: Values stored in ``metadata["action"]`` so the audit view can distinguish an
+#: assignment, an actual role change, and a removal without new event types.
+ROLE_ACTION_ASSIGNED = "assigned"
+ROLE_ACTION_CHANGED = "changed"
+ROLE_ACTION_REMOVED = "removed"
 
 
 def record_activity(
@@ -49,4 +57,65 @@ def record_activity(
         event_metadata=metadata or None,
     )
     db.session.add(event)
+    return event
+
+
+def record_role_change(
+    *,
+    workspace_id: int,
+    actor: User | None,
+    target_user: User | None,
+    previous_role: str | None,
+    new_role: str | None,
+    action: str | None = None,
+    membership_id: int | None = None,
+    reason: str | None = None,
+) -> ActivityEvent:
+    """Record one role assignment, change, or removal with before/after state.
+
+    The event is written to the existing owner audit view via ``ActivityEvent``
+    and emitted as a structured ``role.changed`` log record. Both carry the
+    acting user, the affected user, and the current request id. ``None`` is used
+    for a state where the user had no role (assignment) or no longer has one
+    (removal); callers must not omit one side to hide a transition.
+    """
+    if action is None:
+        if previous_role is None:
+            action = ROLE_ACTION_ASSIGNED
+        elif new_role is None:
+            action = ROLE_ACTION_REMOVED
+        else:
+            action = ROLE_ACTION_CHANGED
+
+    metadata = {
+        "action": action,
+        "old_role": previous_role,
+        "new_role": new_role,
+        "actor_id": actor.id if actor is not None else None,
+        "actor_username": actor.username if actor is not None else None,
+        "target_user_id": target_user.id if target_user is not None else None,
+        "target_username": target_user.username if target_user is not None else None,
+        "request_id": current_request_id(),
+    }
+    if membership_id is not None:
+        metadata["membership_id"] = membership_id
+    if reason:
+        metadata["reason"] = reason
+
+    event = record_activity(
+        workspace_id,
+        EVENT_ROLE_CHANGED,
+        actor=actor,
+        target=target_user,
+        metadata=metadata,
+    )
+    log_event(
+        "role.changed",
+        user_id=actor.id if actor is not None else None,
+        workspace_id=workspace_id,
+        target_user_id=target_user.id if target_user is not None else None,
+        action=action,
+        old_role=previous_role,
+        new_role=new_role,
+    )
     return event

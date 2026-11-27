@@ -67,7 +67,6 @@ from app.models.activity_event import (
     EVENT_MEMBER_REMOVED,
     EVENT_PROJECT_EXPORTED,
     EVENT_PROJECT_IMPORTED,
-    EVENT_ROLE_CHANGED,
 )
 from app.models.project import (
     SOURCE_ARCHIVE,
@@ -84,7 +83,7 @@ from app.models.workspace_member import (
     STATUS_ACTIVE,
 )
 from app.services import budgets, legal_hold, pricing, project_analysis, usage_ledger
-from app.services.activity import record_activity
+from app.services.activity import ROLE_ACTION_ASSIGNED, record_activity, record_role_change
 from app.services.events import emit_event
 from app.services.exporting import export_filename, iter_export_zip
 from app.services.github import (
@@ -460,6 +459,7 @@ def api_add_member(workspace_id: int):
     existing = WorkspaceMember.query.filter_by(workspace_id=workspace_id, user_id=user.id).first()
     if existing is not None and existing.status == STATUS_ACTIVE:
         return jsonify({"error": "That user is already a member."}), 409
+    previous_role = existing.role if existing is not None else None
     if existing is not None:
         # Reactivating a previously removed member preserves the row and the
         # unique (workspace_id, user_id) constraint.
@@ -472,6 +472,7 @@ def api_add_member(workspace_id: int):
         db.session.add(membership)
         metadata = {"role": role}
 
+    db.session.flush()
     record_activity(
         workspace_id,
         EVENT_MEMBER_ADDED,
@@ -479,7 +480,15 @@ def api_add_member(workspace_id: int):
         target=membership,
         metadata=metadata,
     )
-    db.session.flush()
+    record_role_change(
+        workspace_id=workspace_id,
+        actor=current_user,
+        target_user=user,
+        previous_role=previous_role,
+        new_role=role,
+        action=ROLE_ACTION_ASSIGNED,
+        membership_id=membership.id,
+    )
     notify(
         user,
         "membership",
@@ -513,12 +522,13 @@ def api_update_member(workspace_id: int, user_id: int):
     if role not in MEMBER_ROLES:
         return jsonify({"error": "Invalid role."}), 400
     if role != membership.role:
-        record_activity(
-            workspace_id,
-            EVENT_ROLE_CHANGED,
+        record_role_change(
+            workspace_id=workspace_id,
             actor=current_user,
-            target=membership,
-            metadata={"old_role": membership.role, "new_role": role},
+            target_user=membership.user,
+            previous_role=membership.role,
+            new_role=role,
+            membership_id=membership.id,
         )
         notify(
             membership.user,
@@ -547,6 +557,7 @@ def api_remove_member(workspace_id: int, user_id: int):
         return jsonify({"error": "The workspace owner cannot be removed."}), 400
     if membership.status != STATUS_ACTIVE:
         return jsonify({"error": "That member is already removed."}), 409
+    previous_role = membership.role
     membership.mark_removed()
     cancel_pending_for_user(workspace_id, user_id, current_user)
     record_activity(
@@ -554,7 +565,15 @@ def api_remove_member(workspace_id: int, user_id: int):
         EVENT_MEMBER_REMOVED,
         actor=current_user,
         target=membership,
-        metadata={"role": membership.role},
+        metadata={"role": previous_role},
+    )
+    record_role_change(
+        workspace_id=workspace_id,
+        actor=current_user,
+        target_user=membership.user,
+        previous_role=previous_role,
+        new_role=None,
+        membership_id=membership.id,
     )
     notify(
         membership.user,

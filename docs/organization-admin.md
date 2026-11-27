@@ -16,6 +16,7 @@ console. Every refusal is a structured error from
 | --- | --- |
 | `GET /admin/organizations/<workspace_id>` | Single overview: member count, workspace count, estimated usage, and open high/critical security findings. |
 | `GET /admin/organizations/<workspace_id>/members` | Member list, invite form, pending invitations, and member actions. |
+| `GET /admin/organizations/<workspace_id>/roles/preview` | Read-only effective capability preview with provenance. |
 | `GET /admin/organizations/<workspace_id>/usage` | Organization usage and budget rollups for the selected window. |
 
 The workspace detail page shows an **Organization admin** link to owners and
@@ -41,6 +42,32 @@ mutating action requires the `confirm` checkbox in the UI; without it the server
 returns `invalid_input`. The forms set `aria-busy` and disable the submit button
 while the request is in flight so slow requests have a visible loading state.
 Empty member and invitation lists render an explicit empty state.
+
+## Role preview (#602)
+
+The **Role preview** page shows the effective capabilities for a selected member
+without changing their assignments. It resolves three role layers:
+
+| Layer | Source |
+| --- | --- |
+| Organization role | `owner` from `Workspace.user_id`, or `admin` from an active membership with role `owner`/`admin`. |
+| Team role | The member's active workspace membership row. |
+| Workspace role | `owner` when the selected user owns the workspace. |
+
+An optional hypothetical `role` recalculates the workspace and plugin
+capabilities for the preview only; the membership row and workspace owner are
+never written. The table lists each capability with its namespace and source
+role, so an owner can explain why a capability is present. Capability names keep
+their existing forms: workspace capabilities are plain names such as
+`manage_members`, organization capabilities are plain names such as
+`administer_organization`, and plugin capabilities keep `scope:action` strings
+such as `project:read`. They are returned in separate lists rather than being
+flattened into one string space.
+
+`GET /admin/organizations/<workspace_id>/roles/preview?user_id=<id>` accepts
+`format=json` (or an `Accept: application/json` header) for the same payload.
+Invalid roles, invalid or unknown user ids, unknown workspaces, and non-admin
+callers receive the structured errors described above.
 
 ## Usage and billing (#633)
 
@@ -71,8 +98,17 @@ Role definitions are stored in `organization_roles` and can be migrated with
 audits every change. Sensitive actions can be governed by
 [bounded policy documents](policy-engine.md).
 
+Every invite acceptance, role change, restore, suspension, and removal writes a
+`role.changed` event with the before/after roles, acting admin, target member,
+and request id. Owners can review those events in the workspace audit view; see
+the [audit and compliance guide](audit-compliance-guide.md#role-change-events).
+
 ## Tests
 
-`tests/test_org_admin.py` covers owner/admin access, non-admin refusals, invalid
-input, the structured error codes, the dashboard cards, usage rollups, and the
-invite/suspend/remove/role-change actions.
+`tests/test_org_admin_dashboard.py`, `tests/test_org_admin_members.py`, and
+`tests/test_org_admin_usage.py` cover owner/admin access, non-admin refusals,
+invalid input, the structured error codes, the dashboard cards, usage rollups,
+and the invite/suspend/remove/role-change actions.
+`tests/test_role_preview.py` covers read-only role simulation, provenance,
+namespace separation, the admin UI, and structured error paths.
+`tests/test_role_change_audit.py` covers the role-change events described above.
