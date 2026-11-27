@@ -28,6 +28,10 @@ requests==2.33.0
 cryptography==50.0.0
 packaging==26.3
 
+# Policy documents (#600) and deployment manifests are parsed as data with a
+# bounded SafeLoader; no custom tags or code execution are permitted.
+PyYAML==6.0.3
+
 # Archive extraction for additional import formats (#90). Both read archives
 # in memory; rarfile never shells out (only uncompressed RAR entries are read).
 py7zr==1.1.3

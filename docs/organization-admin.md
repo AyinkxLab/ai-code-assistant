@@ -66,7 +66,8 @@ The `admin` membership role is an organization role only. It does not widen the
 workspace capability matrix in `app/services/permissions.py`, so adding an
 organization admin never grants workspace content capabilities implicitly.
 Role definitions are stored in `organization_roles` and can be migrated with
-[the role migration script](role-migration.md).
+[the role migration script](role-migration.md). Sensitive actions can be governed
+by [bounded policy documents](policy-engine.md).
 
 ## Tests
 
