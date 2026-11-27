@@ -1,5 +1,8 @@
 # Enterprise migration: workspaces into organizations
 
+For the companion translation of legacy role strings and the built-in role
+backfill, see [role migration](role-migration.md).
+
 This repository represents an organization with an existing workspace. The
 workspace owner (`workspaces.user_id`) is the organization owner, so migrating
 an existing deployment does not copy projects, conversations, members, or usage
