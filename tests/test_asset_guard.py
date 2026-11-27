@@ -552,6 +552,27 @@ def test_multiple_violations_are_all_reported(tmp_path):
 
 
 # ---------------------------------------------------------------------------
+# Packed payloads in script files
+# ---------------------------------------------------------------------------
+
+
+def test_hex_blob_in_mjs_is_rejected(tmp_path):
+    write(tmp_path, "vitest.config.mjs", "export default {};\n" + "a1b2c3d4" * 80 + "\n")
+    assert any("hex blob" in p for p in violations(tmp_path))
+
+
+def test_hex_blob_in_extensionless_file_is_rejected(tmp_path):
+    write(tmp_path, "sdk/typescript/init", "init();\n" + "0f" * 600 + "\n")
+    problems = violations(tmp_path)
+    assert any("init" in p and "hex blob" in p for p in problems)
+
+
+def test_clean_script_file_passes(tmp_path):
+    write(tmp_path, "vitest.config.mjs", "export default {};\n")
+    assert violations(tmp_path) == []
+
+
+# ---------------------------------------------------------------------------
 # CLI behaviour
 # ---------------------------------------------------------------------------
 
