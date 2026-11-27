@@ -25,6 +25,7 @@ dependencies = [
     "Flask-SocketIO==5.6.1",
     "simple-websocket==1.1.0",
     "fpdf2==2.8.9",
+    "PyYAML==6.0.3",
 ]
 
 [tool.pytest.ini_options]

@@ -29,7 +29,7 @@ code { font-family: ui-monospace, monospace; font-size: .9em; }
 <header><h1>AI Code Assistant API reference</h1></header>
 <main>
 <p>This page is generated from an OpenAPI 3.1 document. It covers
-<strong>17</strong> operations across <strong>15</strong>
+<strong>22</strong> operations across <strong>17</strong>
 public paths. Paths are discovered from the running application; only the
 <code>/api/v1</code> resources have stable, documented response schemas.</p>
 
@@ -84,6 +84,11 @@ body before parsing or re-encoding JSON. See <code>docs/webhooks.md</code>.</p>
 <tr><td><code>GET</code></td><td><code>/api/v1/reviews</code></td><td>List the caller&#x27;s reviews, newest first, with pagination.</td></tr>
 <tr><td><code>GET</code></td><td><code>/api/v1/reviews/{review_id}</code></td><td>Return one review and its summary.</td></tr>
 <tr><td><code>GET</code></td><td><code>/api/v1/usage</code></td><td>Return a paginated usage ledger summary for the caller.</td></tr>
+<tr><td><code>GET</code></td><td><code>/api/workspaces/{workspace_id}/roles</code></td><td>List organization roles for an admin.</td></tr>
+<tr><td><code>POST</code></td><td><code>/api/workspaces/{workspace_id}/roles</code></td><td>Create a custom organization role.</td></tr>
+<tr><td><code>DELETE</code></td><td><code>/api/workspaces/{workspace_id}/roles/{role_id}</code></td><td>Delete a custom organization role.</td></tr>
+<tr><td><code>GET</code></td><td><code>/api/workspaces/{workspace_id}/roles/{role_id}</code></td><td>Read one organization role.</td></tr>
+<tr><td><code>PUT</code></td><td><code>/api/workspaces/{workspace_id}/roles/{role_id}</code></td><td>Update a custom organization role.</td></tr>
 </tbody>
 </table>
 

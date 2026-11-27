@@ -31,6 +31,7 @@ from app.models.notification import Notification
 from app.models.notification_channel import NotificationChannelPreference
 from app.models.notification_preference import NotificationPreference
 from app.models.organization_plugin_policy import OrganizationPluginPolicy, PluginApproval
+from app.models.organization_role import OrganizationRole
 from app.models.plugin import CapabilityGrant, Plugin, PluginInstallation, PluginLockEntry
 from app.models.plugin_collection import PluginCollection
 from app.models.plugin_error_report import PluginErrorReport
@@ -48,6 +49,7 @@ from app.models.review import Review
 from app.models.review_comment import ReviewComment
 from app.models.review_config import ReviewConfig
 from app.models.review_finding import ReviewFinding
+from app.models.role_migration_record import RoleMigrationRecord
 from app.models.security_ticket import SecurityTicketLink
 from app.models.siem_endpoint import SiemEndpoint
 from app.models.stellar_security_finding import StellarSecurityFinding
@@ -98,6 +100,7 @@ __all__ = [
     "NotificationChannelPreference",
     "NotificationPreference",
     "OrganizationPluginPolicy",
+    "OrganizationRole",
     "Plugin",
     "PluginApproval",
     "PluginCollection",
@@ -119,6 +122,7 @@ __all__ = [
     "ReviewComment",
     "ReviewConfig",
     "ReviewFinding",
+    "RoleMigrationRecord",
     "SecurityTicketLink",
     "SiemEndpoint",
     "StellarSecurityFinding",

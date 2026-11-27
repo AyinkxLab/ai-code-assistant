@@ -443,6 +443,130 @@
           "v1"
         ]
       }
+    },
+    "/api/workspaces/{workspace_id}/roles": {
+      "get": {
+        "operationId": "organization_roles_collection_get",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          },
+          "400": {
+            "description": "Structured invalid-input error"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "Permission denied"
+          },
+          "404": {
+            "description": "Resource not found"
+          }
+        },
+        "summary": "List organization roles for an admin.",
+        "tags": [
+          "roles"
+        ]
+      },
+      "post": {
+        "operationId": "organization_roles_collection_post",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          },
+          "400": {
+            "description": "Structured invalid-input error"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "Permission denied"
+          },
+          "404": {
+            "description": "Resource not found"
+          }
+        },
+        "summary": "Create a custom organization role.",
+        "tags": [
+          "roles"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/roles/{role_id}": {
+      "delete": {
+        "operationId": "organization_roles_detail_delete",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          },
+          "400": {
+            "description": "Structured invalid-input error"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "Permission denied"
+          },
+          "404": {
+            "description": "Resource not found"
+          }
+        },
+        "summary": "Delete a custom organization role.",
+        "tags": [
+          "roles"
+        ]
+      },
+      "get": {
+        "operationId": "organization_roles_detail_get",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          },
+          "400": {
+            "description": "Structured invalid-input error"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "Permission denied"
+          },
+          "404": {
+            "description": "Resource not found"
+          }
+        },
+        "summary": "Read one organization role.",
+        "tags": [
+          "roles"
+        ]
+      },
+      "put": {
+        "operationId": "organization_roles_detail_put",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          },
+          "400": {
+            "description": "Structured invalid-input error"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "Permission denied"
+          },
+          "404": {
+            "description": "Resource not found"
+          }
+        },
+        "summary": "Update a custom organization role.",
+        "tags": [
+          "roles"
+        ]
+      }
     }
   },
   "servers": [
@@ -462,6 +586,10 @@
     {
       "description": "Documentation endpoints.",
       "name": "docs"
+    },
+    {
+      "description": "Organization role administration.",
+      "name": "roles"
     }
   ]
 }
