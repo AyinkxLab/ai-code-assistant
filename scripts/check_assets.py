@@ -63,6 +63,18 @@ FONT_EXTENSIONS = {".woff", ".woff2", ".ttf", ".otf", ".eot", ".svg"}
 #: Bytes that should never appear inside a real font or its SVG licence wrapper.
 SCRIPT_MARKERS = (b"eval(", b"spawn(", b"child_process", b"require(")
 
+#: Files that are executable script whatever their directory. Extensionless
+#: files are included: the 2026-11 incident hid its payload in
+#: ``sdk/typescript/init`` and ``vitest.config.mjs``.
+SCRIPT_EXTENSIONS = {".js", ".mjs", ".cjs", ".jsx", ".ts", ".tsx"}
+
+#: A contiguous run of hex characters this long is never hand-written source.
+#: It is how packed payloads embed their encrypted next stage.
+HEX_BLOB_RE = re.compile(rb"(?<![0-9a-fA-F])[0-9a-fA-F]{512,}(?![0-9a-fA-F])")
+
+#: Files above this size are skipped; a payload that large cannot hide silently.
+SCRIPT_SCAN_MAX_BYTES = 5_000_000
+
 # ---------------------------------------------------------------------------
 # Workflow policy
 # ---------------------------------------------------------------------------
@@ -215,6 +227,37 @@ def _check_fonts_and_editor_tasks(root: Path, files: list[Path]) -> list[str]:
                 re.IGNORECASE,
             ):
                 problems.append(f"{path.relative_to(root)} defines a command that shells out")
+
+    return problems
+
+
+def _check_script_payloads(root: Path, files: list[Path]) -> list[str]:
+    """Reject packed payloads hidden in script and extensionless files.
+
+    The 2026-11 incident appended an obfuscated loader to ``vitest.config.mjs``
+    and an extensionless ``sdk/typescript/init``. Neither was scanned, because
+    only font extensions were content-checked. A long hex blob is the shape of
+    the embedded encrypted stage; no real source file contains one.
+    """
+    problems: list[str] = []
+
+    for path in files:
+        if path.suffix.lower() in FONT_EXTENSIONS:
+            continue  # already content-checked above
+        if path.suffix and path.suffix.lower() not in SCRIPT_EXTENSIONS:
+            continue
+        try:
+            if path.stat().st_size > SCRIPT_SCAN_MAX_BYTES:
+                continue
+            blob = path.read_bytes()
+        except OSError:
+            continue
+        match = HEX_BLOB_RE.search(blob)
+        if match is not None:
+            problems.append(
+                f"{path.relative_to(root)} embeds a {len(match.group(0))}-character hex "
+                "blob, the shape of an obfuscated payload"
+            )
 
     return problems
 
@@ -476,6 +519,8 @@ def _check_guard_integrity(root: Path) -> list[str]:
         "task.allowAutomaticTasks",
         "SCRIPT_MARKERS",
         "FONT_EXTENSIONS",
+        "SCRIPT_EXTENSIONS",
+        "HEX_BLOB_RE",
         "find_violations",
         "pull_request_target",
         "workflow_run",
@@ -508,6 +553,7 @@ def find_violations(root: Path = REPO_ROOT) -> list[str]:
 
     problems: list[str] = []
     problems += _check_fonts_and_editor_tasks(root, files)
+    problems += _check_script_payloads(root, files)
     problems += _check_workflows(root, files)
     problems += _check_requirements(root, files)
     problems += _check_npm_manifests(root, files)
