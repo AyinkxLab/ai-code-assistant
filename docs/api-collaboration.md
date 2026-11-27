@@ -302,6 +302,26 @@ Response `200`:
 
 Audit rows are append-only — there is no update/delete route.
 
+Role assignments, changes, and removals use `event_type: "role.changed"` with
+`metadata.action` (`assigned`, `changed`, or `removed`) and
+`metadata.old_role` / `metadata.new_role`. A `null` side means the user had no
+role before the assignment or no role after the removal. The metadata also
+carries `actor_username`, `target_user_id`, `target_username`, and
+`request_id`, so a mutation can be traced from the audit view to the structured
+`role.changed` log record. Invalid input and permission failures do not create
+an event.
+
+```json
+{ "id": 9, "workspace_id": 3, "actor_id": 1, "actor_username": "alice",
+  "event_type": "role.changed", "label": "changed a member role",
+  "target_type": "users", "target_id": 8,
+  "created_at": "2026-08-15T10:05:00+00:00",
+  "metadata": {"action": "changed", "old_role": "viewer",
+               "new_role": "contributor", "actor_username": "alice",
+               "target_user_id": 8, "target_username": "bob",
+               "membership_id": 12, "request_id": "trace-123"} }
+```
+
 ---
 
 ## Notifications

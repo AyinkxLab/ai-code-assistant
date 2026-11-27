@@ -10,6 +10,7 @@
   </div>
   <div class="repo-toolbar">
     <a class="btn btn-ghost btn-sm" href="{{ url_for('admin.organization_members', workspace_id=workspace.id) }}">Members</a>
+    <a class="btn btn-ghost btn-sm" href="{{ url_for('admin.role_preview', workspace_id=workspace.id) }}">Role preview</a>
     <a class="btn btn-ghost btn-sm" href="{{ url_for('admin.organization_usage', workspace_id=workspace.id) }}">Usage &amp; billing</a>
     <a class="btn btn-ghost btn-sm" href="https://github.com/AyindxLab/ai-code-assistant/blob/main/docs/enterprise-admin-guide.md">Admin guide</a>
   </div>

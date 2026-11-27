@@ -22,6 +22,7 @@ from app.models.invitation import INVITE_STATUS_PENDING
 from app.models.workspace_member import STATUS_ACTIVE
 from app.services import email as email_service
 from app.services import organizations
+from app.services.activity import ROLE_ACTION_ASSIGNED, record_role_change
 from app.services.invitations import (
     cancel_pending_for_user,
     expire_overdue,
@@ -80,7 +81,17 @@ def _handle_member_action(workspace: Workspace):
     if action == "reactivate":
         if membership.status == STATUS_ACTIVE:
             return error_response(CONFLICT, "That member is already active.")
+        previous_role = membership.role
         membership.reactivate()
+        record_role_change(
+            workspace_id=workspace.id,
+            actor=current_user,
+            target_user=membership.user,
+            previous_role=previous_role,
+            new_role=membership.role,
+            action=ROLE_ACTION_ASSIGNED,
+            membership_id=membership.id,
+        )
         db.session.commit()
         return success(f"Restored {membership.user.username if membership.user else user_id}.")
 
@@ -90,7 +101,16 @@ def _handle_member_action(workspace: Workspace):
     if action in {"suspend", "remove"}:
         if membership.status != STATUS_ACTIVE:
             return error_response(CONFLICT, "That member is not active.")
+        previous_role = membership.role
         membership.mark_removed()
+        record_role_change(
+            workspace_id=workspace.id,
+            actor=current_user,
+            target_user=membership.user,
+            previous_role=previous_role,
+            new_role=None,
+            membership_id=membership.id,
+        )
         if action == "remove":
             cancel_pending_for_user(workspace.id, membership.user_id, current_user)
         db.session.commit()
@@ -102,7 +122,16 @@ def _handle_member_action(workspace: Workspace):
         return error_response(INVALID_INPUT, "Invalid role.")
     if membership.status != STATUS_ACTIVE:
         return error_response(CONFLICT, "That member is not active.")
+    previous_role = membership.role
     membership.role = role
+    record_role_change(
+        workspace_id=workspace.id,
+        actor=current_user,
+        target_user=membership.user,
+        previous_role=previous_role,
+        new_role=role,
+        membership_id=membership.id,
+    )
     db.session.commit()
     return success(f"Changed role to {role}.")
 

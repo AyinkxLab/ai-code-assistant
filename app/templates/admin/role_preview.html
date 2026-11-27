@@ -1,0 +1,101 @@
+{% extends "base.html" %}
+
+{% block title %}{{ workspace.name }} role preview - {{ config.APP_NAME }}{% endblock %}
+
+{% block content %}
+<div class="github-header">
+  <div>
+    <h1>{{ workspace.name }} role preview</h1>
+    <p class="repo-meta">
+      See the effective capabilities for a member and where each one comes from.
+      This page is read-only: previewing a role never changes an assignment.
+    </p>
+  </div>
+  <div class="repo-toolbar">
+    <a class="btn btn-ghost btn-sm" href="{{ url_for('admin.organization_dashboard', workspace_id=workspace.id) }}">Overview</a>
+    <a class="btn btn-ghost btn-sm" href="{{ url_for('admin.organization_members', workspace_id=workspace.id) }}">Members</a>
+    <a class="btn btn-ghost btn-sm" href="{{ url_for('admin.organization_usage', workspace_id=workspace.id) }}">Usage &amp; billing</a>
+  </div>
+</div>
+
+<section aria-labelledby="preview-form-heading">
+  <h2 id="preview-form-heading">Choose a member</h2>
+  <form method="get" action="{{ url_for('admin.role_preview', workspace_id=workspace.id) }}" class="inline-form">
+    <label for="preview-user">Member</label>
+    <select id="preview-user" name="user_id" required>
+      <option value="">Choose a member</option>
+      {% for member in members %}
+      <option value="{{ member.user_id }}"{% if selected_user_id == member.user_id %} selected{% endif %}>{{ member.username }} ({{ member.role }}{% if member.status != 'active' %}, {{ member.status }}{% endif %})</option>
+      {% endfor %}
+    </select>
+    <label for="preview-role">Role to preview</label>
+    <select id="preview-role" name="role">
+      <option value="">Current role (no simulation)</option>
+      {% for role in roles %}
+      <option value="{{ role }}"{% if selected_role == role %} selected{% endif %}>{{ role }}</option>
+      {% endfor %}
+    </select>
+    <button class="btn" type="submit">Preview capabilities</button>
+  </form>
+  <p class="field-hint">Workspace and plugin capabilities stay in separate namespaces; the source column shows which role granted each one.</p>
+</section>
+
+{% if payload %}
+<section aria-labelledby="effective-heading">
+  <h2 id="effective-heading">Effective capabilities for {{ payload.username }}</h2>
+  {% if payload.simulated %}
+  <p class="field-hint">Simulating <strong>{{ payload.simulated_role }}</strong>. The stored membership is unchanged.</p>
+  {% endif %}
+  <div class="metric-grid">
+    <div class="metric">
+      <span class="metric-label">Organization role</span>
+      <strong>{{ payload.roles.organization or 'none' }}</strong>
+    </div>
+    <div class="metric">
+      <span class="metric-label">Team role (membership)</span>
+      <strong>{{ payload.roles.team or 'none' }}</strong>
+    </div>
+    <div class="metric">
+      <span class="metric-label">Workspace role</span>
+      <strong>{{ payload.roles.workspace or 'none' }}</strong>
+    </div>
+    <div class="metric">
+      <span class="metric-label">Capabilities</span>
+      <strong>{{ payload.capability_count }}</strong>
+    </div>
+  </div>
+
+  <table class="billing-table">
+    <thead>
+      <tr>
+        <th scope="col">Namespace</th>
+        <th scope="col">Capability</th>
+        <th scope="col">Description</th>
+        <th scope="col">Source</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for namespace, entries in payload.capabilities.items() %}
+      {% for entry in entries %}
+      <tr>
+        <td>{{ namespace }}</td>
+        <td><code>{{ entry.capability }}</code></td>
+        <td>{{ entry.description }}</td>
+        <td>
+          {% for source in entry.sources %}
+          <span class="field-hint">{{ source.source }}: {{ source.role }}</span>{% if not loop.last %}<br>{% endif %}
+          {% endfor %}
+        </td>
+      </tr>
+      {% endfor %}
+      {% endfor %}
+    </tbody>
+  </table>
+  {% if payload.capability_count == 0 %}
+  <p class="empty-note">This user has no effective capabilities in this workspace.</p>
+  {% endif %}
+</section>
+{% else %}
+<p class="empty-note">Choose a member above to preview their effective capabilities.</p>
+{% endif %}
+{% endblock %}
