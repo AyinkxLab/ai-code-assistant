@@ -45,12 +45,18 @@ DESCRIPTIONS = {
     "get /api/conversations": "List the caller's chat conversations.",
     "post /api/conversations": "Create a chat conversation.",
     "get /api/usage": "Per-user token usage summary.",
+    "get /api/workspaces/{workspace_id}/roles": "List organization roles for an admin.",
+    "post /api/workspaces/{workspace_id}/roles": "Create a custom organization role.",
+    "get /api/workspaces/{workspace_id}/roles/{role_id}": "Read one organization role.",
+    "put /api/workspaces/{workspace_id}/roles/{role_id}": "Update a custom organization role.",
+    "delete /api/workspaces/{workspace_id}/roles/{role_id}": "Delete a custom organization role.",
 }
 
 TAGS = [
     {"name": "v1", "description": "Stable, versioned public resources."},
     {"name": "chat", "description": "Conversation and usage endpoints."},
     {"name": "docs", "description": "Documentation endpoints."},
+    {"name": "roles", "description": "Organization role administration."},
 ]
 
 
@@ -72,6 +78,8 @@ def _tag(path: str) -> str:
         return "v1"
     if "docs" in path:
         return "docs"
+    if "/roles" in path:
+        return "roles"
     return "chat"
 
 

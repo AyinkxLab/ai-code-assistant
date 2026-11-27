@@ -117,6 +117,7 @@ def create_app(config_name: str | None = None) -> Flask:
     # Register blueprints.
     from app.admin import bp as admin_bp
     from app.api.docs import bp as api_docs_bp
+    from app.api.organization_roles import bp as organization_roles_bp
     from app.api.v1 import bp as api_v1_bp
     from app.auth import bp as auth_bp
     from app.billing import bp as billing_bp
@@ -148,6 +149,7 @@ def create_app(config_name: str | None = None) -> Flask:
     app.register_blueprint(chat_api_bp)
     app.register_blueprint(api_docs_bp)
     app.register_blueprint(api_v1_bp)
+    app.register_blueprint(organization_roles_bp)
     app.register_blueprint(prompts_bp)
     app.register_blueprint(tools_bp)
     app.register_blueprint(github_bp)
