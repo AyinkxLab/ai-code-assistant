@@ -489,17 +489,25 @@ def _check_container_and_install_scripts(root: Path, files: list[Path]) -> list[
 
 
 def _check_gitignore(root: Path, files: list[Path]) -> list[str]:
-    """A .gitignore that ignores itself can hide later changes to the rules."""
+    """A .gitignore that hides its own changes or exposes secrets is a red flag."""
     problems: list[str] = []
 
     gitignore = root / ".gitignore"
     if gitignore in files:
         rel = gitignore.relative_to(root).as_posix()
-        for lineno, line in enumerate(gitignore.read_text(encoding="utf-8").splitlines(), 1):
+        lines = gitignore.read_text(encoding="utf-8").splitlines()
+        for lineno, line in enumerate(lines, 1):
             if line.strip() == ".gitignore":
                 problems.append(
                     f"{rel}:{lineno} ignores itself, which can hide later changes "
                     "to the ignore rules"
+                )
+        ignored = {line.strip() for line in lines}
+        for pattern in (".env", ".env.*"):
+            if pattern not in ignored:
+                problems.append(
+                    f"{rel} does not ignore {pattern}, so environment secrets can be "
+                    "committed and harvested"
                 )
 
     return problems

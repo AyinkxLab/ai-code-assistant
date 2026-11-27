@@ -484,8 +484,13 @@ class TestGitignoreAndGuard:
         assert any("ignores itself" in p for p in problems)
 
     def test_normal_gitignore_passes(self, tmp_path):
-        write(tmp_path, ".gitignore", "node_modules\n__pycache__\n")
+        write(tmp_path, ".gitignore", "node_modules\n__pycache__\n.env\n.env.*\n")
         assert violations(tmp_path) == []
+
+    def test_gitignore_without_env_rules_is_rejected(self, tmp_path):
+        write(tmp_path, ".gitignore", "node_modules\n.env.example\n")
+        problems = violations(tmp_path)
+        assert any(".env" in p and "secrets" in p for p in problems)
 
     def test_empty_tree_has_no_violations(self, tmp_path):
         assert violations(tmp_path) == []
